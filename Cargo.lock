@@ -7,6 +7,10 @@ name = "app"
 version = "0.1.0"
 
 [[package]]
+name = "integration-test"
+version = "0.1.0"
+
+[[package]]
 name = "node"
 version = "0.1.0"
 
