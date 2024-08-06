@@ -1,3 +1,26 @@
 [workspace]
-members =[ "app", "integration-test","node", "primitives"]
+members =[ "app", "db", "integration-test","node", "primitives","db/prisma"]
 resolver = "2"
+
+[workspace.dependencies]
+
+# ========================================= Db ==========================================
+
+serde = { version = "1.0.204", features = ["alloc","derive"] }
+
+# ========================================= Node ========================================
+
+# ========================================= Primitives ==================================
+
+# ========================================= IntegrationTests ============================
+
+# ========================================= Shared ======================================
+
+anyhow = "1.0.86"
+
+# ========================================= Local Dependencies ==========================
+
+db = { path = "db" }
+integration-test = { path = "integration-test" }
+node = { path = "node" }
+primitives = { path = "primitives" }

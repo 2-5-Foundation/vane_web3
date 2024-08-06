@@ -1,0 +1,67 @@
+datasource db {
+    provider = "sqlite"
+    url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "cargo run -p prisma"
+  output   = "src/db.rs"
+}
+
+// ========================================user======================================
+model UserAccount {
+    id                Int               @id @default(autoincrement())
+    username          String            @unique
+    accounts          Account[]
+}
+
+// User can have multiple address per chain network
+model Account {
+    id                Int               @id @default(autoincrement())
+    accountId         Address[]
+    networkId         String            @unique
+    user              UserAccount       @relation(fields: [userId], references: [id])
+    userId            Int
+}
+
+model Address {
+    id                Int               @id @default(autoincrement())
+    accountId         String
+    account           Account           @relation(fields: [addressId], references: [id])
+    addressId Int
+}
+
+// ===========================================Tx=======================================
+model Data {
+    id                Int               @id @default(autoincrement())
+    success           Transaction[]     @relation("SuccessfulTransactions")
+    successValue      Int
+    failed            Transaction[]     @relation("FailedTransactions")
+    failedValue       Int
+}
+
+model Transaction {
+    id                Int               @id @default(autoincrement())
+    txHash            String            @unique
+    value             Int
+    network           String            @unique
+    successDataId     Int
+    successData       Data              @relation("SuccessfulTransactions", fields: [successDataId], references: [id])
+    failedData        Data              @relation("FailedTransactions", fields: [failedDataId], references: [id])
+    failedDataId      Int
+}
+
+// =========================================cache=======================================
+model Cache {
+    id                Int               @id @default(autoincrement())
+    connectedPeers    Peer[]
+}
+
+model Peer {
+    id                Int               @id @default(autoincrement())
+    peerId            String            @unique
+    networkId         String
+    cacheId           Int
+    cache             Cache             @relation(fields: [cacheId], references: [id])
+}
+
