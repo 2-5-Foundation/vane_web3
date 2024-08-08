@@ -5,6 +5,4 @@
 
 /// handling tx submission & tx confirmation & tx simulation interactions
 /// a first layer a user interact with and submits the tx to processing layer
-pub struct RpcWorker{
-
-}
+pub struct RpcWorker {}

@@ -8,4 +8,10 @@ edition = "2021"
 [dependencies]
 serde = { workspace = true }
 prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", features = ["sqlite", "migrations"], default-features = false }
-anyhow = "1.0.86"
+anyhow = { workspace = true}
+primitives = { workspace = true}
+log = { workspace = true}
+hex = { workspace = true }
+tokio = { workspace = true}
+codec = { workspace = true}
+sp-core = { workspace = true, default-features = false}

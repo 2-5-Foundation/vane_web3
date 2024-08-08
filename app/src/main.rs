@@ -1,6 +1,6 @@
-mod cli;
-mod logging;
+use node::*;
 
-fn main() {
-    println!("Hello, world!");
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    Ok(())
 }

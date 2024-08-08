@@ -9,59 +9,37 @@ generator client {
 }
 
 // ========================================user======================================
-model UserAccount {
-    id                Int               @id @default(autoincrement())
-    username          String            @unique
-    accounts          Account[]
-}
 
 // User can have multiple address per chain network
-model Account {
+model UserAccount {
     id                Int               @id @default(autoincrement())
-    accountId         Address[]
-    networkId         String            @unique
-    user              UserAccount       @relation(fields: [userId], references: [id])
-    userId            Int
-}
-
-model Address {
-    id                Int               @id @default(autoincrement())
-    accountId         String
-    account           Account           @relation(fields: [addressId], references: [id])
-    addressId Int
+    username          Bytes             // string
+    accountId         Bytes
+    networkId         Bytes             // string or enum encoded
 }
 
 // ===========================================Tx=======================================
-model Data {
-    id                Int               @id @default(autoincrement())
-    success           Transaction[]     @relation("SuccessfulTransactions")
-    successValue      Int
-    failed            Transaction[]     @relation("FailedTransactions")
-    failedValue       Int
+model TransactionsData {
+    id                Int               @id
+    successValue      BigInt               // amount
+    failedValue       BigInt               // amount
 }
 
 model Transaction {
     id                Int               @id @default(autoincrement())
-    txHash            String            @unique
-    value             Int
-    network           String            @unique
-    successDataId     Int
-    successData       Data              @relation("SuccessfulTransactions", fields: [successDataId], references: [id])
-    failedData        Data              @relation("FailedTransactions", fields: [failedDataId], references: [id])
-    failedDataId      Int
+    txHash            Bytes             // string encoded
+    value             BigInt            // amount
+    network           Bytes             // string or enum encoded
+    status            Boolean
 }
 
+
 // =========================================cache=======================================
-model Cache {
-    id                Int               @id @default(autoincrement())
-    connectedPeers    Peer[]
-}
+
 
 model Peer {
     id                Int               @id @default(autoincrement())
-    peerId            String            @unique
-    networkId         String
-    cacheId           Int
-    cache             Cache             @relation(fields: [cacheId], references: [id])
+    peerId            Bytes             @unique // String or data structure encoded
+    networkId         Bytes             // String or enum
 }
 

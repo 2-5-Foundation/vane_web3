@@ -3,6 +3,4 @@
 // node id and no of chains network connected and used
 // revenue for vane
 
-pub struct TelemetryWorker{
-
-}
+pub struct TelemetryWorker {}

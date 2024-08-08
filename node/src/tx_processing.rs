@@ -6,14 +6,4 @@
 
 /// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
 /// & tx submission to specified and confirmed chain
-pub struct TxProcessingWorker {
-
-}
-
-
-pub enum ChainSupported {
-    Polkadot,
-    Ethereum,
-    Bnb,
-    Solana
-}
+pub struct TxProcessingWorker {}

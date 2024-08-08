@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+node = {workspace = true}
+primitives = {workspace = true}
+tokio = {workspace = true}
+anyhow = {workspace = true}
+log = { workspace = true}
+simple_logger = { workspace = true}

@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 db = { workspace = true }
+log = { workspace = true}
