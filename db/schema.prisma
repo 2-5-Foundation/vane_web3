@@ -34,12 +34,27 @@ model Transaction {
 }
 
 
-// =========================================cache=======================================
+// =========================================User Peer Ids=======================================
 
-
-model Peer {
+model UserPeer {
     id                Int               @id @default(autoincrement())
     peerId            Bytes             @unique // String or data structure encoded
-    networkId         Bytes             // String or enum
+    accountId1        Bytes
+    accountId2        Bytes
+    accountId3        Bytes
+    accountId4        Bytes
+    portId            Bytes             // String or enum
+}
+
+// =========================================Saved Peer Ids======================================
+
+model SavedPeers {
+    id                Int               @id @default(autoincrement())
+    nodeId            Bytes             @unique
+    accountId1        Bytes             // with network id 1
+    accountId2        Bytes             // 2
+    accountId3        Bytes
+    accountId4        Bytes
+    portId            Bytes
 }
 

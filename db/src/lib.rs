@@ -9,11 +9,7 @@ mod db_tests;
 
 use crate::db::read_filters::BoolFilter;
 use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
-use crate::db::{
-    new_client_with_url, peer,
-    read_filters::{BigIntFilter, BytesFilter, IntFilter},
-    transaction, transactions_data, user_account, PrismaClient, PrismaClientBuilder,
-};
+use crate::db::{new_client_with_url, UserPeerScalarFieldEnum, read_filters::{BigIntFilter, BytesFilter, IntFilter}, transaction, transactions_data, user_account, PrismaClient, PrismaClientBuilder, user_peer, saved_peers};
 use alloc::sync::Arc;
 use anyhow::anyhow;
 use codec::{Decode, Encode};
@@ -190,12 +186,16 @@ impl DbWorker {
         Ok(failed_value)
     }
 
-    pub async fn record_peer(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+    pub async fn record_user_peerId(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
         self.db
-            .peer()
+            .user_peer()
             .create(
                 peer_record.peer_address,
-                peer_record.network.encode(),
+                peer_record.accountId1,
+                peer_record.accountId2.unwrap_or(vec![]),
+                peer_record.accountId3.unwrap_or(vec![]),
+                peer_record.accountId4.unwrap_or(vec![]),
+                peer_record.portId,
                 Default::default(),
             )
             .exec()
@@ -204,11 +204,43 @@ impl DbWorker {
     }
 
     // get peer by account id
-    pub async fn get_saved_peer(&self, account_id: Vec<u8>) -> Result<peer::Data, anyhow::Error> {
+    pub async fn get_user_peerId(&self, account_id: Vec<u8>) -> Result<user_peer::Data, anyhow::Error> {
         let peer_data = self
             .db
-            .peer()
-            .find_first(vec![peer::WhereParam::PeerId(BytesFilter::Equals(
+            .user_peer()
+            .find_first(vec![user_peer::WhereParam::AccountId1(BytesFilter::Equals(
+                account_id,
+            ))])
+            .exec()
+            .await?
+            .ok_or(anyhow!("Peer Not found in DB"))?;
+        Ok(peer_data)
+    }
+
+    // saved peers interacted with
+    pub async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+        self.db
+            .saved_peers()
+            .create(
+                peer_record.peer_address,
+                peer_record.accountId1,
+                peer_record.accountId2.unwrap_or(vec![]),
+                peer_record.accountId3.unwrap_or(vec![]),
+                peer_record.accountId4.unwrap_or(vec![]),
+                peer_record.portId,
+                Default::default(),
+            )
+            .exec()
+            .await?;
+        Ok(())
+    }
+
+    // get saved peers
+    pub async fn get_saved_user_peers(&self, account_id: Vec<u8>) -> Result<saved_peers::Data, anyhow::Error> {
+        let peer_data = self
+            .db
+            .saved_peers()
+            .find_first(vec![saved_peers::WhereParam::AccountId1(BytesFilter::Equals(
                 account_id,
             ))])
             .exec()
@@ -218,13 +250,32 @@ impl DbWorker {
     }
 }
 
+
+
+
 // Type convertions
-impl From<peer::Data> for PeerRecord {
-    fn from(value: peer::Data) -> Self {
-        let decoded_network: ChainSupported = Decode::decode(&mut &value.network_id[..]).unwrap();
+impl From<user_peer::Data> for PeerRecord {
+    fn from(value: user_peer::Data) -> Self {
         Self {
             peer_address: value.peer_id,
-            network: decoded_network,
+            accountId1: value.account_id_1,
+            accountId2: None,
+            accountId3: None,
+            accountId4: None,
+            portId: value.port_id,
+        }
+    }
+}
+
+impl From<saved_peers::Data> for PeerRecord {
+    fn from(value: saved_peers::Data) -> Self {
+        Self {
+            peer_address: value.node_id,
+            accountId1: value.account_id_1,
+            accountId2: None,
+            accountId3: None,
+            accountId4: None,
+            portId: value.port_id,
         }
     }
 }

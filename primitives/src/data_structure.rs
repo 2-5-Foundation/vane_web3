@@ -87,5 +87,10 @@ pub struct UserAccount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
     pub peer_address: Vec<u8>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub network: ChainSupported,
+    pub accountId1: Vec<u8>,
+    pub accountId2: Option<Vec<u8>>,
+    pub accountId3: Option<Vec<u8>>,
+    pub accountId4: Option<Vec<u8>>,
+    pub portId: Vec<u8>
 }
+

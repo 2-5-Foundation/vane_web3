@@ -103,21 +103,29 @@ async fn storing_peers_n_retrieving_works() -> Result<(), anyhow::Error> {
     let db_client = DbWorker::initialize_db_client("./dev.db").await?;
     let peer1 = PeerRecord {
         peer_address: "0x4690152131E5399dE5E76801Fc7742A087829F00".encode(),
-        network: ChainSupported::Bnb,
+        accountId1: "0x4690152131E5399dE5E76801Fc7742A087829F00".encode(),
+        accountId2: None,
+        accountId3: None,
+        accountId4: None,
+        portId: "8080".encode(),
     };
     let peer2 = PeerRecord {
         peer_address: "AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode(),
-        network: ChainSupported::Solana,
+        accountId1: "AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode(),
+        accountId2: None,
+        accountId3: None,
+        accountId4: None,
+        portId: "13901".encode(),
     };
-    db_client.record_peer(peer1.clone()).await?;
-    db_client.record_peer(peer2.clone()).await?;
+    db_client.record_user_peerId(peer1.clone()).await?;
+    db_client.record_user_peerId(peer2.clone()).await?;
 
     let get_peer1: PeerRecord = db_client
-        .get_saved_peer("0x4690152131E5399dE5E76801Fc7742A087829F00".encode())
+        .get_user_peerId("0x4690152131E5399dE5E76801Fc7742A087829F00".encode())
         .await?
         .into();
     let get_peer2: PeerRecord = db_client
-        .get_saved_peer("AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode())
+        .get_user_peerId("AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode())
         .await?
         .into();
     assert_eq!(get_peer1, peer1);
