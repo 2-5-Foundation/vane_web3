@@ -1,0 +1,60 @@
+datasource db {
+    provider = "sqlite"
+    url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "cargo run -p prisma"
+  output   = "src/db.rs"
+}
+
+// ========================================user======================================
+
+// User can have multiple address per chain network
+model UserAccount {
+    id                Int               @id @default(autoincrement())
+    username          Bytes             // string
+    accountId         Bytes
+    networkId         Bytes             // string or enum encoded
+}
+
+// ===========================================Tx=======================================
+model TransactionsData {
+    id                Int               @id
+    successValue      BigInt               // amount
+    failedValue       BigInt               // amount
+}
+
+model Transaction {
+    id                Int               @id @default(autoincrement())
+    txHash            Bytes             // string encoded
+    value             BigInt            // amount
+    network           Bytes             // string or enum encoded
+    status            Boolean
+}
+
+
+// =========================================User Peer Ids=======================================
+
+model UserPeer {
+    id                Int               @id @default(autoincrement())
+    peerId            Bytes             @unique // String or data structure encoded
+    accountId1        Bytes
+    accountId2        Bytes
+    accountId3        Bytes
+    accountId4        Bytes
+    portId            Bytes             // String or enum
+}
+
+// =========================================Saved Peer Ids======================================
+
+model SavedPeers {
+    id                Int               @id @default(autoincrement())
+    nodeId            Bytes             @unique
+    accountId1        Bytes             // with network id 1
+    accountId2        Bytes             // 2
+    accountId3        Bytes
+    accountId4        Bytes
+    portId            Bytes
+}
+

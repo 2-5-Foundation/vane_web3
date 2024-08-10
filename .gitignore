@@ -1,0 +1,5 @@
+/target/*
+.idea
+Cargo.lock
+/db/src/db.rs
+/db/migrations
