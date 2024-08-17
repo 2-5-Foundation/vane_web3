@@ -44,6 +44,7 @@ model UserPeer {
     accountId3        Bytes
     accountId4        Bytes
     portId            Bytes             // String or enum
+    keypair           Bytes             // ed25519 node keypair encoded and encrypted
 }
 
 // =========================================Saved Peer Ids======================================

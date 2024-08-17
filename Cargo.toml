@@ -6,9 +6,11 @@ resolver = "2"
 
 # ========================================= Db ==========================================
 hex = { version = "0.4.3", features = ["alloc"] }
-
+aead = {version = "0.5.2", features = ["alloc","bytes","arrayvec"]}
+aes-gcm = {version = "0.10.3", features = ["aes","alloc","rand_core","arrayvec"]}
 # ========================================= Node ========================================
-
+libp2p = { version = "0.53.2", features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
+libp2p-request-response = "0.27.0"
 # ========================================= Primitives ==================================
 
 # ========================================= IntegrationTests ============================

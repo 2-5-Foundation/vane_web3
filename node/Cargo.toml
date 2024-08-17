@@ -8,3 +8,13 @@ edition = "2021"
 [dependencies]
 db = { workspace = true }
 log = { workspace = true}
+primitives = { workspace = true}
+libp2p = { workspace = true }
+sc-network = "0.44.0"
+async-trait = "0.1.81"
+unsigned-varint = {version = "0.8.0", features = ["asynchronous-codec", "codec", "tokio-util", "futures-io", "futures"] }
+anyhow = { workspace = true}
+codec = { workspace = true}
+tokio = { workspace = true}
+#libp2p-request-response = { workspace = true}
+tokio-stream = "0.1.15"

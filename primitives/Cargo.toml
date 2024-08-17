@@ -11,3 +11,4 @@ serde = { version = "1.0.204", features = ["derive"] }
 codec = { workspace = true}
 anyhow = "1.0.86"
 log = { workspace = true}
+libp2p = { workspace = true }
