@@ -200,7 +200,7 @@ impl DbWorker {
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
-                peer_record.portId,
+                peer_record.multi_addr,
                 peer_record.keypair.unwrap(),
                 Default::default(),
             )
@@ -239,7 +239,7 @@ impl DbWorker {
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
-                peer_record.portId,
+                peer_record.multi_addr,
                 Default::default(),
             )
             .exec()
@@ -274,7 +274,7 @@ impl From<user_peer::Data> for PeerRecord {
             accountId2: None,
             accountId3: None,
             accountId4: None,
-            portId: value.port_id,
+            multi_addr: value.multi_addr,
             keypair: Some(value.keypair),
         }
     }
@@ -288,7 +288,7 @@ impl From<saved_peers::Data> for PeerRecord {
             accountId2: None,
             accountId3: None,
             accountId4: None,
-            portId: value.port_id,
+            multi_addr: value.multi_addr,
             keypair: None,
         }
     }

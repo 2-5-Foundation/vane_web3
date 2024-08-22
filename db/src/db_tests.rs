@@ -123,7 +123,7 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
         accountId2: None,
         accountId3: None,
         accountId4: None,
-        portId: "8080".encode(),
+        multi_addr: "/ip4/127.0.0.1/tcp/8080".encode(),
         keypair: Some(encrypted_keypair),
     };
     db_client.record_user_peerId(peer1.clone()).await?;
@@ -135,6 +135,7 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
     assert_eq!(get_peer1, peer1);
     Ok(())
 }
+
 
 #[tokio::test]
 async fn all_db_tests_in_order_works() -> Result<(), anyhow::Error> {

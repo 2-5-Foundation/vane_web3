@@ -92,7 +92,7 @@ pub struct PeerRecord {
     pub accountId2: Option<Vec<u8>>,
     pub accountId3: Option<Vec<u8>>,
     pub accountId4: Option<Vec<u8>>,
-    pub portId: Vec<u8>,
+    pub multi_addr: Vec<u8>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
 
@@ -101,25 +101,25 @@ pub struct p2pConfig {}
 
 
 pub struct OuterRequest {
-    pub id:InboundRequestId,
+    pub id:OutboundRequestId,
     pub request: Request
 }
 
 #[derive(Debug,Clone,Decode,Encode)]
 pub struct Request {
-    sender: Vec<u8>,
-    receiver: Vec<u8>,
-    amount: u64,
-    network: ChainSupported,
-    msg: Vec<u8>,
+    pub sender: Vec<u8>,
+    pub receiver: Vec<u8>,
+    pub amount: u64,
+    pub network: ChainSupported,
+    pub msg: Vec<u8>,
 }
 
 #[derive(Debug,Clone,Decode,Encode)]
 pub struct Response {
-    sender: Vec<u8>,
-    receiver: Vec<u8>,
-    response: Vec<u8>,
-    sent_request_hash: Vec<u8>,
-    msg: Vec<u8>,
-    signature: Vec<u8>,
+    pub sender: Vec<u8>,
+    pub receiver: Vec<u8>,
+    pub response: Vec<u8>,
+    pub sent_request_hash: Vec<u8>,
+    pub msg: Vec<u8>,
+    pub signature: Vec<u8>,
 }
