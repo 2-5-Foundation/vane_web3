@@ -1,5 +1,9 @@
 use crate::DbWorker;
+use aead::Aead;
+use aes_gcm::aes::cipher::consts::{U12, U16};
+use aes_gcm::{Aes128Gcm, Key, KeyInit, Nonce};
 use codec::Encode;
+use libp2p;
 use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, UserAccount};
 use tokio;
 
@@ -99,44 +103,44 @@ async fn user_creation_n_retrieving_works() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn storing_peers_n_retrieving_works() -> Result<(), anyhow::Error> {
+async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> {
     let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+
+    let test_keypair_peer = libp2p::identity::Keypair::generate_ed25519();
+    let peer_address = test_keypair_peer.public().to_peer_id().to_bytes();
+    let bytes_keypair = test_keypair_peer.to_protobuf_encoding().unwrap();
+
+    let key: &[u8] = &[42; 16];
+    let key: [u8; 16] = key.try_into()?;
+    let key = Key::<Aes128Gcm>::from_slice(&key);
+    let cipher = Aes128Gcm::new(&key);
+    let nonce = Nonce::from_slice(&key[..12]);
+    let encrypted_keypair = cipher.encrypt(nonce, bytes_keypair.as_ref()).unwrap();
+
     let peer1 = PeerRecord {
-        peer_address: "0x4690152131E5399dE5E76801Fc7742A087829F00".encode(),
+        peer_address,
         accountId1: "0x4690152131E5399dE5E76801Fc7742A087829F00".encode(),
         accountId2: None,
         accountId3: None,
         accountId4: None,
-        portId: "8080".encode(),
-    };
-    let peer2 = PeerRecord {
-        peer_address: "AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode(),
-        accountId1: "AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode(),
-        accountId2: None,
-        accountId3: None,
-        accountId4: None,
-        portId: "13901".encode(),
+        multi_addr: "/ip4/127.0.0.1/tcp/8080".encode(),
+        keypair: Some(encrypted_keypair),
     };
     db_client.record_user_peerId(peer1.clone()).await?;
-    db_client.record_user_peerId(peer2.clone()).await?;
 
     let get_peer1: PeerRecord = db_client
         .get_user_peerId("0x4690152131E5399dE5E76801Fc7742A087829F00".encode())
         .await?
         .into();
-    let get_peer2: PeerRecord = db_client
-        .get_user_peerId("AhufdbA31tMx1sdgjtqKisNUNHLYs4hvsCwZYQ9YmxTV".encode())
-        .await?
-        .into();
     assert_eq!(get_peer1, peer1);
-    assert_eq!(get_peer2, peer2);
     Ok(())
 }
+
 
 #[tokio::test]
 async fn all_db_tests_in_order_works() -> Result<(), anyhow::Error> {
     storing_success_n_failed_tx_works().await?;
     user_creation_n_retrieving_works().await?;
-    storing_peers_n_retrieving_works().await?;
+    storing_user_peer_id_n_retrieving_works().await?;
     Ok(())
 }

@@ -9,7 +9,12 @@ mod db_tests;
 
 use crate::db::read_filters::BoolFilter;
 use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
-use crate::db::{new_client_with_url, UserPeerScalarFieldEnum, read_filters::{BigIntFilter, BytesFilter, IntFilter}, transaction, transactions_data, user_account, PrismaClient, PrismaClientBuilder, user_peer, saved_peers};
+use crate::db::{
+    new_client_with_url,
+    read_filters::{BigIntFilter, BytesFilter, IntFilter},
+    saved_peers, transaction, transactions_data, user_account, user_peer, PrismaClient,
+    PrismaClientBuilder, UserPeerScalarFieldEnum,
+};
 use alloc::sync::Arc;
 use anyhow::anyhow;
 use codec::{Decode, Encode};
@@ -195,7 +200,8 @@ impl DbWorker {
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
-                peer_record.portId,
+                peer_record.multi_addr,
+                peer_record.keypair.unwrap(),
                 Default::default(),
             )
             .exec()
@@ -204,13 +210,16 @@ impl DbWorker {
     }
 
     // get peer by account id
-    pub async fn get_user_peerId(&self, account_id: Vec<u8>) -> Result<user_peer::Data, anyhow::Error> {
+    pub async fn get_user_peerId(
+        &self,
+        account_id: Vec<u8>,
+    ) -> Result<user_peer::Data, anyhow::Error> {
         let peer_data = self
             .db
             .user_peer()
-            .find_first(vec![user_peer::WhereParam::AccountId1(BytesFilter::Equals(
-                account_id,
-            ))])
+            .find_first(vec![user_peer::WhereParam::AccountId1(
+                BytesFilter::Equals(account_id),
+            )])
             .exec()
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
@@ -218,7 +227,10 @@ impl DbWorker {
     }
 
     // saved peers interacted with
-    pub async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+    pub async fn record_saved_user_peers(
+        &self,
+        peer_record: PeerRecord,
+    ) -> Result<(), anyhow::Error> {
         self.db
             .saved_peers()
             .create(
@@ -227,7 +239,7 @@ impl DbWorker {
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
-                peer_record.portId,
+                peer_record.multi_addr,
                 Default::default(),
             )
             .exec()
@@ -236,22 +248,22 @@ impl DbWorker {
     }
 
     // get saved peers
-    pub async fn get_saved_user_peers(&self, account_id: Vec<u8>) -> Result<saved_peers::Data, anyhow::Error> {
+    pub async fn get_saved_user_peers(
+        &self,
+        account_id: Vec<u8>,
+    ) -> Result<saved_peers::Data, anyhow::Error> {
         let peer_data = self
             .db
             .saved_peers()
-            .find_first(vec![saved_peers::WhereParam::AccountId1(BytesFilter::Equals(
-                account_id,
-            ))])
+            .find_first(vec![saved_peers::WhereParam::AccountId1(
+                BytesFilter::Equals(account_id),
+            )])
             .exec()
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
         Ok(peer_data)
     }
 }
-
-
-
 
 // Type convertions
 impl From<user_peer::Data> for PeerRecord {
@@ -262,7 +274,8 @@ impl From<user_peer::Data> for PeerRecord {
             accountId2: None,
             accountId3: None,
             accountId4: None,
-            portId: value.port_id,
+            multi_addr: value.multi_addr,
+            keypair: Some(value.keypair),
         }
     }
 }
@@ -275,7 +288,8 @@ impl From<saved_peers::Data> for PeerRecord {
             accountId2: None,
             accountId3: None,
             accountId4: None,
-            portId: value.port_id,
+            multi_addr: value.multi_addr,
+            keypair: None,
         }
     }
 }

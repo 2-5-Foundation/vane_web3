@@ -2,6 +2,7 @@
 extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 use codec::{Decode, Encode};
+use libp2p::request_response::{InboundRequestId, OutboundRequestId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 /// The idea is similar to how future executor tasks are able to progress and have channels to send
@@ -91,6 +92,34 @@ pub struct PeerRecord {
     pub accountId2: Option<Vec<u8>>,
     pub accountId3: Option<Vec<u8>>,
     pub accountId4: Option<Vec<u8>>,
-    pub portId: Vec<u8>
+    pub multi_addr: Vec<u8>,
+    pub keypair: Option<Vec<u8>>, // encrypted
 }
 
+/// p2p config
+pub struct p2pConfig {}
+
+
+pub struct OuterRequest {
+    pub id:OutboundRequestId,
+    pub request: Request
+}
+
+#[derive(Debug,Clone,Decode,Encode)]
+pub struct Request {
+    pub sender: Vec<u8>,
+    pub receiver: Vec<u8>,
+    pub amount: u64,
+    pub network: ChainSupported,
+    pub msg: Vec<u8>,
+}
+
+#[derive(Debug,Clone,Decode,Encode)]
+pub struct Response {
+    pub sender: Vec<u8>,
+    pub receiver: Vec<u8>,
+    pub response: Vec<u8>,
+    pub sent_request_hash: Vec<u8>,
+    pub msg: Vec<u8>,
+    pub signature: Vec<u8>,
+}

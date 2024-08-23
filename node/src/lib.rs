@@ -3,9 +3,9 @@ pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
 pub mod tx_processing;
-
 use db::DbWorker;
 use p2p::P2pWorker;
+pub use primitives;
 use rpc::RpcWorker;
 use telemetry::TelemetryWorker;
 use tx_processing::TxProcessingWorker;
