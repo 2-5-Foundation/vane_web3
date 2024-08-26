@@ -2,7 +2,7 @@
 extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 use codec::{Decode, Encode};
-use libp2p::request_response::{InboundRequestId, OutboundRequestId};
+use libp2p::request_response::OutboundRequestId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 /// The idea is similar to how future executor tasks are able to progress and have channels to send
@@ -10,19 +10,28 @@ use tokio::sync::mpsc::Sender;
 #[derive(Clone)]
 pub struct TxStateMachine {
     /// Sender channel to propagate itself
-    sender_channel: Sender<Arc<TxStateMachine>>,
-    sender_address: Vec<u8>,
-    receiver_address: Vec<u8>,
-    network: Option<ChainSupported>,
+    pub sender_channel: Sender<Arc<TxStateMachine>>,
+    pub sender_address: Vec<u8>,
+    pub receiver_address: Vec<u8>,
+    // hashed sender and receiver address to bind the addresses while sending
+    pub multi_id: Vec<u8>,
+    //signature of the receiver id
+    pub signature: Option<Vec<u8>>,
+    // chain network
+    pub network: Option<ChainSupported>,
     /// State Machine main params
     // if address has been confirmed
-    addr_confirmed: bool,
+    pub addr_confirmed: bool,
     // if chain network has been confirmed
-    net_confirmed: bool,
+    pub net_confirmed: bool,
     // if address was able to be resolved automatically
-    address_resolved: Option<ChainSupported>,
+    pub address_resolved: Option<ChainSupported>,
     // amount to be sent
-    amount: u64,
+    pub amount: u64,
+    // signed call payload
+    pub signed_call_payload: Option<Vec<u8>>,
+    // call payload
+    pub call_payload: Option<Vec<u8>>,
 }
 
 /// Transaction data structure to store in the db
@@ -66,7 +75,7 @@ impl ChainSupported {
     const SOLANA_URL: &'static str = "https://api.mainnet-beta.solana.com";
 
     // Method to get the URL based on the network type
-    fn url(&self) -> &'static str {
+    pub fn url(&self) -> &'static str {
         match self {
             ChainSupported::Polkadot => Self::POLKADOT_URL,
             ChainSupported::Ethereum => Self::ETHEREUM_URL,
@@ -99,13 +108,12 @@ pub struct PeerRecord {
 /// p2p config
 pub struct p2pConfig {}
 
-
 pub struct OuterRequest {
-    pub id:OutboundRequestId,
-    pub request: Request
+    pub id: OutboundRequestId,
+    pub request: Request,
 }
 
-#[derive(Debug,Clone,Decode,Encode)]
+#[derive(Debug, Clone, Decode, Encode)]
 pub struct Request {
     pub sender: Vec<u8>,
     pub receiver: Vec<u8>,
@@ -114,7 +122,7 @@ pub struct Request {
     pub msg: Vec<u8>,
 }
 
-#[derive(Debug,Clone,Decode,Encode)]
+#[derive(Debug, Clone, Decode, Encode)]
 pub struct Response {
     pub sender: Vec<u8>,
     pub receiver: Vec<u8>,
@@ -123,3 +131,25 @@ pub struct Response {
     pub msg: Vec<u8>,
     pub signature: Vec<u8>,
 }
+
+// Tx processing section
+
+pub const POLKADOT_DOT: [u8; 32] = [
+    234, 159, 151, 149, 77, 136, 90, 255, 210, 65, 183, 86, 160, 52, 93, 187, 226, 81, 189, 199,
+    97, 83, 41, 247, 149, 89, 46, 0, 155, 194, 206, 55,
+];
+pub const POLKADOT_USDT: [u8; 32] = [
+    234, 159, 151, 149, 77, 136, 90, 255, 210, 65, 183, 86, 160, 52, 93, 187, 226, 81, 189, 199,
+    97, 83, 41, 247, 149, 89, 46, 0, 155, 194, 206, 55,
+];
+pub const ETHEREUM_ERC20: [u8; 20] = [
+    105, 31, 184, 40, 43, 197, 168, 133, 138, 155, 238, 38, 186, 119, 226, 154, 136, 115, 130, 82,
+];
+pub const SOLANA: [u8; 44] = [
+    65, 104, 117, 102, 100, 98, 65, 51, 49, 116, 77, 120, 49, 115, 100, 103, 106, 116, 113, 75,
+    105, 115, 78, 85, 78, 72, 76, 89, 115, 52, 104, 118, 115, 67, 119, 90, 89, 81, 57, 89, 109,
+    120, 84, 86,
+];
+pub const BEP20: [u8; 20] = [
+    168, 67, 211, 99, 66, 69, 233, 17, 113, 99, 2, 94, 99, 58, 184, 246, 198, 102, 225, 111,
+];
