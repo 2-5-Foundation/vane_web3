@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use core::pin::Pin;
-use std::collections::BTreeMap;
 use log::{debug, error, info, trace, warn};
+use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,19 +9,19 @@ use std::time::Duration;
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 use crate::primitives::data_structure::{p2pConfig, PeerRecord};
 use codec::Encode;
-use libp2p::futures::{
-    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, TryStreamExt,
+use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, TryStreamExt};
+use libp2p::request_response::{
+    Codec, InboundRequestId, OutboundRequestId, ProtocolSupport, ResponseChannel,
 };
-use libp2p::request_response::{Codec, InboundRequestId, OutboundRequestId, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{
     request_response::{Behaviour, Event, Message},
     swarm::NetworkBehaviour,
 };
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
+use primitives::data_structure::{ChainSupported, OuterRequest, Request, Response};
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
-use primitives::data_structure::{ChainSupported, OuterRequest, Request, Response};
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 
@@ -167,22 +167,20 @@ impl Codec for GenericCodec {
     }
 }
 
-
 /// handling connection with other peer ( recipients ) of txs
 /// and tx passing to receivers and senders
 pub struct P2pWorker {
     node_id: PeerId,
     swarm: Swarm<Behaviour<GenericCodec>>,
     url: Multiaddr,
-    // storing pending requests to be replied
-    pending_req: Arc<Mutex<BTreeMap<OutboundRequestId,Request>>>
 }
 
 impl P2pWorker {
     pub async fn new(user_peer_id: PeerRecord) -> Result<Self, anyhow::Error> {
         // the peer record keypair is already decrypted at this point
         let url = user_peer_id.multi_addr;
-        let multi_addr: Multiaddr = core::str::from_utf8(&url[..]).map_err(|_|anyhow!("failed to convert bytes to str"))?
+        let multi_addr: Multiaddr = core::str::from_utf8(&url[..])
+            .map_err(|_| anyhow!("failed to convert bytes to str"))?
             .parse()
             .map_err(|_| anyhow!("failed to parse multi addr"))?;
 
@@ -204,20 +202,24 @@ impl P2pWorker {
                 libp2p::yamux::Config::default,
             )?
             .with_behaviour(|_| behaviour)?
-            .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX)))
-
+            .with_swarm_config(|cfg| {
+                cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
+            })
             .build();
 
         Ok(Self {
             node_id: peer_id,
             swarm,
             url: multi_addr,
-            pending_req: Arc::new(Default::default()),
         })
     }
 
     // dialing the target peer_id
-    pub async fn dial_to_peer_id(&mut self,target_url: Multiaddr,target_peer_id: PeerId) -> Result<(),anyhow::Error> {
+    pub async fn dial_to_peer_id(
+        &mut self,
+        target_url: Multiaddr,
+        target_peer_id: PeerId,
+    ) -> Result<(), anyhow::Error> {
         self.swarm
             .dial(target_url)
             .map_err(|_| anyhow!("failed to dial: {}", target_peer_id))?;
@@ -226,8 +228,8 @@ impl P2pWorker {
 
     // start the connection by listening to the address and then dialing and then listen to incoming messages events
     pub async fn start_swarm(
-        &mut self
-    ) -> Result<BoxStream<Message<Vec<u8>, Result<Vec<u8>,anyhow::Error>>,>, anyhow::Error> {
+        &mut self,
+    ) -> Result<BoxStream<Message<Vec<u8>, Result<Vec<u8>, anyhow::Error>>>, anyhow::Error> {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(256);
 
         let multi_addr = &self.url;
@@ -241,9 +243,10 @@ impl P2pWorker {
                     Event::Message { message, .. } => {
                         info!(target: "p2p","message: {message:?}");
                         sender_channel
-                        .send(Ok(message)).await
-                        .map_err(|_| anyhow!("failed to send in the message event channel"))?
-                    },
+                            .send(Ok(message))
+                            .await
+                            .map_err(|_| anyhow!("failed to send in the message event channel"))?
+                    }
                     Event::OutboundFailure { error, .. } => {
                         Err(anyhow!("outbound error: {error:?}"))?
                     }
@@ -283,13 +286,23 @@ impl P2pWorker {
                 } => {
                     debug!("connection closed peer_id:{peer_id:?} endpoint:{endpoint:?} cause:{cause:?}")
                 }
-                SwarmEvent::IncomingConnectionError {error,..} => debug!("incoming connection error: {error:?}"),
-                SwarmEvent::OutgoingConnectionError {error,..} => debug!("outgoing connection error: {error:?}"),
-                SwarmEvent::ListenerClosed {reason,..} => debug!("listener closed: {reason:?}"),
-                SwarmEvent::NewListenAddr {address,..} => debug!("new listener add: {address:?}"),
-                SwarmEvent::ExpiredListenAddr {address,..} => debug!("expired listener add: {address:?}"),
-                SwarmEvent::NewExternalAddrCandidate {address,..} => debug!("new external addr candidate: {address:?}"),
-                _ => debug!("unhandled event")
+                SwarmEvent::IncomingConnectionError { error, .. } => {
+                    debug!("incoming connection error: {error:?}")
+                }
+                SwarmEvent::OutgoingConnectionError { error, .. } => {
+                    debug!("outgoing connection error: {error:?}")
+                }
+                SwarmEvent::ListenerClosed { reason, .. } => debug!("listener closed: {reason:?}"),
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    debug!("new listener add: {address:?}")
+                }
+                SwarmEvent::ExpiredListenAddr { address, .. } => {
+                    debug!("expired listener add: {address:?}")
+                }
+                SwarmEvent::NewExternalAddrCandidate { address, .. } => {
+                    debug!("new external addr candidate: {address:?}")
+                }
+                _ => debug!("unhandled event"),
             }
         }
 
@@ -298,32 +311,30 @@ impl P2pWorker {
         )))
     }
 
-    pub async fn send_request(&mut self, request: Request, target_peer_id:PeerId) -> Result<(), anyhow::Error> {
+    pub async fn send_request(
+        &mut self,
+        request: Request,
+        target_peer_id: PeerId,
+    ) -> Result<(), anyhow::Error> {
         let encoded_req = request.encode();
-        let outbound_req_id = self.swarm.behaviour_mut().send_request(&target_peer_id,encoded_req);
+        let outbound_req_id = self
+            .swarm
+            .behaviour_mut()
+            .send_request(&target_peer_id, encoded_req);
         info!(target: "p2p","sending request to :{target_peer_id:?} outbound_id: {outbound_req_id:?}");
-        //record the outgoing request
-        let mut pending_req =self.pending_req.lock().await;
-        pending_req.insert(outbound_req_id,request);
         Ok(())
     }
 
     pub async fn send_response(
         &mut self,
-        response_channel: ResponseChannel<Result<Vec<u8>,anyhow::Error>>,
-        outer_request: OuterRequest,
-        response: Response
+        response_channel: ResponseChannel<Result<Vec<u8>, anyhow::Error>>,
+        response: Response,
     ) -> Result<(), anyhow::Error> {
-        let encoded_resp =response.encode();
-        self.swarm.behaviour_mut().send_response(response_channel,Ok(encoded_resp)).map_err(|_|anyhow!("failed sending response"))?;
-        // delete the responded request
-        let mut pending_req =self.pending_req.lock().await;
-        pending_req.remove(&outer_request.id);
+        let encoded_resp = response.encode();
+        self.swarm
+            .behaviour_mut()
+            .send_response(response_channel, Ok(encoded_resp))
+            .map_err(|_| anyhow!("failed sending response"))?;
         Ok(())
-    }
-
-    pub async fn get_pending_req(&self) -> Option<Vec<OutboundRequestId>>{
-        let pending_req =self.pending_req.lock().await;
-        Some(pending_req.keys().into_iter().map(|k|*k).collect())
     }
 }

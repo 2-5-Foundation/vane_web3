@@ -18,3 +18,9 @@ codec = { workspace = true}
 tokio = { workspace = true}
 #libp2p-request-response = { workspace = true}
 tokio-stream = "0.1.15"
+sp-core = { workspace = true }
+subxt = { workspace = true, features = ["unstable-reconnecting-rpc-client"] }
+ethers = { workspace = true}
+sp-runtime = { workspace = true}
+reconnecting-jsonrpsee-ws-client = "0.4.3"
+#solana-client-wasm = { workspace = true}
