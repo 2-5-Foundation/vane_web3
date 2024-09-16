@@ -1,5 +1,5 @@
 use db::DbWorker;
-use libp2p::Multiaddr;
+use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
 use node::primitives::data_structure::{ChainSupported, OuterRequest, PeerRecord, Request};
 use subxt_signer;
@@ -11,20 +11,24 @@ use libp2p::request_response::Message;
 use log::{error, info};
 use simplelog::*;
 use std::fs::File;
+use std::str::FromStr;
 use std::sync::Arc;
+use libp2p::identity::PublicKey;
+use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use tokio::task::block_in_place;
+use node::rpc::RpcWorker;
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
         TermLogger::new(
-            LevelFilter::Debug,
+            LevelFilter::Info,
             Config::default(),
             TerminalMode::Mixed,
             ColorChoice::Auto,
         ),
         WriteLogger::new(
-            LevelFilter::Debug,
+            LevelFilter::Info,
             Config::default(),
             File::create("vane.log").unwrap(),
         ),
@@ -94,9 +98,6 @@ async fn p2p_test() -> Result<(), anyhow::Error> {
         });
     });
 
-    info!("Helloo am here");
-    info!("Heyyyooo");
-
     worker1
         .lock()
         .await
@@ -142,6 +143,11 @@ async fn p2p_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn rpc_test() -> Result<(), anyhow::Error> {
+    log_setup()?;
+    // test airtable data
+    let rpc_worker = RpcWorker::new().await?;
+    let data = rpc_worker.airtable_client.lock().await.list_all_peers().await?;
+
     Ok(())
 }
 

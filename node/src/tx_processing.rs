@@ -9,8 +9,8 @@ extern crate alloc;
 use alloc::sync::Arc;
 use anyhow::anyhow;
 use codec;
-use ethers::providers::{Provider, Ws};
-use primitives::data_structure::{ChainSupported, TxStateMachine};
+use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
+use primitives::data_structure::{ChainSupported, Token, TxStateMachine};
 use sp_core::{
     ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
     ed25519::{Public as EdPublic, Signature as EdSignature},
@@ -47,7 +47,7 @@ pub struct TxProcessingWorker {
     /// substrate client
     sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
-    evm_client: Provider<Ws>,
+    evm_client: ReqwestProvider,
     // solana_client: RpcClient
 }
 
@@ -59,7 +59,9 @@ impl TxProcessingWorker {
         let bnb_url = bnb.url().to_string();
 
         let sub_client =  OnlineClient::from_url(polkadot_url).await.map_err(|_|anyhow!("failed to connect polkadot url"))?;
-        let eth_client = Provider::connect(eth_url).await.map_err(|_|anyhow!("failed to connect eth url"))?;
+        let eth_rpc_url = eth_url.parse()?;
+        // Create a provider with the HTTP transport using the `reqwest` crate.
+        let provider = ProviderBuilder::new().on_http(eth_rpc_url);
 
         Ok(Self {
             tx_state_machine_receiver: recv_channel,
@@ -67,18 +69,18 @@ impl TxProcessingWorker {
             sender_tx_pending: Arc::new(Default::default()),
             receiver_tx_pending: Arc::new(Default::default()),
             sub_client,
-            evm_client: eth_client
+            evm_client: provider
         })
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
     async fn validate_receiver_address(&mut self, tx: TxStateMachine) -> Result<(), anyhow::Error> {
-        let network = tx.network.ok_or(anyhow!("network not set"))?;
-        let signature = tx.signature.ok_or(anyhow!("receiver didnt signed"))?;
-        let msg = tx.receiver_address.clone();
+        let network = tx.data.network;
+        let signature = tx.data.signature.ok_or(anyhow!("receiver didnt signed"))?;
+        let msg = tx.data.receiver_address.clone();
 
         match network {
             ChainSupported::Polkadot => {
-                let sr_receiver_public = SrPublic::from_slice(&tx.receiver_address[..])
+                let sr_receiver_public = SrPublic::from_slice(&tx.data.receiver_address[..])
                     .map_err(|_| anyhow!("failed to convert recv addr bytes"))?;
                 let sig = SrSignature::from_slice(&signature[..])
                     .map_err(|_| anyhow!("failed to convert sr25519signature"))?;
@@ -91,7 +93,7 @@ impl TxProcessingWorker {
                 }
             }
             ChainSupported::Ethereum | ChainSupported::Bnb => {
-                let ec_receiver_public = EcdsaPublic::from_slice(&tx.receiver_address[..])
+                let ec_receiver_public = EcdsaPublic::from_slice(&tx.data.receiver_address[..])
                     .map_err(|_| anyhow!("failed to convert recv addr bytes"))?;
                 let hashed_msg = keccak_256(&msg[..]);
                 let sig = EcdsaSignature::from_slice(&signature[..])
@@ -123,10 +125,10 @@ impl TxProcessingWorker {
 
     /// create the tx to be signed
     pub async fn create_tx(&mut self, tx: TxStateMachine) -> Result<Vec<u8>, anyhow::Error> {
-        let network = tx.network.ok_or(anyhow!("network not set"))?;
+        let network = tx.data.network;
         let to_signed_bytes = match network {
             ChainSupported::Polkadot => {
-                let transfer_value = subxt::dynamic::Value::primitive(U128(tx.amount as u128));
+                let transfer_value = subxt::dynamic::Value::primitive(U128(tx.data.amount as u128));
                 let extrinsic = dynamic(
                     "Balances",
                     "transferKeepAlive",
@@ -156,24 +158,24 @@ impl TxProcessingWorker {
 
     /// submit the externally signed tx
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<H256, anyhow::Error> {
-        let network = tx.network.ok_or(anyhow!("network not set"))?;
+        let network = tx.data.network;
 
         let block_hash = match network {
             ChainSupported::Polkadot => {
                 let signature_payload = MultiSignature::Sr25519(<[u8; 64]>::from(
                     SrSignature::from_slice(
-                        &tx.signed_call_payload
+                        &tx.data.signed_call_payload
                             .ok_or(anyhow!("call payload not signed"))?,
                     )
                     .map_err(|_| anyhow!("failed to convert sr signature"))?,
                 ));
                 let sender = MultiAddress::Address32(
-                    SrPublic::from_slice(&tx.sender_address)
+                    SrPublic::from_slice(&tx.data.sender_address)
                         .map_err(|_| anyhow!("failed to convert acc id"))?
                         .0,
                 );
 
-                let transfer_value = subxt::dynamic::Value::primitive(U128(tx.amount as u128));
+                let transfer_value = subxt::dynamic::Value::primitive(U128(tx.data.amount as u128));
                 let extrinsic = dynamic(
                     "Balances",
                     "transferKeepAlive",
@@ -208,4 +210,5 @@ impl TxProcessingWorker {
         };
         Ok(block_hash)
     }
+
 }

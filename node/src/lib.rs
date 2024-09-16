@@ -2,6 +2,8 @@ pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
 pub mod tx_processing;
+mod cryptography;
+
 use db::DbWorker;
 use p2p::P2pWorker;
 pub use primitives;
@@ -19,4 +21,11 @@ pub struct MainServiceWorker {
     telemetry_worker: TelemetryWorker,
 }
 
-impl MainServiceWorker {}
+impl MainServiceWorker {
+    pub async fn new() -> Result<Self,anyhow::Error>{
+        todo!()
+    }
+    pub async fn run(&self) -> Result<(),anyhow::Error>{
+        Ok(())
+    }
+}
