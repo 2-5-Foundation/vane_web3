@@ -6,21 +6,28 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-db = { workspace = true }
-log = { workspace = true}
-primitives = { workspace = true}
-libp2p = { workspace = true }
-sc-network = "0.44.0"
-async-trait = "0.1.81"
-unsigned-varint = {version = "0.8.0", features = ["asynchronous-codec", "codec", "tokio-util", "futures-io", "futures"] }
-anyhow = { workspace = true}
-codec = { workspace = true}
-tokio = { workspace = true}
+db                                          = { workspace = true}
+log                                         = { workspace = true}
+primitives                                  = { workspace = true}
+libp2p                                      = { workspace = true}
+sc-network                                  = "0.44.0"
+async-trait                                 = "0.1.81"
+unsigned-varint                             = { workspace = true}
+anyhow                                      = { workspace = true}
+codec                                       = { workspace = true}
+tokio                                       = { workspace = true}
 #libp2p-request-response = { workspace = true}
-tokio-stream = "0.1.15"
-sp-core = { workspace = true }
-subxt = { workspace = true, features = ["unstable-reconnecting-rpc-client"] }
-ethers = { workspace = true}
-sp-runtime = { workspace = true}
-reconnecting-jsonrpsee-ws-client = "0.4.3"
-#solana-client-wasm = { workspace = true}
+tokio-stream                                = "0.1.15"
+sp-core                                     = { workspace = true}
+subxt                                       = { workspace = true}
+alloy                                       = { workspace = true}
+sp-runtime                                  = { workspace = true}
+reconnecting-jsonrpsee-ws-client            = { workspace = true}
+jsonrpsee                                   = { workspace = true}
+reqwest                                     = { workspace = true, features = ["json"] }
+airtable-api                                = { workspace = true}
+tinyrand                                    = "0.5.0"
+serde_json                                  = { workspace = true}
+base58                                      = { workspace = true}
+curve25519-dalek                            = { workspace = true}
+#solana-client-wasm                          = { workspace = true}

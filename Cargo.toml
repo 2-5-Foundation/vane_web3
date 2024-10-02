@@ -5,35 +5,45 @@ resolver = "2"
 [workspace.dependencies]
 
 # ========================================= Db ==========================================
-hex = { version = "0.4.3", features = ["alloc"] }
-aead = {version = "0.5.2", features = ["alloc","bytes","arrayvec"]}
-aes-gcm = {version = "0.10.3", features = ["aes","alloc","rand_core","arrayvec"]}
+hex                                     = { version = "0.4.3", features = ["alloc"] }
+aead                                    = { version = "0.5.2", features = ["alloc","bytes","arrayvec"]}
+aes-gcm                                 = { version = "0.10.3", features = ["aes","alloc","rand_core","arrayvec"]}
 # ========================================= Node ========================================
-libp2p = { version = "0.53.2", features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
-libp2p-request-response = "0.27.0"
-ethers = {version = "2.0.14",features = ["ws"]}
-sp-runtime = { version = "39.0.0",default-features = false}
-#solana-client-wasm = "1.18.0"
+libp2p                                  = { version = "0.53.2",features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
+alloy                                   = { version = "0.3", features = ["full"] }
+libp2p-request-response                 = "0.27.0"
+sp-runtime                              = { version = "39.0.0",default-features = false}
+jsonrpsee                               = { version = "0.17", features = ["server", "client-core", "http-client", "ws-client", "macros"] }
+notion                                  = "0.6.0"
+reconnecting-jsonrpsee-ws-client        = "0.4.3"
+unsigned-varint                         = { version = "0.8.0", features = ["asynchronous-codec", "codec", "tokio-util", "futures-io", "futures"] }
+reqwest                                 = "0.12.7"
+airtable-api                            = "0.1.36"
+serde_json                              = { version = "1.0.127", features = ["alloc","raw_value"]}
+bs58                                    = {version = "0.5.1",features = ["alloc"]}
+base58                                  = "0.2.0"
+curve25519-dalek                        = "4.1.3"
+#solana-client-wasm                      = "1.18.0"
 #zeroize = "=1.3.0"
 # ========================================= Primitives ==================================
 
 # ========================================= IntegrationTests ============================
 
 # ========================================= Shared ======================================
-tokio = { version = "1.37.0" }
-anyhow = "1.0.86"
-subxt = { version = "0.37.0", default-features = false,features = ["native","jsonrpsee"] }
-log = { version = "0.4.21", default-features = false }
-codec = { version = "3.1.3",features = ["derive"], package = "parity-scale-codec", default-features = false }
-serde = { version = "1.0.204", features = ["alloc","derive"] }
-simple_logger = "5.0.0"
-sp-core = { version = "34.0.0", features = ["blake2","full_crypto"]}
+tokio                                   = { version = "1.37.0" }
+anyhow                                  = "1.0.86"
+subxt                                   = { version = "0.30.1", default-features = false, features = [ "web"]}
+log                                     = { version = "0.4.21", default-features = false }
+codec                                   = { version = "3.1.3",features = ["derive"], package = "parity-scale-codec", default-features = false }
+serde                                   = { version = "1.0.204", features = ["alloc","derive"] }
+simple_logger                           = "5.0.0"
+sp-core                                 = { version = "34.0.0", features = ["blake2","full_crypto"]}
 # ========================================= Local Dependencies ==========================
 
-db = { path = "db" }
-integration-test = { path = "integration-test" }
-node = { path = "node" }
-primitives = { path = "primitives" }
+db                                      = { path = "db" }
+integration-test                        = { path = "integration-test" }
+node                                    = { path = "node" }
+primitives                              = { path = "primitives" }
 
 # ========================================== Patch =======================================
 #[replace]
