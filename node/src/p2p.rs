@@ -9,6 +9,7 @@ use std::time::Duration;
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 use crate::primitives::data_structure::{p2pConfig, PeerRecord};
 use codec::Encode;
+use db::DbWorker;
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, TryStreamExt};
 use libp2p::request_response::{
     Codec, InboundRequestId, OutboundRequestId, ProtocolSupport, ResponseChannel,
@@ -176,8 +177,8 @@ pub struct P2pWorker {
 }
 
 impl P2pWorker {
+    /// generate new ed25519 keypair for node identity and register the peer record in  the db
     pub async fn new(user_peer_id: PeerRecord) -> Result<Self, anyhow::Error> {
-        // the peer record keypair is already decrypted at this point
         let url = user_peer_id.multi_addr;
         let multi_addr: Multiaddr = core::str::from_utf8(&url[..])
             .map_err(|_| anyhow!("failed to convert bytes to str"))?

@@ -23,6 +23,7 @@ use log::{debug, error, trace, warn};
 use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, UserAccount};
 use prisma_client_rust::{query_core::RawQuery, BatchItem, Direction, PrismaValue, Raw};
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 
 /// Handling connection and interaction with the database
 pub struct DbWorker {
@@ -196,7 +197,7 @@ impl DbWorker {
             .user_peer()
             .create(
                 peer_record.peer_address,
-                peer_record.accountId1,
+                peer_record.accountId1.unwrap_or(vec![]),
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
@@ -206,6 +207,51 @@ impl DbWorker {
             )
             .exec()
             .await?;
+        Ok(())
+    }
+
+    pub async fn update_user_peerId_accounts(
+        &self,
+        peer_record: PeerRecord,
+    ) -> Result<(), anyhow::Error> {
+        // Create a vector to collect the update futures
+        let mut batch_updates = Vec::new();
+
+        // Check and push updates for each account ID
+        if let Some(account_id) = peer_record.accountId1 {
+            let update_future = self.db.user_peer().update(
+                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                vec![user_peer::account_id_1::set(account_id)],
+            );
+            batch_updates.push(update_future);
+        }
+
+        if let Some(account_id) = peer_record.accountId2 {
+            let update_future = self.db.user_peer().update(
+                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                vec![user_peer::account_id_2::set(account_id)],
+            );
+            batch_updates.push(update_future);
+        }
+
+        if let Some(account_id) = peer_record.accountId3 {
+            let update_future = self.db.user_peer().update(
+                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                vec![user_peer::account_id_3::set(account_id)],
+            );
+            batch_updates.push(update_future);
+        }
+
+        if let Some(account_id) = peer_record.accountId4 {
+            let update_future = self.db.user_peer().update(
+                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                vec![user_peer::account_id_4::set(account_id)],
+            );
+            batch_updates.push(update_future);
+        }
+
+        // Execute all updates in a batch
+        self.db._batch(batch_updates).await?;
         Ok(())
     }
 
@@ -235,7 +281,7 @@ impl DbWorker {
             .saved_peers()
             .create(
                 peer_record.peer_address,
-                peer_record.accountId1,
+                peer_record.accountId1.unwrap_or(vec![]),
                 peer_record.accountId2.unwrap_or(vec![]),
                 peer_record.accountId3.unwrap_or(vec![]),
                 peer_record.accountId4.unwrap_or(vec![]),
@@ -270,7 +316,7 @@ impl From<user_peer::Data> for PeerRecord {
     fn from(value: user_peer::Data) -> Self {
         Self {
             peer_address: value.peer_id,
-            accountId1: value.account_id_1,
+            accountId1: Some(value.account_id_1),
             accountId2: None,
             accountId3: None,
             accountId4: None,
@@ -284,7 +330,7 @@ impl From<saved_peers::Data> for PeerRecord {
     fn from(value: saved_peers::Data) -> Self {
         Self {
             peer_address: value.node_id,
-            accountId1: value.account_id_1,
+            accountId1: Some(value.account_id_1),
             accountId2: None,
             accountId3: None,
             accountId4: None,

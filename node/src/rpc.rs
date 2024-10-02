@@ -5,38 +5,44 @@
 // NGIX for ssl
 
 extern crate alloc;
+use crate::cryptography::verify_public_bytes;
 use alloc::sync::Arc;
 use anyhow::anyhow;
-use jsonrpsee::{core::{SubscriptionResult, RpcResult, async_trait}, PendingSubscriptionSink, proc_macros::rpc, SubscriptionMessage};
-use jsonrpsee::core::__reexports::serde_json;
-use jsonrpsee::core::Serialize;
-use log::{debug, info, warn};
-use tokio::sync::Mutex;
 use db::DbWorker;
-use primitives::data_structure::{ChainSupported, Discovery, PeerRecord, RpcTxStateMachine, UserAccount, AirtableResponse, Record, Fields, Token, TxStateMachine, TxStatus};
-use tinyrand::{Rand, Xorshift};
+use jsonrpsee::core::Serialize;
+use jsonrpsee::core::__reexports::serde_json;
+use jsonrpsee::{
+    core::{async_trait, RpcResult, SubscriptionResult},
+    proc_macros::rpc,
+    PendingSubscriptionSink, SubscriptionMessage,
+};
+use log::{debug, info, warn};
+use primitives::data_structure::{
+    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record, RpcTxStateMachine,
+    Token, TxStateMachine, TxStatus, UserAccount,
+};
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
-use subxt::ext::futures::TryFutureExt;
-use crate::cryptography::verify_public_bytes;
+use tinyrand::{Rand, Xorshift};
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::Mutex;
 
-
-const AIRTABLE_SECRET:&'static str = "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";
+const AIRTABLE_SECRET: &'static str =
+    "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";
 const AIRTABLE_CLIENT_ID: &'static str = "82c3deff-d786-465c-b456-b24c92c2c42f";
-const AIRTABLE_TOKEN: &'static str = "patk0xLAgM5lDfRnF.33307d75c85fdf2118d71025aa11eee60a87f9dc51ad876f56013054c1492540";
+const AIRTABLE_TOKEN: &'static str =
+    "patk0xLAgM5lDfRnF.33307d75c85fdf2118d71025aa11eee60a87f9dc51ad876f56013054c1492540";
 const BASE_ID: &'static str = "appP1AoGmxoh2EmDI";
 const TABLE_ID: &'static str = "tblWKDAWkSieIHsO8";
 const AIRTABLE_URL: &'static str = "https://api.airtable.com/v0/";
 
-
 // minimal airtable client
-pub struct Airtable{
-    client: reqwest::Client
+pub struct Airtable {
+    client: reqwest::Client,
 }
 
 impl Airtable {
-    pub async fn new() -> Result<Self,anyhow::Error>{
+    pub async fn new() -> Result<Self, anyhow::Error> {
         let mut headers = reqwest::header::HeaderMap::new();
         let bt = format!("Bearer {}", AIRTABLE_TOKEN);
         let bearer = reqwest::header::HeaderValue::from_str(&bt)?;
@@ -49,21 +55,22 @@ impl Airtable {
         );
 
         let client_builder = ClientBuilder::new();
-        let client = client_builder.default_headers(headers).build().map_err(|_|anyhow!("failed to build reqwest client"))?;
+        let client = client_builder
+            .default_headers(headers)
+            .build()
+            .map_err(|_| anyhow!("failed to build reqwest client"))?;
 
-        Ok(Self{
-            client,
-        })
+        Ok(Self { client })
     }
 
-    pub async fn list_all_peers(&self) -> Result<Vec<Discovery>,anyhow::Error>{
+    pub async fn list_all_peers(&self) -> Result<Vec<Discovery>, anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
 
-        let list_record_url = url.join(&(BASE_ID.to_string()+ "/" + TABLE_ID))?;
+        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
         let req = self.client.get(list_record_url).build()?;
         let resp = self.client.execute(req).await?;
 
-        if resp.status().is_server_error() || resp.status().is_client_error(){
+        if resp.status().is_server_error() || resp.status().is_client_error() {
             Err(anyhow!("server or client error"))?
         }
         let body = resp.bytes().await?;
@@ -71,10 +78,10 @@ impl Airtable {
         //
         let record: AirtableResponse = serde_json::from_str(json_value.get())?;
 
-        let mut peers:Vec<Discovery> = vec![];
+        let mut peers: Vec<Discovery> = vec![];
 
-        record.records.iter().cloned().for_each(|record|{
-            let mut accounts:Vec<String> = vec![];
+        record.records.iter().cloned().for_each(|record| {
+            let mut accounts: Vec<String> = vec![];
 
             if let Some(account_id1) = record.fields.account_id1.clone() {
                 accounts.push(account_id1);
@@ -91,101 +98,130 @@ impl Airtable {
 
             // build the discovery object
             let disc = Discovery {
-                peer_id: record.fields.peer_id.unwrap_or("0x0000000000000000".to_string()),
-                multi_addr: record.fields.multi_addr.unwrap_or("ip4/1.1.1/tcp/1000/p2p/0x000000".to_string()),
+                peer_id: record
+                    .fields
+                    .peer_id
+                    .unwrap_or("0x0000000000000000".to_string()),
+                multi_addr: record
+                    .fields
+                    .multi_addr
+                    .unwrap_or("ip4/1.1.1/tcp/1000/p2p/0x000000".to_string()),
                 account_ids: accounts,
             };
             peers.push(disc)
         });
 
         Ok(peers)
-
     }
 
-    pub async fn create_peer(&self,record: Fields) -> Result<(),anyhow::Error>{
+    pub async fn create_peer(&self, record: Fields) -> Result<(), anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
-        let list_record_url = url.join(&(BASE_ID.to_string()+ "/" + TABLE_ID))?;
+        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
 
-        let resp = self.client.patch(list_record_url).json::<Fields>(&record.into()).send().await?;
-        if resp.status().is_server_error() || resp.status().is_client_error(){
+        let resp = self
+            .client
+            .patch(list_record_url)
+            .json::<Fields>(&record.into())
+            .send()
+            .await?;
+        if resp.status().is_server_error() || resp.status().is_client_error() {
             Err(anyhow!("server or client error"))?
         }
-        if resp.status().is_success(){
+        if resp.status().is_success() {
             info!("succesfully created peer in airtable");
         }
-       Ok(())
+        Ok(())
     }
 
-    pub async fn update_peer() -> Result<(),anyhow::Error>{
+    pub async fn update_peer() -> Result<(), anyhow::Error> {
         Ok(())
     }
 }
 
-
-/// Traits
+/// Trait
 #[rpc(server, client)]
-pub trait Transaction {
-
+pub trait TransactionRpc {
     /// register user profile, generate node peer id and push the profile for vane discovery server
     /// params: `name`,`vec![(address, networkId)]`
     #[method(name = "register")]
-    async fn register_vane_web3(&self, name: Vec<u8>, account_id:Vec<u8>,network:ChainSupported) -> RpcResult<()>;
+    async fn register_vane_web3(
+        &self,
+        name: Vec<u8>,
+        account_id: Vec<u8>,
+        network: ChainSupported,
+    ) -> RpcResult<()>;
 
     /// add crypto address account
     /// params: `vec![(address, networkId)]`
     #[method(name = "addAccount")]
-    async fn add_account(&self,name: Vec<u8>,accounts:Vec<(Vec<u8>,Vec<u8>)>) -> RpcResult<()>;
+    async fn add_account(&self, name: Vec<u8>, accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()>;
 
     /// initiate tx to be verified recv address and network choice
     /// params: `sender address`,`receiver_address`, `amount`, `Optional networkId`
-    #[method(name = "initiateTransaction")]
-    async fn initiate_transaction(&self,sender:String,receiver:String,amount:u64, token:Token, network:ChainSupported) -> RpcResult<()>;
+    #[method(name = "sendTx")]
+    async fn initiate_transaction(
+        &self,
+        sender: String,
+        receiver: String,
+        amount: u128,
+        token: Token,
+        network: ChainSupported,
+    ) -> RpcResult<()>;
 
     /// confirm sender signifying agreeing all tx state after verification and this will trigger actual submission
     #[method(name = "senderConfirm")]
-    async fn sender_confirm(&self,tx: RpcTxStateMachine) -> RpcResult<()>;
+    async fn sender_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()>;
 
     /// watch tx update stream
-    #[subscription(name = "watchTransaction", unsubscribe = "unwatchTransaction",item = RpcTxStateMachine)]
+    #[subscription(name ="subscribeTxUpdates",item = RpcTxStateMachine )]
     async fn watch_tx_update(&self) -> SubscriptionResult;
 
     /// receiver confirmation on address and ownership of account ( network ) signifying correct token to the network choice
-    #[method(name = "receiverConfirm")]
+    #[method(name = "recvConfirm")]
     async fn receiver_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()>;
 }
 
 /// handling tx submission & tx confirmation & tx simulation interactions
 /// a first layer a user interact with and submits the tx to processing layer
-pub struct RpcWorker {
-    db_worker: Arc<Mutex<DbWorker>>,
+pub struct TransactionRpcWorker {
+    pub db_worker: Arc<Mutex<DbWorker>>,
     /// central server to get peer data
     pub airtable_client: Arc<Mutex<Airtable>>,
     /// peer url for p2p protocol
-    url: String,
+    pub url: String,
     /// receiving end of tx , updating state of tx to end user
-    receiver_channel: Mutex<Receiver<Arc<Mutex<RpcTxStateMachine>>>>,
-    /// sender channel to send self sending tx state machine
-    sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>
+    pub receiver_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
+    /// sender channel to send self sending tx-state-machine
+    pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
 }
 
-impl RpcWorker {
-    pub async fn new(recv_channel: Receiver<Arc<Mutex<RpcTxStateMachine>>>, sender_channel: Sender<Arc<Mutex<TxStateMachine>>>) -> Result<Self,anyhow::Error> {
+impl TransactionRpcWorker {
+    pub async fn new(
+        recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
+        sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
+    ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
         let port = Xorshift::default().next_lim_u16(u16::MAX - 100);
         let airtable_client = Airtable::new().await?;
         let db_worker = DbWorker::initialize_db_client("./../db/dev.db").await?;
         let url = format!("ip4/127.0.0.1:{}", port);
-        Ok(Self{
+        Ok(Self {
             db_worker: Arc::new(Mutex::new(db_worker)),
             airtable_client: Arc::new(Mutex::new(airtable_client)),
             url,
-            receiver_channel: Mutex::new(recv_channel),
-            sender_channel: Mutex::new(sender_channel)
+            receiver_channel: recv_channel,
+            sender_channel: Mutex::new(sender_channel),
         })
     }
 
     /// first dry tx, returns the projected fees
-    pub async fn dry_run_tx(network: ChainSupported, sender: String, recv: String, token: Token, amount:u64) -> Result<u64,anyhow::Error>{
+    pub async fn dry_run_tx(
+        network: ChainSupported,
+        sender: String,
+        recv: String,
+        token: Token,
+        amount: u64,
+    ) -> Result<u64, anyhow::Error> {
         let fees = match network {
             ChainSupported::Polkadot => {
                 todo!()
@@ -205,39 +241,74 @@ impl RpcWorker {
 }
 
 #[async_trait]
-impl TransactionServer for RpcWorker {
-    async fn register_vane_web3(&self, name: Vec<u8>, account_id:Vec<u8>,network:ChainSupported) -> RpcResult<()> {
-        let user_account = UserAccount{
-            user_name:name,
+impl TransactionRpcServer for TransactionRpcWorker {
+    async fn register_vane_web3(
+        &self,
+        name: Vec<u8>,
+        account_id: Vec<u8>,
+        network: ChainSupported,
+    ) -> RpcResult<()> {
+        let user_account = UserAccount {
+            user_name: name,
             account_id: account_id.clone(),
             network,
         };
-        self.db_worker.lock().await.set_user_account(user_account).await?;
-        // register peer id to the server and local db
-        let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
-        let peer_account = PeerRecord {
-            peer_address: self_peer_id.public().to_peer_id().to_base58().as_bytes().to_vec(),
-            accountId1: account_id,
-            accountId2: None,
-            accountId3: None,
-            accountId4: None,
-            multi_addr: self.url.to_string().as_bytes().to_vec(),
-            keypair: Some(self_peer_id.to_protobuf_encoding().map_err(|_|anyhow!("failed to encode keypair"))?),
-        };
-        let field:Fields = peer_account.clone().into();
+        self.db_worker
+            .lock()
+            .await
+            .set_user_account(user_account)
+            .await?;
 
-        self.airtable_client.lock().await.create_peer(field).await?;
-        self.db_worker.lock().await.record_user_peerId(peer_account).await?;
+        // NOTE: the peer-record is already registered, the following is only updating account details of the record
+        // update: account address related to peer id
+
+        // let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
+        // let peer_account = PeerRecord {
+        //     peer_address: self_peer_id
+        //         .public()
+        //         .to_peer_id()
+        //         .to_base58()
+        //         .as_bytes()
+        //         .to_vec(),
+        //     accountId1: account_id,
+        //     accountId2: None,
+        //     accountId3: None,
+        //     accountId4: None,
+        //     multi_addr: self.url.to_string().as_bytes().to_vec(),
+        //     keypair: Some(
+        //         self_peer_id
+        //             .to_protobuf_encoding()
+        //             .map_err(|_| anyhow!("failed to encode keypair"))?,
+        //     ),
+        // };
+        // let field: Fields = peer_account.clone().into();
+        //
+        // self.airtable_client.lock().await.create_peer(field).await?;
+        // self.db_worker
+        //     .lock()
+        //     .await
+        //     .record_user_peerId(peer_account)
+        //     .await?;
 
         Ok(())
     }
 
-    async fn add_account(&self,name: Vec<u8>, accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()> {
+    async fn add_account(&self, name: Vec<u8>, accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()> {
         todo!()
     }
 
-    async fn initiate_transaction(&self, sender: String, receiver: String, amount: u64, token:Token, network: ChainSupported ) -> RpcResult<()> {
-        if let (Ok(net_sender),Ok(net_recv)) = (verify_public_bytes(sender.as_str(),token, network),verify_public_bytes(receiver.as_str(),token,network)){
+    async fn initiate_transaction(
+        &self,
+        sender: String,
+        receiver: String,
+        amount: u128,
+        token: Token,
+        network: ChainSupported,
+    ) -> RpcResult<()> {
+        if let (Ok(net_sender), Ok(net_recv)) = (
+            verify_public_bytes(sender.as_str(), token, network),
+            verify_public_bytes(receiver.as_str(), token, network),
+        ) {
             if net_sender != net_recv {
                 Err(anyhow!("sender and receiver should be same network"))?
             }
@@ -267,14 +338,37 @@ impl TransactionServer for RpcWorker {
 
             let tx_state_machine = TxStateMachine {
                 sender_channel: Mutex::from(sender_channel.clone()),
-                data:new_xt,
+                data: new_xt,
             };
             let sender = sender_channel.clone();
-            sender.send(Arc::from(Mutex::new(tx_state_machine))).await.map_err(|_|anyhow!("failed to send recv confirmation tx state to sender channel"))?;
-
-        }else{
-            Err(anyhow!("sender and receiver should be correct accounts for the specified token"))?
+            sender
+                .send(Arc::from(Mutex::new(tx_state_machine)))
+                .await
+                .map_err(|_| {
+                    anyhow!("failed to send recv confirmation tx state to sender channel")
+                })?;
+        } else {
+            Err(anyhow!(
+                "sender and receiver should be correct accounts for the specified token"
+            ))?
         }
+        Ok(())
+    }
+
+    async fn sender_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()> {
+        let sender_channel = self.sender_channel.lock().await;
+
+        let tx_state_machine = TxStateMachine {
+            sender_channel: Mutex::from(sender_channel.clone()),
+            data: tx,
+        };
+        let sender = sender_channel.clone();
+        sender
+            .send(Arc::from(Mutex::new(tx_state_machine)))
+            .await
+            .map_err(|_| {
+                anyhow!("failed to send sender confirmation tx state to sender-channel")
+            })?;
         Ok(())
     }
 
@@ -283,36 +377,34 @@ impl TransactionServer for RpcWorker {
 
         let tx_state_machine = TxStateMachine {
             sender_channel: Mutex::from(sender_channel.clone()),
-            data:tx,
+            data: tx,
         };
         let sender = sender_channel.clone();
-        sender.send(Arc::from(Mutex::new(tx_state_machine))).await.map_err(|_|anyhow!("failed to send recv confirmation tx state to sender channel"))?;
+        sender
+            .send(Arc::from(Mutex::new(tx_state_machine)))
+            .await
+            .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))?;
         Ok(())
     }
 
-    async fn sender_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()>{
-        let sender_channel = self.sender_channel.lock().await;
-
-        let tx_state_machine = TxStateMachine {
-            sender_channel: Mutex::from(sender_channel.clone()),
-            data:tx,
-        };
-        let sender = sender_channel.clone();
-        sender.send(Arc::from(Mutex::new(tx_state_machine))).await.map_err(|_|anyhow!("failed to send sender confirmation tx state to sender-channel"))?;
-        Ok(())
-    }
-
-    async fn watch_tx_update(&self, subscription_sink: PendingSubscriptionSink) -> SubscriptionResult {
-        let sink = subscription_sink.accept().await.map_err(|_|anyhow!("failed to accept rpc ws channel"))?;
-        while let Some(tx_update) = self.receiver_channel.lock().await.recv().await{
+    async fn watch_tx_update(
+        &self,
+        subscription_sink: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
+        let sink = subscription_sink
+            .accept()
+            .await
+            .map_err(|_| anyhow!("failed to accept rpc ws channel"))?;
+        while let Some(tx_update) = self.receiver_channel.lock().await.recv().await {
             let tx_guard = tx_update.lock().await;
-            let tx: RpcTxStateMachine = (*tx_guard).clone();
+            let tx: RpcTxStateMachine = tx_guard.data.clone();
 
-            let subscription_msg = SubscriptionMessage::from_json(&tx).map_err(|_|anyhow!("failed to convert tx update to json"))?;
-            sink.send(subscription_msg).map_err(|_|anyhow!("failed to send msg to rpc ws channel")).await?;
+            let subscription_msg = SubscriptionMessage::from_json(&tx)
+                .map_err(|_| anyhow!("failed to convert tx update to json"))?;
+            sink.send(subscription_msg)
+                .await
+                .map_err(|_| anyhow!("failed to send msg to rpc ws channel"))?;
         }
         Ok(())
     }
 }
-
-

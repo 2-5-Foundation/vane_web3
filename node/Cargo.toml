@@ -19,7 +19,7 @@ tokio                                       = { workspace = true}
 #libp2p-request-response = { workspace = true}
 tokio-stream                                = "0.1.15"
 sp-core                                     = { workspace = true}
-subxt                                       = { workspace = true, features = ["unstable-reconnecting-rpc-client"] }
+subxt                                       = { workspace = true}
 alloy                                       = { workspace = true}
 sp-runtime                                  = { workspace = true}
 reconnecting-jsonrpsee-ws-client            = { workspace = true}
@@ -28,4 +28,6 @@ reqwest                                     = { workspace = true, features = ["j
 airtable-api                                = { workspace = true}
 tinyrand                                    = "0.5.0"
 serde_json                                  = { workspace = true}
-#solana-client-wasm = { workspace = true}
+base58                                      = { workspace = true}
+curve25519-dalek                            = { workspace = true}
+#solana-client-wasm                          = { workspace = true}

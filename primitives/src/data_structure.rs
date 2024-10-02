@@ -1,10 +1,10 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
-use std::str::FromStr;
 use codec::{Decode, Encode};
 use libp2p::request_response::OutboundRequestId;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
@@ -13,18 +13,18 @@ use tokio::sync::Mutex;
 pub struct TxStateMachine {
     /// Sender channel to propagate itself
     pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
-    pub data: RpcTxStateMachine
+    pub data: RpcTxStateMachine,
 }
 
 /// tx state
-#[derive(Clone,Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub enum TxStatus {
     /// initial state,
     genesis,
     /// if address has been confirmed
     addrConfirmed,
     /// if chain network has been confirmed , used in tx simulation
-    netConfirmed
+    netConfirmed,
 }
 impl Default for TxStatus {
     fn default() -> Self {
@@ -32,7 +32,7 @@ impl Default for TxStatus {
     }
 }
 /// Transaction data structure to pass in rpc
-#[derive(Clone,Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct RpcTxStateMachine {
     pub sender_address: Vec<u8>,
     pub receiver_address: Vec<u8>,
@@ -45,7 +45,7 @@ pub struct RpcTxStateMachine {
     /// State Machine main params
     pub status: TxStatus,
     /// amount to be sent
-    pub amount: u64,
+    pub amount: u128,
     /// signed call payload
     pub signed_call_payload: Option<Vec<u8>>,
     /// call payload
@@ -66,25 +66,26 @@ pub struct DbTxStateMachine {
 }
 
 /// Supported tokens
-#[derive(Clone,Copy, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum Token {
     Dot,
     Bnb,
     Sol,
+    Eth,
     UsdtSol,
     UsdcSol,
-    Eth,
     UsdtEth,
-    UsdcEth
+    UsdcEth,
+    UsdtDot,
 }
 
 impl From<Token> for ChainSupported {
     fn from(value: Token) -> Self {
         match value {
-            Token::Dot => { ChainSupported::Polkadot}
-            Token::Bnb => {ChainSupported::Bnb}
-            Token::Sol | Token::UsdcSol | Token::UsdtSol => {ChainSupported::Solana}
-            Token::Eth | Token::UsdtEth | Token::UsdcEth=> {ChainSupported::Ethereum}
+            Token::Dot | Token::UsdtDot => ChainSupported::Polkadot,
+            Token::Bnb => ChainSupported::Bnb,
+            Token::Sol | Token::UsdcSol | Token::UsdtSol => ChainSupported::Solana,
+            Token::Eth | Token::UsdtEth | Token::UsdcEth => ChainSupported::Ethereum,
         }
     }
 }
@@ -139,7 +140,7 @@ pub struct UserAccount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
     pub peer_address: Vec<u8>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub accountId1: Vec<u8>,
+    pub accountId1: Option<Vec<u8>>,
     pub accountId2: Option<Vec<u8>>,
     pub accountId3: Option<Vec<u8>>,
     pub accountId4: Option<Vec<u8>>,
@@ -197,19 +198,19 @@ pub const BEP20: [u8; 20] = [
 ];
 
 // airtable db or peer discovery
-#[derive(Serialize,Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Discovery {
     pub peer_id: String,
     pub multi_addr: String,
-    pub account_ids: Vec<String>
+    pub account_ids: Vec<String>,
 }
 
 // to destructure returned json from db
-#[derive(Debug, Serialize,Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct AirtableResponse {
     pub records: Vec<Record>,
 }
-#[derive(Debug, Serialize,Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct Record {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
@@ -218,7 +219,7 @@ pub struct Record {
     pub fields: Fields,
 }
 
-#[derive(Debug, Serialize,Clone,Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct Fields {
     #[serde(rename = "portId", default)]
     pub multi_addr: Option<String>,
@@ -231,19 +232,26 @@ pub struct Fields {
     #[serde(rename = "accountId3", default)]
     pub account_id3: Option<String>,
     #[serde(rename = "accountId4", default)]
-    pub account_id4: Option<String>
-
+    pub account_id4: Option<String>,
 }
-
 
 impl From<PeerRecord> for Fields {
     fn from(value: PeerRecord) -> Self {
         let multi_addr = String::from_utf8(value.multi_addr).expect("failed to convert multi addr");
-        let peer_id = libp2p::PeerId::from_str(String::from_utf8(value.peer_address).expect("failed to convert peer address").as_str()).unwrap().to_base58();
-        Self{
+        let peer_id = libp2p::PeerId::from_str(
+            String::from_utf8(value.peer_address)
+                .expect("failed to convert peer address")
+                .as_str(),
+        )
+        .unwrap()
+        .to_base58();
+        Self {
             multi_addr: Some(multi_addr),
-            peer_id:Some(peer_id) ,
-            account_id1: Some(String::from_utf8(value.accountId1).unwrap()),
+            peer_id: Some(peer_id),
+            account_id1: Some(
+                String::from_utf8(value.accountId1.expect("no account id 1 from peer record"))
+                    .unwrap(),
+            ),
             account_id2: None,
             account_id3: None,
             account_id4: None,
