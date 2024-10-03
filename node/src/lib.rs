@@ -12,6 +12,7 @@ use db::DbWorker;
 use libp2p::futures::{FutureExt, StreamExt};
 use libp2p::request_response::Message;
 use libp2p::PeerId;
+use log::{error, warn};
 use p2p::P2pWorker;
 pub use primitives;
 use primitives::data_structure::{ChainSupported, Fields, PeerRecord, TxStateMachine};
@@ -92,40 +93,45 @@ impl MainServiceWorker {
         // listen to p2p swarm events
         let p2p_worker = self.p2p_worker.clone();
         let swarm_result_handle = tokio::spawn(async move {
-            while let Some(swarm_msg) = p2p_worker.lock().await.start_swarm().await?.next().await {
-                match swarm_msg {
-                    Ok(msg) => {
-                        // handle the req and resp
-                        match msg {
-                            // context of a receiver, receiving the request and handling it
-                            // at this point, the receiver should;
-                            // 1. send the tx to the rpc
-                            // 2. sign the message attesting ownership of the private key and can control the acc in X network
-                            // 3. update the tx state machine and send it back to the initial sender
-                            Message::Request {
-                                request_id,
-                                request,
-                                ..
-                            } => {
+            while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
+                match swarm_msg_result.next().await {
+                    Some(swarm_msg) => {
+                        match swarm_msg {
+                            Ok(msg) => {
+                                // handle the req and resp
+                                match msg {
+                                    // context of a receiver, receiving the request and handling it
+                                    // at this point, the receiver should;
+                                    // 1. send the tx to the rpc
+                                    // 2. sign the message attesting ownership of the private key and can control the acc in X network
+                                    // 3. update the tx state machine and send it back to the initial sender
+                                    Message::Request {
+                                        request_id,
+                                        request,
+                                        ..
+                                    } => {
+                                        //let decoded_req:
+                                    }
 
+                                    // context of a sender, receiving the response from the target receiver
+                                    // the sender should;
+                                    // 1.verify the recv signature public key to the one binded in the multi address
+                                    // 2. send the tx to be signed to rpc
+                                    // 3. take the tx and submit to the chain
+                                    Message::Response {
+                                        request_id,
+                                        response,
+                                    } => {}
+                                }
                             }
-
-                            // context of a sender, receiving the response from the target receiver
-                            // the sender should;
-                            // 1.verify the recv signature public key to the one binded in the multi address
-                            // 2. send the tx to be signed to rpc
-                            // 3. take the tx and submit to the chain
-                            Message::Response {
-                                request_id,
-                                response,
-                            } => {
-
+                            Err(err) => {
+                                error!("failed to return swarm msg event; caused by: {err:?}")
                             }
                         }
                     }
-                    Err(err) => Err(anyhow!(
-                        "failed to return swarm msg event; caused by: {err:?}"
-                    ))?,
+                    None => {
+                        warn!("no new messages from swarm")
+                    }
                 }
             }
         });

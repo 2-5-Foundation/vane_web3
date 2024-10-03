@@ -17,7 +17,7 @@ pub struct TxStateMachine {
 }
 
 /// tx state
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
     genesis,
@@ -32,7 +32,7 @@ impl Default for TxStatus {
     }
 }
 /// Transaction data structure to pass in rpc
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct RpcTxStateMachine {
     pub sender_address: Vec<u8>,
     pub receiver_address: Vec<u8>,
