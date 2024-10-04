@@ -8,6 +8,7 @@ pub mod tx_processing;
 use alloc::sync::Arc;
 use alloy::hex;
 use anyhow::{anyhow, Error};
+use codec::Decode;
 use db::DbWorker;
 use libp2p::futures::{FutureExt, StreamExt};
 use libp2p::request_response::Message;
@@ -15,7 +16,7 @@ use libp2p::PeerId;
 use log::{error, warn};
 use p2p::P2pWorker;
 pub use primitives;
-use primitives::data_structure::{ChainSupported, Fields, PeerRecord, TxStateMachine};
+use primitives::data_structure::{ChainSupported, Fields, PeerRecord,TxStateMachine};
 use rpc::TransactionRpcWorker;
 use telemetry::TelemetryWorker;
 use tokio::io::AsyncBufReadExt;
@@ -110,7 +111,9 @@ impl MainServiceWorker {
                                         request,
                                         ..
                                     } => {
-                                        //let decoded_req:
+                                        let decoded_req:TxStateMachine = Decode::decode(&mut &request[..]).expect("failed to decode request body");
+                                        // send it to be signed via Rpc
+                                       // let re = self.tx_rpc_worker.lock().await.sender_channel.lock().await.send(Arc::new(Mutex::new(decoded_req))).await;
                                     }
 
                                     // context of a sender, receiving the response from the target receiver
@@ -148,7 +151,7 @@ impl MainServiceWorker {
             .await
         {
             // dial to target peer id from tx receiver
-            let target_id = txn.lock().await.data.receiver_address.clone();
+            let target_id = txn.lock().await.receiver_address.clone();
             // check if the acc is present in local db
             if let Ok(acc) = self
                 .db_worker
@@ -176,7 +179,7 @@ impl MainServiceWorker {
                     .await
                     .list_all_peers()
                     .await?;
-                let target_id_addr = hex::encode(txn.lock().await.data.receiver_address.clone());
+                let target_id_addr = hex::encode(txn.lock().await.receiver_address.clone());
 
                 if !acc_ids.is_empty() {
                     let result_peer = acc_ids.into_iter().find_map(|discovery| {

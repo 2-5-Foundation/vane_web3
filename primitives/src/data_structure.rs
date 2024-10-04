@@ -8,13 +8,13 @@ use std::str::FromStr;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
-/// The idea is similar to how future executor tasks are able to progress and have channels to send
-/// themselves
-pub struct TxStateMachine {
-    /// Sender channel to propagate itself
-    pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
-    pub data: RpcTxStateMachine,
-}
+// /// The idea is similar to how future executor tasks are able to progress and have channels to send
+// /// themselves
+// pub struct TxStateMachine {
+//     /// Sender channel to propagate itself
+//     pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
+//     pub data: RpcTxStateMachine,
+// }
 
 /// tx state
 #[derive(Clone, Deserialize, Serialize, Encode, Decode)]
@@ -33,7 +33,7 @@ impl Default for TxStatus {
 }
 /// Transaction data structure to pass in rpc
 #[derive(Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct RpcTxStateMachine {
+pub struct TxStateMachine {
     pub sender_address: Vec<u8>,
     pub receiver_address: Vec<u8>,
     /// hashed sender and receiver address to bind the addresses while sending
