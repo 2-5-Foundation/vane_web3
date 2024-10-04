@@ -88,55 +88,66 @@ impl MainServiceWorker {
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
         })
     }
+
+    // handle swarm events
+    pub(crate) async fn handle_swarm(p2p_worker:Arc<Mutex<P2pWorker>>, txn_rpc_worker:Arc<Mutex<TransactionRpcWorker>>) -> Result<(),anyhow::Error>{
+
+        while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
+            match swarm_msg_result.next().await {
+                Some(swarm_msg) => {
+                    match swarm_msg {
+                        Ok(msg) => {
+                            // handle the req and resp
+                            match msg {
+                                // context of a receiver, receiving the request and handling it
+                                // at this point, the receiver should;
+                                // 1. send the tx to the rpc
+                                // 2. sign the message attesting ownership of the private key and can control the acc in X network
+                                // 3. update the tx state machine and send it back to the initial sender
+                                Message::Request {
+                                    request_id,
+                                    request,
+                                    ..
+                                } => {
+                                    let decoded_req:TxStateMachine = Decode::decode(&mut &request[..]).expect("failed to decode request body");
+                                    // send it to be signed via Rpc
+                                    let re = txn_rpc_worker.lock().await.sender_channel.lock().await.send(Arc::new(Mutex::new(decoded_req))).await;
+
+                                }
+
+                                // context of a sender, receiving the response from the target receiver
+                                // the sender should;
+                                // 1.verify the recv signature public key to the one binded in the multi address
+                                // 2. send the tx to be signed to rpc
+                                // 3. take the tx and submit to the chain
+                                Message::Response {
+                                    request_id,
+                                    response,
+                                } => {}
+                            }
+                        }
+                        Err(err) => {
+                            error!("failed to return swarm msg event; caused by: {err:?}")
+                        }
+                    }
+                }
+                None => {
+                    warn!("no new messages from swarm")
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn run(&self) -> Result<(), anyhow::Error> {
         // start rpc server
 
         // listen to p2p swarm events
         let p2p_worker = self.p2p_worker.clone();
-        let swarm_result_handle = tokio::spawn(async move {
-            while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
-                match swarm_msg_result.next().await {
-                    Some(swarm_msg) => {
-                        match swarm_msg {
-                            Ok(msg) => {
-                                // handle the req and resp
-                                match msg {
-                                    // context of a receiver, receiving the request and handling it
-                                    // at this point, the receiver should;
-                                    // 1. send the tx to the rpc
-                                    // 2. sign the message attesting ownership of the private key and can control the acc in X network
-                                    // 3. update the tx state machine and send it back to the initial sender
-                                    Message::Request {
-                                        request_id,
-                                        request,
-                                        ..
-                                    } => {
-                                        let decoded_req:TxStateMachine = Decode::decode(&mut &request[..]).expect("failed to decode request body");
-                                        // send it to be signed via Rpc
-                                       // let re = self.tx_rpc_worker.lock().await.sender_channel.lock().await.send(Arc::new(Mutex::new(decoded_req))).await;
-                                    }
+        let txn_rpc_worker  = self.tx_rpc_worker.clone();
 
-                                    // context of a sender, receiving the response from the target receiver
-                                    // the sender should;
-                                    // 1.verify the recv signature public key to the one binded in the multi address
-                                    // 2. send the tx to be signed to rpc
-                                    // 3. take the tx and submit to the chain
-                                    Message::Response {
-                                        request_id,
-                                        response,
-                                    } => {}
-                                }
-                            }
-                            Err(err) => {
-                                error!("failed to return swarm msg event; caused by: {err:?}")
-                            }
-                        }
-                    }
-                    None => {
-                        warn!("no new messages from swarm")
-                    }
-                }
-            }
+        let swarm_result_handle = tokio::spawn(async move {
+            let res = Self::handle_swarm(p2p_worker,txn_rpc_worker).await;
         });
 
         // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
