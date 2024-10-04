@@ -139,18 +139,7 @@ impl MainServiceWorker {
         Ok(())
     }
 
-    pub async fn run(&self) -> Result<(), anyhow::Error> {
-        // start rpc server
-
-        // listen to p2p swarm events
-        let p2p_worker = self.p2p_worker.clone();
-        let txn_rpc_worker  = self.tx_rpc_worker.clone();
-
-        let swarm_result_handle = tokio::spawn(async move {
-            let res = Self::handle_swarm(p2p_worker,txn_rpc_worker).await;
-        });
-
-        // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
+    pub(crate) async fn handle_incoming_rpc_tx_updates(&self) -> Result<(),anyhow::Error>{
         while let Some(txn) = self
             .tx_rpc_worker
             .lock()
@@ -161,6 +150,9 @@ impl MainServiceWorker {
             .recv()
             .await
         {
+            // check the state of tx
+            todo!();
+            // ====================================
             // dial to target peer id from tx receiver
             let target_id = txn.lock().await.receiver_address.clone();
             // check if the acc is present in local db
@@ -246,6 +238,22 @@ impl MainServiceWorker {
                 }
             }
         }
+        Ok(())
+    }
+
+    pub async fn run(&self) -> Result<(), anyhow::Error> {
+        // start rpc server
+
+        // listen to p2p swarm events
+        let p2p_worker = self.p2p_worker.clone();
+        let txn_rpc_worker  = self.tx_rpc_worker.clone();
+
+        let swarm_result_handle = tokio::spawn(async move {
+            let res = Self::handle_swarm(p2p_worker,txn_rpc_worker).await;
+        });
+
+        // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
+        self.handle_incoming_rpc_tx_updates().await?;
         // ============================================
         // run the swarm event listener and handler as a background task
         Ok(())
