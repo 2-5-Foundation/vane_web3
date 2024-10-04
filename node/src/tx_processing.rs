@@ -78,9 +78,9 @@ impl TxProcessingWorker {
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
     async fn validate_receiver_address(&mut self, tx: TxStateMachine) -> Result<(), anyhow::Error> {
-        let network = tx.data.network;
-        let signature = tx.data.signature.ok_or(anyhow!("receiver didnt signed"))?;
-        let msg = tx.data.receiver_address.clone();
+        let network = tx.network;
+        let signature = tx.signature.ok_or(anyhow!("receiver didnt signed"))?;
+        let msg = tx.receiver_address.clone();
 
         match network {
             ChainSupported::Polkadot => {
@@ -98,7 +98,7 @@ impl TxProcessingWorker {
                 todo!()
             }
             ChainSupported::Ethereum | ChainSupported::Bnb => {
-                let ec_receiver_public = EcdsaPublic::from_slice(&tx.data.receiver_address[..])
+                let ec_receiver_public = EcdsaPublic::from_slice(&tx.receiver_address[..])
                     .map_err(|_| anyhow!("failed to convert ecdsa recv addr bytes"))?;
                 let hashed_msg = keccak_256(&msg[..]);
                 let sig = EcdsaSignature::from_slice(&signature[..])
@@ -119,7 +119,7 @@ impl TxProcessingWorker {
                 }
             }
             ChainSupported::Solana => {
-                let ed_receiver_public = EdPublic::from_slice(&tx.data.receiver_address[..])
+                let ed_receiver_public = EdPublic::from_slice(&tx.receiver_address[..])
                     .map_err(|_| anyhow!("failed to convert ed25519 recv addr bytes"))?;
                 let sig = EdSignature::from_slice(&signature[..])
                     .map_err(|_| anyhow!("failed to convert ed25519_signature"))?;
@@ -144,7 +144,7 @@ impl TxProcessingWorker {
 
     /// create the tx to be signed by externally owned account
     pub async fn create_tx(&mut self, tx: TxStateMachine) -> Result<Vec<u8>, anyhow::Error> {
-        let network = tx.data.network;
+        let network = tx.network;
         let to_signed_bytes = match network {
             ChainSupported::Polkadot => {
                 // let transfer_value = dynamic::Value::primitive(U128(tx.data.amount as u128));
@@ -170,8 +170,8 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Ethereum => {
-                let to_address = Address::from_slice(&tx.data.receiver_address);
-                let value = U256::from(tx.data.amount);
+                let to_address = Address::from_slice(&tx.receiver_address);
+                let value = U256::from(tx.amount);
 
                 let tx_builder = alloy::rpc::types::TransactionRequest::default()
                     .with_to(to_address)
@@ -191,8 +191,8 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Bnb => {
-                let to_address = Address::from_slice(&tx.data.receiver_address);
-                let value = U256::from(tx.data.amount);
+                let to_address = Address::from_slice(&tx.receiver_address);
+                let value = U256::from(tx.amount);
 
                 let tx_builder = alloy::rpc::types::TransactionRequest::default()
                     .with_to(to_address)
@@ -224,7 +224,7 @@ impl TxProcessingWorker {
 
     /// submit the externally signed tx, returns tx hash
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
-        let network = tx.data.network;
+        let network = tx.network;
 
         let block_hash = match network {
             ChainSupported::Polkadot => {
@@ -274,11 +274,9 @@ impl TxProcessingWorker {
             }
             ChainSupported::Ethereum => {
                 let signature = tx
-                    .data
                     .signed_call_payload
                     .ok_or(anyhow!("sender did not signed the tx payload"))?;
                 let tx_payload = tx
-                    .data
                     .call_payload
                     .ok_or(anyhow!("call payload not found"))?;
                 let decoded_tx = TxEip7702::decode(&mut &tx_payload[..]).map_err(|err| {

@@ -8,16 +8,16 @@ use std::str::FromStr;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
-/// The idea is similar to how future executor tasks are able to progress and have channels to send
-/// themselves
-pub struct TxStateMachine {
-    /// Sender channel to propagate itself
-    pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
-    pub data: RpcTxStateMachine,
-}
+// /// The idea is similar to how future executor tasks are able to progress and have channels to send
+// /// themselves
+// pub struct TxStateMachine {
+//     /// Sender channel to propagate itself
+//     pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
+//     pub data: RpcTxStateMachine,
+// }
 
 /// tx state
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
     genesis,
@@ -32,8 +32,8 @@ impl Default for TxStatus {
     }
 }
 /// Transaction data structure to pass in rpc
-#[derive(Clone, Deserialize, Serialize)]
-pub struct RpcTxStateMachine {
+#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+pub struct TxStateMachine {
     pub sender_address: Vec<u8>,
     pub receiver_address: Vec<u8>,
     /// hashed sender and receiver address to bind the addresses while sending
@@ -203,6 +203,38 @@ pub struct Discovery {
     pub peer_id: String,
     pub multi_addr: String,
     pub account_ids: Vec<String>,
+}
+
+impl From<Discovery> for PeerRecord {
+    fn from(value: Discovery) -> Self {
+        let mut acc = vec![];
+        if let Some(addr) = value.account_ids.get(0) {
+            let acc_to_vec_id = addr.as_bytes().to_vec();
+            acc.push(acc_to_vec_id)
+        }
+        if let Some(addr) = value.account_ids.get(1) {
+            let acc_to_vec_id = addr.as_bytes().to_vec();
+            acc.push(acc_to_vec_id)
+        }
+        if let Some(addr) = value.account_ids.get(2) {
+            let acc_to_vec_id = addr.as_bytes().to_vec();
+            acc.push(acc_to_vec_id)
+        }
+        if let Some(addr) = value.account_ids.get(3) {
+            let acc_to_vec_id = addr.as_bytes().to_vec();
+            acc.push(acc_to_vec_id)
+        }
+
+        Self {
+            peer_address: Vec::from(value.peer_id),
+            accountId1: acc.get(0).map(|x| x.clone()),
+            accountId2: acc.get(1).map(|x| x.clone()),
+            accountId3: acc.get(2).map(|x| x.clone()),
+            accountId4: acc.get(3).map(|x| x.clone()),
+            multi_addr: Vec::from(value.multi_addr),
+            keypair: None,
+        }
+    }
 }
 
 // to destructure returned json from db

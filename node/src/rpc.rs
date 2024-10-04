@@ -18,7 +18,7 @@ use jsonrpsee::{
 };
 use log::{debug, info, warn};
 use primitives::data_structure::{
-    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record, RpcTxStateMachine,
+    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record,
     Token, TxStateMachine, TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
@@ -170,15 +170,15 @@ pub trait TransactionRpc {
 
     /// confirm sender signifying agreeing all tx state after verification and this will trigger actual submission
     #[method(name = "senderConfirm")]
-    async fn sender_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()>;
+    async fn sender_confirm(&self, tx: TxStateMachine) -> RpcResult<()>;
 
     /// watch tx update stream
-    #[subscription(name ="subscribeTxUpdates",item = RpcTxStateMachine )]
+    #[subscription(name ="subscribeTxUpdates",item = TxStateMachine )]
     async fn watch_tx_update(&self) -> SubscriptionResult;
 
     /// receiver confirmation on address and ownership of account ( network ) signifying correct token to the network choice
     #[method(name = "recvConfirm")]
-    async fn receiver_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()>;
+    async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()>;
 }
 
 /// handling tx submission & tx confirmation & tx simulation interactions
@@ -261,34 +261,30 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
+        let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
+        let peer_account = PeerRecord {
+            peer_address: self_peer_id
+                .public()
+                .to_peer_id()
+                .to_base58()
+                .as_bytes()
+                .to_vec(),
+            accountId1: Some(account_id),
+            accountId2: None,
+            accountId3: None,
+            accountId4: None,
+            multi_addr: self.url.to_string().as_bytes().to_vec(),
+            keypair: Some(
+                self_peer_id
+                    .to_protobuf_encoding()
+                    .map_err(|_| anyhow!("failed to encode keypair"))?,
+            ),
+        };
+        self.db_worker.lock().await.update_user_peerId_accounts(peer_account).await?;
 
-        // let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
-        // let peer_account = PeerRecord {
-        //     peer_address: self_peer_id
-        //         .public()
-        //         .to_peer_id()
-        //         .to_base58()
-        //         .as_bytes()
-        //         .to_vec(),
-        //     accountId1: account_id,
-        //     accountId2: None,
-        //     accountId3: None,
-        //     accountId4: None,
-        //     multi_addr: self.url.to_string().as_bytes().to_vec(),
-        //     keypair: Some(
-        //         self_peer_id
-        //             .to_protobuf_encoding()
-        //             .map_err(|_| anyhow!("failed to encode keypair"))?,
-        //     ),
-        // };
         // let field: Fields = peer_account.clone().into();
         //
         // self.airtable_client.lock().await.create_peer(field).await?;
-        // self.db_worker
-        //     .lock()
-        //     .await
-        //     .record_user_peerId(peer_account)
-        //     .await?;
 
         Ok(())
     }
@@ -317,7 +313,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             sender_recv.extend_from_slice(receiver.as_bytes());
             let multi_addr = Blake2Hasher::hash(&sender_recv[..]);
 
-            let new_xt = RpcTxStateMachine {
+            let tx_state_machine = TxStateMachine {
                 sender_address: sender.as_bytes().to_vec(),
                 receiver_address: receiver.as_bytes().to_vec(),
                 multi_id: multi_addr,
@@ -336,10 +332,10 @@ impl TransactionRpcServer for TransactionRpcWorker {
             // propagate the tx to lower layer
             let sender_channel = self.sender_channel.lock().await;
 
-            let tx_state_machine = TxStateMachine {
-                sender_channel: Mutex::from(sender_channel.clone()),
-                data: new_xt,
-            };
+            // let tx_state_machine = TxStateMachine {
+            //     sender_channel: Mutex::from(sender_channel.clone()),
+            //     data: new_xt,
+            // };
             let sender = sender_channel.clone();
             sender
                 .send(Arc::from(Mutex::new(tx_state_machine)))
@@ -355,16 +351,12 @@ impl TransactionRpcServer for TransactionRpcWorker {
         Ok(())
     }
 
-    async fn sender_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()> {
+    async fn sender_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
         let sender_channel = self.sender_channel.lock().await;
 
-        let tx_state_machine = TxStateMachine {
-            sender_channel: Mutex::from(sender_channel.clone()),
-            data: tx,
-        };
         let sender = sender_channel.clone();
         sender
-            .send(Arc::from(Mutex::new(tx_state_machine)))
+            .send(Arc::from(Mutex::new(tx)))
             .await
             .map_err(|_| {
                 anyhow!("failed to send sender confirmation tx state to sender-channel")
@@ -372,16 +364,12 @@ impl TransactionRpcServer for TransactionRpcWorker {
         Ok(())
     }
 
-    async fn receiver_confirm(&self, tx: RpcTxStateMachine) -> RpcResult<()> {
+    async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
         let sender_channel = self.sender_channel.lock().await;
 
-        let tx_state_machine = TxStateMachine {
-            sender_channel: Mutex::from(sender_channel.clone()),
-            data: tx,
-        };
         let sender = sender_channel.clone();
         sender
-            .send(Arc::from(Mutex::new(tx_state_machine)))
+            .send(Arc::from(Mutex::new(tx)))
             .await
             .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))?;
         Ok(())
@@ -396,8 +384,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await
             .map_err(|_| anyhow!("failed to accept rpc ws channel"))?;
         while let Some(tx_update) = self.receiver_channel.lock().await.recv().await {
-            let tx_guard = tx_update.lock().await;
-            let tx: RpcTxStateMachine = tx_guard.data.clone();
+            let tx:TxStateMachine = tx_update.lock().await.clone();
 
             let subscription_msg = SubscriptionMessage::from_json(&tx)
                 .map_err(|_| anyhow!("failed to convert tx update to json"))?;

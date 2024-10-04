@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use core::pin::Pin;
 use log::{debug, error, info, trace, warn};
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,7 +22,10 @@ use libp2p::{
 };
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
 use primitives::data_structure::{ChainSupported, OuterRequest, Request, Response};
+use subxt::blocks::Block;
+use subxt::Error;
 use tokio::sync::Mutex;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
@@ -170,6 +174,10 @@ impl Codec for GenericCodec {
 
 /// handling connection with other peer ( recipients ) of txs
 /// and tx passing to receivers and senders
+
+type BlockStream<T> = Pin<Box<dyn Stream<Item = Result<T, anyhow::Error>> + Send>>;
+type BlockStreamRes<T> = Result<BlockStream<T>, anyhow::Error>;
+
 pub struct P2pWorker {
     node_id: PeerId,
     swarm: Swarm<Behaviour<GenericCodec>>,
@@ -187,7 +195,7 @@ impl P2pWorker {
 
         let peer_id: PeerId = PeerId::from_bytes(&user_peer_id.peer_address[..])?;
 
-        let mut secret_bytes = user_peer_id.keypair.ok_or(anyhow!("KeyPair is not set"))?;
+        let secret_bytes = user_peer_id.keypair.ok_or(anyhow!("KeyPair is not set"))?;
         let keypair = libp2p::identity::Keypair::from_protobuf_encoding(&secret_bytes[..])
             .map_err(|_| anyhow!("failed to decode keypair ed25519"))?;
 
@@ -230,7 +238,7 @@ impl P2pWorker {
     // start the connection by listening to the address and then dialing and then listen to incoming messages events
     pub async fn start_swarm(
         &mut self,
-    ) -> Result<BoxStream<Message<Vec<u8>, Result<Vec<u8>, anyhow::Error>>>, anyhow::Error> {
+    ) -> Result<BlockStream<Message<Vec<u8>, Result<Vec<u8>, anyhow::Error>>>, anyhow::Error> {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(256);
 
         let multi_addr = &self.url;
@@ -307,9 +315,7 @@ impl P2pWorker {
             }
         }
 
-        Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(
-            recv_channel,
-        )))
+        Ok(Box::pin(ReceiverStream::new(recv_channel)) as BlockStream<_>)
     }
 
     pub async fn send_request(
