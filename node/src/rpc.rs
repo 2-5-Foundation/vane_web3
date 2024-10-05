@@ -18,8 +18,8 @@ use jsonrpsee::{
 };
 use log::{debug, info, warn};
 use primitives::data_structure::{
-    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record,
-    Token, TxStateMachine, TxStatus, UserAccount,
+    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record, Token, TxStateMachine,
+    TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
@@ -280,7 +280,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
                     .map_err(|_| anyhow!("failed to encode keypair"))?,
             ),
         };
-        self.db_worker.lock().await.update_user_peerId_accounts(peer_account).await?;
+        self.db_worker
+            .lock()
+            .await
+            .update_user_peerId_accounts(peer_account)
+            .await?;
 
         // let field: Fields = peer_account.clone().into();
         //
@@ -332,17 +336,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
             // propagate the tx to lower layer
             let sender_channel = self.sender_channel.lock().await;
 
-            // let tx_state_machine = TxStateMachine {
-            //     sender_channel: Mutex::from(sender_channel.clone()),
-            //     data: new_xt,
-            // };
             let sender = sender_channel.clone();
             sender
                 .send(Arc::from(Mutex::new(tx_state_machine)))
                 .await
-                .map_err(|_| {
-                    anyhow!("failed to send recv confirmation tx state to sender channel")
-                })?;
+                .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))?;
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
@@ -355,12 +353,9 @@ impl TransactionRpcServer for TransactionRpcWorker {
         let sender_channel = self.sender_channel.lock().await;
 
         let sender = sender_channel.clone();
-        sender
-            .send(Arc::from(Mutex::new(tx)))
-            .await
-            .map_err(|_| {
-                anyhow!("failed to send sender confirmation tx state to sender-channel")
-            })?;
+        sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
+            anyhow!("failed to send sender confirmation tx state to sender-channel")
+        })?;
         Ok(())
     }
 
@@ -384,7 +379,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await
             .map_err(|_| anyhow!("failed to accept rpc ws channel"))?;
         while let Some(tx_update) = self.receiver_channel.lock().await.recv().await {
-            let tx:TxStateMachine = tx_update.lock().await.clone();
+            let tx: TxStateMachine = tx_update.lock().await.clone();
 
             let subscription_msg = SubscriptionMessage::from_json(&tx)
                 .map_err(|_| anyhow!("failed to convert tx update to json"))?;

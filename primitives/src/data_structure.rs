@@ -21,9 +21,9 @@ use tokio::sync::Mutex;
 pub enum TxStatus {
     /// initial state,
     genesis,
-    /// if address has been confirmed
+    /// if receiver address has been confirmed
     addrConfirmed,
-    /// if chain network has been confirmed , used in tx simulation
+    /// if receiver chain network has been confirmed , used in tx simulation
     netConfirmed,
 }
 impl Default for TxStatus {

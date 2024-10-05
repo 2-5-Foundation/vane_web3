@@ -16,7 +16,7 @@ use libp2p::PeerId;
 use log::{error, warn};
 use p2p::P2pWorker;
 pub use primitives;
-use primitives::data_structure::{ChainSupported, Fields, PeerRecord,TxStateMachine};
+use primitives::data_structure::{ChainSupported, Fields, PeerRecord, TxStateMachine, TxStatus};
 use rpc::TransactionRpcWorker;
 use telemetry::TelemetryWorker;
 use tokio::io::AsyncBufReadExt;
@@ -89,9 +89,13 @@ impl MainServiceWorker {
         })
     }
 
-    // handle swarm events
-    pub(crate) async fn handle_swarm(p2p_worker:Arc<Mutex<P2pWorker>>, txn_rpc_worker:Arc<Mutex<TransactionRpcWorker>>) -> Result<(),anyhow::Error>{
-
+    /// handle swarm events; this includes
+    /// 1. sender requests to receiver to attest ownership and correctness of the recv address
+    /// 2. receiver response and sender handling submission of the tx
+    pub(crate) async fn handle_swarm_event_messages(
+        p2p_worker: Arc<Mutex<P2pWorker>>,
+        txn_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
+    ) -> Result<(), anyhow::Error> {
         while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
             match swarm_msg_result.next().await {
                 Some(swarm_msg) => {
@@ -109,10 +113,18 @@ impl MainServiceWorker {
                                     request,
                                     ..
                                 } => {
-                                    let decoded_req:TxStateMachine = Decode::decode(&mut &request[..]).expect("failed to decode request body");
+                                    let decoded_req: TxStateMachine =
+                                        Decode::decode(&mut &request[..])
+                                            .expect("failed to decode request body");
                                     // send it to be signed via Rpc
-                                    let re = txn_rpc_worker.lock().await.sender_channel.lock().await.send(Arc::new(Mutex::new(decoded_req))).await;
-
+                                    let re = txn_rpc_worker
+                                        .lock()
+                                        .await
+                                        .sender_channel
+                                        .lock()
+                                        .await
+                                        .send(Arc::new(Mutex::new(decoded_req)))
+                                        .await;
                                 }
 
                                 // context of a sender, receiving the response from the target receiver
@@ -123,7 +135,9 @@ impl MainServiceWorker {
                                 Message::Response {
                                     request_id,
                                     response,
-                                } => {}
+                                } => {
+                                    todo!()
+                                }
                             }
                         }
                         Err(err) => {
@@ -139,7 +153,124 @@ impl MainServiceWorker {
         Ok(())
     }
 
-    pub(crate) async fn handle_incoming_rpc_tx_updates(&self) -> Result<(),anyhow::Error>{
+    /// genesis state of initialized tx is being handled by the following stages
+    /// 1. check if the receiver address peer id is saved in local db if not then search in remote db
+    /// 2. getting the recv peer-id then dial the target peer-id (receiver)
+    /// 3. send the tx-state-machine object to receiver target id via p2p swarm for receiver to sign and attest ownership and correctness of the address
+    pub(crate) async fn handle_genesis_tx_state(
+        &self,
+        txn: Arc<Mutex<TxStateMachine>>,
+    ) -> Result<(), anyhow::Error> {
+        // dial to target peer id from tx receiver
+        let target_id = txn.lock().await.receiver_address.clone();
+        // check if the acc is present in local db
+        if let Ok(acc) = self
+            .db_worker
+            .lock()
+            .await
+            .get_saved_user_peers(target_id)
+            .await
+        {
+            // dial the target
+            let multi_addr = String::from_utf8(acc.multi_addr)?.parse()?;
+            let peer_id = PeerId::from_bytes(&acc.node_id)?;
+            self.p2p_worker
+                .lock()
+                .await
+                .dial_to_peer_id(multi_addr, peer_id)
+                .await?;
+            // send the tx-state-machine to target peerId
+            // todo!()
+        } else {
+            // fetch from remote db
+            let acc_ids = self
+                .tx_rpc_worker
+                .lock()
+                .await
+                .airtable_client
+                .lock()
+                .await
+                .list_all_peers()
+                .await?;
+            let target_id_addr = hex::encode(txn.lock().await.receiver_address.clone());
+
+            if !acc_ids.is_empty() {
+                let result_peer = acc_ids.into_iter().find_map(|discovery| {
+                    match discovery
+                        .clone()
+                        .account_ids
+                        .into_iter()
+                        .find(|addr| addr == &target_id_addr)
+                    {
+                        Some(_) => {
+                            let peer_record: PeerRecord = discovery.clone().into();
+                            Some((discovery.peer_id, discovery.multi_addr, peer_record))
+                        }
+                        None => None,
+                    }
+                });
+
+                if result_peer.is_some() {
+                    // dial the target
+                    let multi_addr = result_peer
+                        .clone()
+                        .expect("failed to get multi addr")
+                        .1
+                        .parse()?;
+                    let peer_id = PeerId::from_bytes(
+                        result_peer
+                            .clone()
+                            .expect("failed to get peer id")
+                            .0
+                            .as_bytes(),
+                    )?;
+
+                    self.p2p_worker
+                        .lock()
+                        .await
+                        .dial_to_peer_id(multi_addr, peer_id)
+                        .await?;
+                    // send the tx-state-machine to target peerId
+                    // todo!()
+
+                    // save the target peer id to local db
+                    let peer_record = result_peer.clone().unwrap().2;
+                    self.db_worker
+                        .lock()
+                        .await
+                        .record_saved_user_peers(peer_record)
+                        .await?;
+                } else {
+                    Err(anyhow!("unexpected error; user not registered to vane web3, tell the user is missing out on safety"))?
+                }
+            } else {
+                Err(anyhow!(
+                    "user not registered to vane web3, tell the user is missing out on safety"
+                ))?
+            }
+        }
+        Ok(())
+    }
+
+    /// after receiver receives `tx-state-machine` from p2p swarm message,
+    /// signs the msg via rpc and send a response to sender of tx via p2p-swarm
+    /// then after the state of tx is `addrConfirmed` the sender will verify signature and submit tx
+    pub(crate) async fn handle_addr_confirmed_tx_state(
+        txn: Arc<Mutex<TxStateMachine>>,
+    ) -> Result<(), anyhow::Error> {
+        todo!()
+    }
+
+    /// this for now is same as `handle_addr_confirmed_tx_state`
+    pub(crate) async fn handle_net_confirmed_tx_state(
+        txn: Arc<Mutex<TxStateMachine>>,
+    ) -> Result<(), anyhow::Error> {
+        todo!()
+    }
+
+    /// all user interactions are done via rpc, after user sends rpc as updated (`tx-state-machine`) as argument,
+    /// the tx object will be send to channel to be handled depending on its current state
+    pub(crate) async fn handle_incoming_rpc_tx_updates(&self) -> Result<(), anyhow::Error> {
         while let Some(txn) = self
             .tx_rpc_worker
             .lock()
@@ -151,111 +282,36 @@ impl MainServiceWorker {
             .await
         {
             // check the state of tx
-            todo!();
-            // ====================================
-            // dial to target peer id from tx receiver
-            let target_id = txn.lock().await.receiver_address.clone();
-            // check if the acc is present in local db
-            if let Ok(acc) = self
-                .db_worker
-                .lock()
-                .await
-                .get_saved_user_peers(target_id)
-                .await
-            {
-                // dial the target
-                let multi_addr = String::from_utf8(acc.multi_addr)?.parse()?;
-                let peer_id = PeerId::from_bytes(&acc.node_id)?;
-                self.p2p_worker
-                    .lock()
-                    .await
-                    .dial_to_peer_id(multi_addr, peer_id)
-                    .await?;
-            } else {
-                // fetch from remote db
-                let acc_ids = self
-                    .tx_rpc_worker
-                    .lock()
-                    .await
-                    .airtable_client
-                    .lock()
-                    .await
-                    .list_all_peers()
-                    .await?;
-                let target_id_addr = hex::encode(txn.lock().await.receiver_address.clone());
-
-                if !acc_ids.is_empty() {
-                    let result_peer = acc_ids.into_iter().find_map(|discovery| {
-                        match discovery
-                            .clone()
-                            .account_ids
-                            .into_iter()
-                            .find(|addr| addr == &target_id_addr)
-                        {
-                            Some(_) => {
-                                let peer_record: PeerRecord = discovery.clone().into();
-                                Some((discovery.peer_id, discovery.multi_addr, peer_record))
-                            }
-                            None => None,
-                        }
-                    });
-
-                    if result_peer.is_some() {
-                        // dial the target
-                        let multi_addr = result_peer
-                            .clone()
-                            .expect("failed to get multi addr")
-                            .1
-                            .parse()?;
-                        let peer_id = PeerId::from_bytes(
-                            result_peer
-                                .clone()
-                                .expect("failed to get peer id")
-                                .0
-                                .as_bytes(),
-                        )?;
-
-                        self.p2p_worker
-                            .lock()
-                            .await
-                            .dial_to_peer_id(multi_addr, peer_id)
-                            .await?;
-
-                        // save the target peer id to local db
-                        let peer_record = result_peer.clone().unwrap().2;
-                        self.db_worker
-                            .lock()
-                            .await
-                            .record_saved_user_peers(peer_record)
-                            .await?;
-                    } else {
-                        Err(anyhow!("unexpected error; user not registered to vane web3, tell the user is missing out on safety"))?
-                    }
-                } else {
-                    Err(anyhow!(
-                        "user not registered to vane web3, tell the user is missing out on safety"
-                    ))?
+            match txn.lock().await.status {
+                TxStatus::genesis => {
+                    self.handle_genesis_tx_state(txn).await?;
+                }
+                TxStatus::addrConfirmed => {}
+                TxStatus::netConfirmed => {
+                    todo!()
                 }
             }
         }
         Ok(())
     }
 
+    /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
     pub async fn run(&self) -> Result<(), anyhow::Error> {
         // start rpc server
 
         // listen to p2p swarm events
         let p2p_worker = self.p2p_worker.clone();
-        let txn_rpc_worker  = self.tx_rpc_worker.clone();
+        let txn_rpc_worker = self.tx_rpc_worker.clone();
 
         let swarm_result_handle = tokio::spawn(async move {
-            let res = Self::handle_swarm(p2p_worker,txn_rpc_worker).await;
+            let res = Self::handle_swarm_event_messages(p2p_worker, txn_rpc_worker).await;
         });
 
         // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
         self.handle_incoming_rpc_tx_updates().await?;
         // ============================================
         // run the swarm event listener and handler as a background task
+        swarm_result_handle.await?;
         Ok(())
     }
 }

@@ -276,9 +276,7 @@ impl TxProcessingWorker {
                 let signature = tx
                     .signed_call_payload
                     .ok_or(anyhow!("sender did not signed the tx payload"))?;
-                let tx_payload = tx
-                    .call_payload
-                    .ok_or(anyhow!("call payload not found"))?;
+                let tx_payload = tx.call_payload.ok_or(anyhow!("call payload not found"))?;
                 let decoded_tx = TxEip7702::decode(&mut &tx_payload[..]).map_err(|err| {
                     anyhow!("failed to decode eth EIP7702 tx payload; caused by: {err:?}")
                 })?;
