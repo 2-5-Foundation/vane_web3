@@ -23,7 +23,6 @@ use primitives::data_structure::{
 };
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
-use tinyrand::{Rand, Xorshift};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 
@@ -199,9 +198,9 @@ impl TransactionRpcWorker {
     pub async fn new(
         recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
+        port: u16
     ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
-        let port = Xorshift::default().next_lim_u16(u16::MAX - 100);
         let airtable_client = Airtable::new().await?;
         let db_worker = DbWorker::initialize_db_client("./../db/dev.db").await?;
         let url = format!("ip4/127.0.0.1:{}", port);

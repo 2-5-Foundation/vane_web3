@@ -132,7 +132,6 @@ impl TxProcessingWorker {
                     ))?
                 }
             }
-            _ => {}
         }
         Ok(())
     }
@@ -213,9 +212,6 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Solana => {
-                todo!()
-            }
-            _ => {
                 todo!()
             }
         };

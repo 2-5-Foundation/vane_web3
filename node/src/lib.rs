@@ -6,9 +6,11 @@ pub mod telemetry;
 pub mod tx_processing;
 
 use alloc::sync::Arc;
+use std::ops::Deref;
 use alloy::hex;
 use anyhow::{anyhow, Error};
 use codec::Decode;
+use jsonrpsee::server::ServerBuilder;
 use db::DbWorker;
 use libp2p::futures::{FutureExt, StreamExt};
 use libp2p::request_response::Message;
@@ -20,8 +22,12 @@ use primitives::data_structure::{ChainSupported, Fields, PeerRecord, TxStateMach
 use rpc::TransactionRpcWorker;
 use telemetry::TelemetryWorker;
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use tx_processing::TxProcessingWorker;
+use crate::rpc::TransactionRpcServer;
+use std::net::SocketAddr;
+use tinyrand::{Rand, Xorshift};
+
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
@@ -29,17 +35,26 @@ use tx_processing::TxProcessingWorker;
 pub struct MainServiceWorker {
     db_worker: Arc<Mutex<DbWorker>>,
     tx_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
+    // for rpc server usage, it is the same as tx_rpc_worker but it is not behind a shared reference
+    tx_rpc_worker_cloned: Arc<TransactionRpcWorker>,
     tx_processing_worker: Arc<Mutex<TxProcessingWorker>>,
     p2p_worker: Arc<Mutex<P2pWorker>>,
     //telemetry_worker: TelemetryWorker,
 }
 
+
+
 impl MainServiceWorker {
     pub async fn new() -> Result<Self, anyhow::Error> {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
         let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
+
+        let port = Xorshift::default().next_lim_u16(u16::MAX - 100);
+
         let txn_rpc_worker =
-            TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel).await?;
+            TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel.clone(),port).await?;
+
+        let txn_rpc_worker_cloned = TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel,port).await?;;
 
         let tx_processing_worker = TxProcessingWorker::new(
             shared_recv_channel.clone(),
@@ -84,6 +99,7 @@ impl MainServiceWorker {
         Ok(Self {
             db_worker,
             tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
+            tx_rpc_worker_cloned: Arc::new(txn_rpc_worker_cloned),
             tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
         })
@@ -124,7 +140,7 @@ impl MainServiceWorker {
                                         .lock()
                                         .await
                                         .send(Arc::new(Mutex::new(decoded_req)))
-                                        .await;
+                                        .await?;
                                 }
 
                                 // context of a sender, receiving the response from the target receiver
@@ -284,21 +300,36 @@ impl MainServiceWorker {
             // check the state of tx
             match txn.lock().await.status {
                 TxStatus::genesis => {
-                    self.handle_genesis_tx_state(txn).await?;
+                    self.handle_genesis_tx_state(txn.clone()).await?;
                 }
                 TxStatus::addrConfirmed => {}
                 TxStatus::netConfirmed => {
                     todo!()
                 }
-            }
+            };
         }
         Ok(())
+    }
+
+    /// Start rpc server with default url
+    pub(crate) async fn start_rpc_server(&self) -> Result<SocketAddr,anyhow::Error>{
+        let server_builder = ServerBuilder::new();
+
+        let url = self.tx_rpc_worker.lock().await.url.clone();
+        let rpc_handler = Arc::try_unwrap(self.tx_rpc_worker_cloned.clone()).map_err(|_err|anyhow!("expected to have only 1 strong reference"))?;
+
+        let server = server_builder.build(url).await?;
+        let address = server.local_addr().map_err(|err|anyhow!("failed to get address: {}",err))?;
+        let handle = server.start(rpc_handler.into_rpc()).map_err(|err|anyhow!("rpc handler error: {}",err))?;
+
+        tokio::spawn(handle.stopped());
+        Ok(address)
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
     pub async fn run(&self) -> Result<(), anyhow::Error> {
         // start rpc server
-
+        self.start_rpc_server().await?;
         // listen to p2p swarm events
         let p2p_worker = self.p2p_worker.clone();
         let txn_rpc_worker = self.tx_rpc_worker.clone();
