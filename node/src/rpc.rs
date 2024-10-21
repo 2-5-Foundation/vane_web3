@@ -198,7 +198,7 @@ impl TransactionRpcWorker {
     pub async fn new(
         recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
-        port: u16
+        port: u16,
     ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
         let airtable_client = Airtable::new().await?;
@@ -326,6 +326,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 amount,
                 signed_call_payload: None,
                 call_payload: None,
+                indbound_req_id: None,
+                outbound_req_id: None,
             };
 
             // dry run the tx

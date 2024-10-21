@@ -4087,6 +4087,7 @@ dependencies = [
  "libp2p 0.53.2",
  "log",
  "node",
+ "primitives",
  "simplelog",
  "subxt-signer",
  "tokio",

@@ -77,9 +77,15 @@ impl TxProcessingWorker {
         })
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
-    async fn validate_receiver_address(&mut self, tx: TxStateMachine) -> Result<(), anyhow::Error> {
+    pub async fn validate_receiver_address(
+        &mut self,
+        tx: &TxStateMachine,
+    ) -> Result<(), anyhow::Error> {
         let network = tx.network;
-        let signature = tx.signature.ok_or(anyhow!("receiver didnt signed"))?;
+        let signature = tx
+            .clone()
+            .signature
+            .ok_or(anyhow!("receiver didnt signed"))?;
         let msg = tx.receiver_address.clone();
 
         match network {
@@ -142,7 +148,10 @@ impl TxProcessingWorker {
     }
 
     /// create the tx to be signed by externally owned account
-    pub async fn create_tx(&mut self, tx: TxStateMachine) -> Result<Vec<u8>, anyhow::Error> {
+    pub async fn create_tx(
+        &mut self,
+        mut tx: TxStateMachine,
+    ) -> Result<TxStateMachine, anyhow::Error> {
         let network = tx.network;
         let to_signed_bytes = match network {
             ChainSupported::Polkadot => {
@@ -186,7 +195,8 @@ impl TxProcessingWorker {
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
                     .encode(&mut encoded_tx);
 
-                encoded_tx
+                tx.call_payload = Some(encoded_tx);
+                tx
             }
 
             ChainSupported::Bnb => {
@@ -208,7 +218,8 @@ impl TxProcessingWorker {
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
                     .encode(&mut encoded_tx);
 
-                encoded_tx
+                tx.call_payload = Some(encoded_tx);
+                tx
             }
 
             ChainSupported::Solana => {

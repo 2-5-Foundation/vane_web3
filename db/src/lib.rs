@@ -356,7 +356,10 @@ impl From<transaction::Data> for DbTxStateMachine {
         let decoded_network: ChainSupported = Decode::decode(&mut &value.network[..]).unwrap();
         Self {
             tx_hash: value.tx_hash,
-            amount: value.value as u64,
+            amount: value
+                .value
+                .try_into()
+                .expect("failed to convert u128 to u64"),
             network: decoded_network,
             success: value.status,
         }
