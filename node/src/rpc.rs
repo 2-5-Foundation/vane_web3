@@ -9,16 +9,15 @@ use crate::cryptography::verify_public_bytes;
 use alloc::sync::Arc;
 use anyhow::anyhow;
 use db::DbWorker;
-use jsonrpsee::core::Serialize;
 use jsonrpsee::core::__reexports::serde_json;
 use jsonrpsee::{
     core::{async_trait, RpcResult, SubscriptionResult},
     proc_macros::rpc,
     PendingSubscriptionSink, SubscriptionMessage,
 };
-use log::{debug, info, warn};
+use log::info;
 use primitives::data_structure::{
-    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record, Token, TxStateMachine,
+    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Token, TxStateMachine,
     TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
@@ -216,26 +215,22 @@ impl TransactionRpcWorker {
     /// first dry tx, returns the projected fees
     pub async fn dry_run_tx(
         network: ChainSupported,
-        sender: String,
-        recv: String,
-        token: Token,
-        amount: u64,
+        _sender: String,
+        _recv: String,
+        _token: Token,
+        _amount: u64,
     ) -> Result<u64, anyhow::Error> {
-        let fees = match network {
+        let _fees = match network {
             ChainSupported::Polkadot => {
-                todo!()
             }
             ChainSupported::Ethereum => {
-                todo!()
             }
             ChainSupported::Bnb => {
-                todo!()
             }
             ChainSupported::Solana => {
-                todo!()
             }
         };
-        Ok(fees)
+        todo!()
     }
 }
 
@@ -268,10 +263,10 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 .to_base58()
                 .as_bytes()
                 .to_vec(),
-            accountId1: Some(account_id),
-            accountId2: None,
-            accountId3: None,
-            accountId4: None,
+            account_id1: Some(account_id),
+            account_id2: None,
+            account_id3: None,
+            account_id4: None,
             multi_addr: self.url.to_string().as_bytes().to_vec(),
             keypair: Some(
                 self_peer_id
@@ -282,7 +277,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         self.db_worker
             .lock()
             .await
-            .update_user_peerId_accounts(peer_account)
+            .update_user_peer_id_accounts(peer_account)
             .await?;
 
         // let field: Fields = peer_account.clone().into();
@@ -292,7 +287,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         Ok(())
     }
 
-    async fn add_account(&self, name: Vec<u8>, accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()> {
+    async fn add_account(&self, _name: Vec<u8>, _accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()> {
         todo!()
     }
 

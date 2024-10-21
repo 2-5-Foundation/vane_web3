@@ -192,15 +192,15 @@ impl DbWorker {
         Ok(failed_value)
     }
 
-    pub async fn record_user_peerId(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+    pub async fn record_user_peer_id(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
         self.db
             .user_peer()
             .create(
                 peer_record.peer_address,
-                peer_record.accountId1.unwrap_or(vec![]),
-                peer_record.accountId2.unwrap_or(vec![]),
-                peer_record.accountId3.unwrap_or(vec![]),
-                peer_record.accountId4.unwrap_or(vec![]),
+                peer_record.account_id1.unwrap_or(vec![]),
+                peer_record.account_id2.unwrap_or(vec![]),
+                peer_record.account_id3.unwrap_or(vec![]),
+                peer_record.account_id4.unwrap_or(vec![]),
                 peer_record.multi_addr,
                 peer_record.keypair.unwrap(),
                 Default::default(),
@@ -210,7 +210,7 @@ impl DbWorker {
         Ok(())
     }
 
-    pub async fn update_user_peerId_accounts(
+    pub async fn update_user_peer_id_accounts(
         &self,
         peer_record: PeerRecord,
     ) -> Result<(), anyhow::Error> {
@@ -218,7 +218,7 @@ impl DbWorker {
         let mut batch_updates = Vec::new();
 
         // Check and push updates for each account ID
-        if let Some(account_id) = peer_record.accountId1 {
+        if let Some(account_id) = peer_record.account_id1 {
             let update_future = self.db.user_peer().update(
                 user_peer::peer_id::equals(peer_record.peer_address.clone()),
                 vec![user_peer::account_id_1::set(account_id)],
@@ -226,7 +226,7 @@ impl DbWorker {
             batch_updates.push(update_future);
         }
 
-        if let Some(account_id) = peer_record.accountId2 {
+        if let Some(account_id) = peer_record.account_id2 {
             let update_future = self.db.user_peer().update(
                 user_peer::peer_id::equals(peer_record.peer_address.clone()),
                 vec![user_peer::account_id_2::set(account_id)],
@@ -234,7 +234,7 @@ impl DbWorker {
             batch_updates.push(update_future);
         }
 
-        if let Some(account_id) = peer_record.accountId3 {
+        if let Some(account_id) = peer_record.account_id3 {
             let update_future = self.db.user_peer().update(
                 user_peer::peer_id::equals(peer_record.peer_address.clone()),
                 vec![user_peer::account_id_3::set(account_id)],
@@ -242,7 +242,7 @@ impl DbWorker {
             batch_updates.push(update_future);
         }
 
-        if let Some(account_id) = peer_record.accountId4 {
+        if let Some(account_id) = peer_record.account_id4 {
             let update_future = self.db.user_peer().update(
                 user_peer::peer_id::equals(peer_record.peer_address.clone()),
                 vec![user_peer::account_id_4::set(account_id)],
@@ -256,7 +256,7 @@ impl DbWorker {
     }
 
     // get peer by account id
-    pub async fn get_user_peerId(
+    pub async fn get_user_peer_id(
         &self,
         account_id: Vec<u8>,
     ) -> Result<user_peer::Data, anyhow::Error> {
@@ -281,10 +281,10 @@ impl DbWorker {
             .saved_peers()
             .create(
                 peer_record.peer_address,
-                peer_record.accountId1.unwrap_or(vec![]),
-                peer_record.accountId2.unwrap_or(vec![]),
-                peer_record.accountId3.unwrap_or(vec![]),
-                peer_record.accountId4.unwrap_or(vec![]),
+                peer_record.account_id1.unwrap_or(vec![]),
+                peer_record.account_id2.unwrap_or(vec![]),
+                peer_record.account_id3.unwrap_or(vec![]),
+                peer_record.account_id4.unwrap_or(vec![]),
                 peer_record.multi_addr,
                 Default::default(),
             )
@@ -316,10 +316,10 @@ impl From<user_peer::Data> for PeerRecord {
     fn from(value: user_peer::Data) -> Self {
         Self {
             peer_address: value.peer_id,
-            accountId1: Some(value.account_id_1),
-            accountId2: None,
-            accountId3: None,
-            accountId4: None,
+            account_id1: Some(value.account_id_1),
+            account_id2: None,
+            account_id3: None,
+            account_id4: None,
             multi_addr: value.multi_addr,
             keypair: Some(value.keypair),
         }
@@ -330,10 +330,10 @@ impl From<saved_peers::Data> for PeerRecord {
     fn from(value: saved_peers::Data) -> Self {
         Self {
             peer_address: value.node_id,
-            accountId1: Some(value.account_id_1),
-            accountId2: None,
-            accountId3: None,
-            accountId4: None,
+            account_id1: Some(value.account_id_1),
+            account_id2: None,
+            account_id3: None,
+            account_id4: None,
             multi_addr: value.multi_addr,
             keypair: None,
         }

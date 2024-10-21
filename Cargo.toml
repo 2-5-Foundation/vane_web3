@@ -1,5 +1,5 @@
 [workspace]
-members =[ "app", "db", "integration-test","node", "primitives","db/prisma"]
+members =[ "app", "db", "integration-test", "node", "primitives","db/prisma"]
 resolver = "2"
 
 [workspace.dependencies]

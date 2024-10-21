@@ -1,4 +1,3 @@
-use base58::FromBase58;
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 pub use VaneCrypto::*;
 pub mod VaneCrypto {
@@ -11,7 +10,7 @@ pub mod VaneCrypto {
     pub fn verify_public_bytes(
         account: &str,
         token: Token,
-        network: ChainSupported,
+        _network: ChainSupported,
     ) -> Result<ChainSupported, anyhow::Error> {
         match token {
             Token::Dot | Token::UsdtDot => {

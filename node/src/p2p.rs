@@ -1,30 +1,23 @@
 use anyhow::anyhow;
 use core::pin::Pin;
-use log::{debug, error, info, trace, warn};
-use std::collections::BTreeMap;
-use std::future::Future;
+use log::{debug, info, trace};
 use std::io;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 use codec::Encode;
-use db::DbWorker;
-use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, TryStreamExt};
+use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
 use libp2p::request_response::{
-    Codec, InboundRequestId, OutboundRequestId, ProtocolSupport, ResponseChannel,
+    Codec, ProtocolSupport, ResponseChannel,
 };
 use libp2p::swarm::SwarmEvent;
 use libp2p::{
-    request_response::{Behaviour, Event, Message},
-    swarm::NetworkBehaviour,
+    request_response::{Behaviour, Event, Message}
 };
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
-use primitives::data_structure::{new_tx_state_from_mutex, p2pConfig, PeerRecord};
-use primitives::data_structure::{ChainSupported, TxStateMachine};
-use subxt::blocks::Block;
-use subxt::Error;
+use primitives::data_structure::{new_tx_state_from_mutex, PeerRecord};
+use primitives::data_structure::TxStateMachine;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;

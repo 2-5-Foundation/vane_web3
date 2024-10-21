@@ -9,24 +9,22 @@ use crate::rpc::TransactionRpcServer;
 use alloc::sync::Arc;
 use alloy::hex;
 use anyhow::{anyhow, Error};
-use codec::{Decode, Encode};
+use codec::Decode;
 use db::DbWorker;
 use jsonrpsee::server::ServerBuilder;
-use libp2p::futures::{FutureExt, StreamExt};
+use libp2p::futures::StreamExt;
 use libp2p::request_response::{Message, ResponseChannel};
 use libp2p::PeerId;
 use log::{error, info, warn};
 use p2p::P2pWorker;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, Fields, PeerRecord, TxStateMachine,
+    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, PeerRecord, TxStateMachine,
     TxStatus,
 };
 use rpc::TransactionRpcWorker;
 use std::net::SocketAddr;
-use telemetry::TelemetryWorker;
 use tinyrand::{Rand, Xorshift};
-use tokio::io::AsyncBufReadExt;
-use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::sync::Mutex;
 use tx_processing::TxProcessingWorker;
 
 /// Main thread to be spawned by the application
@@ -77,10 +75,10 @@ impl MainServiceWorker {
                 .to_base58()
                 .as_bytes()
                 .to_vec(),
-            accountId1: None,
-            accountId2: None,
-            accountId3: None,
-            accountId4: None,
+            account_id1: None,
+            account_id2: None,
+            account_id3: None,
+            account_id4: None,
             multi_addr: txn_rpc_worker.url.to_string().as_bytes().to_vec(),
             keypair: Some(
                 self_peer_id
@@ -92,7 +90,7 @@ impl MainServiceWorker {
         db_worker
             .lock()
             .await
-            .record_user_peerId(peer_account.clone())
+            .record_user_peer_id(peer_account.clone())
             .await?;
 
         let p2p_worker = P2pWorker::new(peer_account).await?;
@@ -369,7 +367,7 @@ impl MainServiceWorker {
     /// this for now is same as `handle_addr_confirmed_tx_state`
     pub(crate) async fn handle_net_confirmed_tx_state(
         &self,
-        txn: Arc<Mutex<TxStateMachine>>,
+        _txn: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
         todo!()
     }
@@ -389,17 +387,17 @@ impl MainServiceWorker {
         {
             // check the state of tx
             match txn.lock().await.status {
-                TxStatus::genesis => {
+                TxStatus::Genesis => {
                     self.handle_genesis_tx_state(txn.clone()).await?;
                 }
-                TxStatus::addrConfirmed => {
+                TxStatus::AddrConfirmed => {
                     self.handle_recv_addr_confirmed_tx_state(txn.clone())
                         .await?;
                 }
-                TxStatus::netConfirmed => {
+                TxStatus::NetConfirmed => {
                     todo!()
                 }
-                TxStatus::senderConfirmed => {
+                TxStatus::SenderConfirmed => {
                     self.handle_sender_confirmed_tx_state(txn.clone()).await?;
                 }
             };
@@ -441,6 +439,11 @@ impl MainServiceWorker {
         let rpc_result_handle = tokio::spawn(async move {
             // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
             let res = cloned_main_worker.handle_incoming_rpc_tx_updates().await;
+            if let Err(err) = res {
+                error!("rpc handle encountered error; caused by {err}");
+            } else {
+                info!("rpc handle running; handling events messages ✅")
+            }
         });
 
         // listen to p2p swarm events

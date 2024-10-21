@@ -1,12 +1,10 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
-use alloc::{sync::Arc, vec::Vec};
-use codec::{Decode, Encode, Output};
-use libp2p::request_response::{InboundRequestId, OutboundRequestId};
+use alloc::vec::Vec;
+use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::MutexGuard;
 
 // /// The idea is similar to how future executor tasks are able to progress and have channels to send
 // /// themselves
@@ -20,17 +18,17 @@ use tokio::sync::{Mutex, MutexGuard};
 #[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
-    genesis,
+    Genesis,
     /// if receiver address has been confirmed
-    addrConfirmed,
+    AddrConfirmed,
     /// if receiver chain network has been confirmed , used in tx simulation
-    netConfirmed,
+    NetConfirmed,
     /// if the sender has confirmed, last stage and the txn is being submitted
-    senderConfirmed,
+    SenderConfirmed,
 }
 impl Default for TxStatus {
     fn default() -> Self {
-        Self::genesis
+        Self::Genesis
     }
 }
 /// Transaction data structure state machine, passed in rpc and p2p swarm
@@ -164,16 +162,16 @@ pub struct UserAccount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
     pub peer_address: Vec<u8>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub accountId1: Option<Vec<u8>>,
-    pub accountId2: Option<Vec<u8>>,
-    pub accountId3: Option<Vec<u8>>,
-    pub accountId4: Option<Vec<u8>>,
+    pub account_id1: Option<Vec<u8>>,
+    pub account_id2: Option<Vec<u8>>,
+    pub account_id3: Option<Vec<u8>>,
+    pub account_id4: Option<Vec<u8>>,
     pub multi_addr: Vec<u8>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
 
 /// p2p config
-pub struct p2pConfig {}
+pub struct P2pConfig {}
 
 // Tx processing section
 
@@ -227,10 +225,10 @@ impl From<Discovery> for PeerRecord {
 
         Self {
             peer_address: Vec::from(value.peer_id),
-            accountId1: acc.get(0).map(|x| x.clone()),
-            accountId2: acc.get(1).map(|x| x.clone()),
-            accountId3: acc.get(2).map(|x| x.clone()),
-            accountId4: acc.get(3).map(|x| x.clone()),
+            account_id1: acc.get(0).map(|x| x.clone()),
+            account_id2: acc.get(1).map(|x| x.clone()),
+            account_id3: acc.get(2).map(|x| x.clone()),
+            account_id4: acc.get(3).map(|x| x.clone()),
             multi_addr: Vec::from(value.multi_addr),
             keypair: None,
         }
@@ -281,7 +279,7 @@ impl From<PeerRecord> for Fields {
             multi_addr: Some(multi_addr),
             peer_id: Some(peer_id),
             account_id1: Some(
-                String::from_utf8(value.accountId1.expect("no account id 1 from peer record"))
+                String::from_utf8(value.account_id1.expect("no account id 1 from peer record"))
                     .unwrap(),
             ),
             account_id2: None,

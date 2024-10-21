@@ -8,26 +8,22 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use alloy::consensus::{SignableTransaction, TxEip7702};
-use alloy::hex;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::private::alloy_rlp::{Decodable, Encodable};
 use alloy::primitives::ruint::aliases::U256;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
 use anyhow::anyhow;
-use codec;
-use libp2p::futures::TryFutureExt;
-use primitives::data_structure::{ChainSupported, Token, TxStateMachine};
+use primitives::data_structure::{ChainSupported, TxStateMachine};
 use sp_core::{
     ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256,
-    sr25519::{Pair as SrPair, Public as SrPublic, Signature as SrSignature},
+    keccak_256
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
 use std::collections::BTreeMap;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 
 // use solana_client::rpc_client::RpcClient;
@@ -46,7 +42,8 @@ pub struct TxProcessingWorker {
     // /// substrate client
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
-    evm_client: ReqwestProvider,
+    eth_client: ReqwestProvider,
+    bnb_client: ReqwestProvider
     // solana_client: RpcClient
 }
 
@@ -65,7 +62,10 @@ impl TxProcessingWorker {
         //     .map_err(|_| anyhow!("failed to connect polkadot url"))?;
         let eth_rpc_url = eth_url.parse()?;
         // Create a provider with the HTTP transport using the `reqwest` crate.
-        let provider = ProviderBuilder::new().on_http(eth_rpc_url);
+        let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
+
+        let bnb_rpc_url = bnb_url.parse()?;
+        let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {
             tx_state_machine_receiver: recv_channel,
@@ -73,7 +73,8 @@ impl TxProcessingWorker {
             sender_tx_pending: Arc::new(Default::default()),
             receiver_tx_pending: Arc::new(Default::default()),
             //sub_client,
-            evm_client: provider,
+            eth_client: eth_provider,
+            bnb_client: bnb_provider,
         })
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
@@ -143,7 +144,7 @@ impl TxProcessingWorker {
     }
 
     /// simulate the recipient blockchain network for mitigating errors resulting to wrong network selection
-    async fn sim_confirm_network(&mut self, tx: TxStateMachine) -> Result<(), anyhow::Error> {
+    async fn sim_confirm_network(&mut self, _tx: TxStateMachine) -> Result<(), anyhow::Error> {
         Ok(())
     }
 
@@ -292,7 +293,7 @@ impl TxProcessingWorker {
                     signature
                         .as_slice()
                         .try_into()
-                        .map_err(|err| anyhow!("failed to decode tx siganture"))?,
+                        .map_err(|err| anyhow!("failed to decode tx siganture :{err}"))?,
                 );
                 let mut encoded_signed_tx = vec![];
                 signed_tx.tx().encode_with_signature(
@@ -302,20 +303,52 @@ impl TxProcessingWorker {
                 );
 
                 let receipt = self
-                    .evm_client
+                    .eth_client
                     .send_raw_transaction(&encoded_signed_tx)
                     .await
-                    .map_err(|err| anyhow!("failed to submit eth raw tx"))?
+                    .map_err(|err| anyhow!("failed to submit eth raw tx; caused by :{err}"))?
                     .tx_hash()
                     .clone();
 
                 receipt
                     .to_vec()
                     .try_into()
-                    .map_err(|err| anyhow!("failed to convert to 32 bytes array"))?
+                    .map_err(|err| anyhow!("failed to convert to 32 bytes array; caused by: {err:?}"))?
             }
             ChainSupported::Bnb => {
-                todo!()
+                let signature = tx
+                    .signed_call_payload
+                    .ok_or(anyhow!("sender did not signed the tx payload"))?;
+                let tx_payload = tx.call_payload.ok_or(anyhow!("call payload not found"))?;
+                let decoded_tx = TxEip7702::decode(&mut &tx_payload[..]).map_err(|err| {
+                    anyhow!("failed to decode eth EIP7702 tx payload; caused by: {err:?}")
+                })?;
+
+                let signed_tx = decoded_tx.into_signed(
+                    signature
+                        .as_slice()
+                        .try_into()
+                        .map_err(|err| anyhow!("failed to decode tx siganture; caused by: {err}"))?,
+                );
+                let mut encoded_signed_tx = vec![];
+                signed_tx.tx().encode_with_signature(
+                    signed_tx.signature(),
+                    &mut encoded_signed_tx,
+                    false,
+                );
+
+                let receipt = self
+                    .bnb_client
+                    .send_raw_transaction(&encoded_signed_tx)
+                    .await
+                    .map_err(|err| anyhow!("failed to submit eth raw tx; caused by: {err}"))?
+                    .tx_hash()
+                    .clone();
+
+                receipt
+                    .to_vec()
+                    .try_into()
+                    .map_err(|err| anyhow!("failed to convert to 32 bytes array; caused by: {err:?}"))?
             }
             ChainSupported::Solana => {
                 todo!()
