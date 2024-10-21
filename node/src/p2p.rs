@@ -4,11 +4,11 @@ use log::{debug, error, info, trace, warn};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
-use crate::primitives::data_structure::{p2pConfig, PeerRecord};
 use codec::Encode;
 use db::DbWorker;
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, TryStreamExt};
@@ -21,7 +21,8 @@ use libp2p::{
     swarm::NetworkBehaviour,
 };
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
-use primitives::data_structure::{ChainSupported, OuterRequest, Request, Response};
+use primitives::data_structure::{new_tx_state_from_mutex, p2pConfig, PeerRecord};
+use primitives::data_structure::{ChainSupported, TxStateMachine};
 use subxt::blocks::Block;
 use subxt::Error;
 use tokio::sync::Mutex;
@@ -320,9 +321,10 @@ impl P2pWorker {
 
     pub async fn send_request(
         &mut self,
-        request: Request,
+        request: Arc<Mutex<TxStateMachine>>,
         target_peer_id: PeerId,
     ) -> Result<(), anyhow::Error> {
+        let request = request.lock().await;
         let encoded_req = request.encode();
         let outbound_req_id = self
             .swarm
@@ -335,9 +337,11 @@ impl P2pWorker {
     pub async fn send_response(
         &mut self,
         response_channel: ResponseChannel<Result<Vec<u8>, anyhow::Error>>,
-        response: Response,
+        response: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
-        let encoded_resp = response.encode();
+        let txn = response.lock().await;
+        let txn_state = new_tx_state_from_mutex(txn);
+        let encoded_resp = txn_state.encode();
         self.swarm
             .behaviour_mut()
             .send_response(response_channel, Ok(encoded_resp))

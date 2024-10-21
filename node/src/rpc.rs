@@ -18,12 +18,11 @@ use jsonrpsee::{
 };
 use log::{debug, info, warn};
 use primitives::data_structure::{
-    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record,
-    Token, TxStateMachine, TxStatus, UserAccount,
+    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Record, Token, TxStateMachine,
+    TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
-use tinyrand::{Rand, Xorshift};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 
@@ -199,9 +198,9 @@ impl TransactionRpcWorker {
     pub async fn new(
         recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
+        port: u16,
     ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
-        let port = Xorshift::default().next_lim_u16(u16::MAX - 100);
         let airtable_client = Airtable::new().await?;
         let db_worker = DbWorker::initialize_db_client("./../db/dev.db").await?;
         let url = format!("ip4/127.0.0.1:{}", port);
@@ -280,7 +279,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
                     .map_err(|_| anyhow!("failed to encode keypair"))?,
             ),
         };
-        self.db_worker.lock().await.update_user_peerId_accounts(peer_account).await?;
+        self.db_worker
+            .lock()
+            .await
+            .update_user_peerId_accounts(peer_account)
+            .await?;
 
         // let field: Fields = peer_account.clone().into();
         //
@@ -323,6 +326,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 amount,
                 signed_call_payload: None,
                 call_payload: None,
+                indbound_req_id: None,
+                outbound_req_id: None,
             };
 
             // dry run the tx
@@ -332,17 +337,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
             // propagate the tx to lower layer
             let sender_channel = self.sender_channel.lock().await;
 
-            // let tx_state_machine = TxStateMachine {
-            //     sender_channel: Mutex::from(sender_channel.clone()),
-            //     data: new_xt,
-            // };
             let sender = sender_channel.clone();
             sender
                 .send(Arc::from(Mutex::new(tx_state_machine)))
                 .await
-                .map_err(|_| {
-                    anyhow!("failed to send recv confirmation tx state to sender channel")
-                })?;
+                .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))?;
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
@@ -355,12 +354,9 @@ impl TransactionRpcServer for TransactionRpcWorker {
         let sender_channel = self.sender_channel.lock().await;
 
         let sender = sender_channel.clone();
-        sender
-            .send(Arc::from(Mutex::new(tx)))
-            .await
-            .map_err(|_| {
-                anyhow!("failed to send sender confirmation tx state to sender-channel")
-            })?;
+        sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
+            anyhow!("failed to send sender confirmation tx state to sender-channel")
+        })?;
         Ok(())
     }
 
@@ -384,7 +380,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await
             .map_err(|_| anyhow!("failed to accept rpc ws channel"))?;
         while let Some(tx_update) = self.receiver_channel.lock().await.recv().await {
-            let tx:TxStateMachine = tx_update.lock().await.clone();
+            let tx: TxStateMachine = tx_update.lock().await.clone();
 
             let subscription_msg = SubscriptionMessage::from_json(&tx)
                 .map_err(|_| anyhow!("failed to convert tx update to json"))?;

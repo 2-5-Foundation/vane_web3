@@ -30,7 +30,7 @@ curve25519-dalek                        = "4.1.3"
 # ========================================= IntegrationTests ============================
 
 # ========================================= Shared ======================================
-tokio                                   = { version = "1.37.0" }
+tokio                                   = { version = "1.37.0",features = ["net"] }
 anyhow                                  = "1.0.86"
 subxt                                   = { version = "0.30.1", default-features = false, features = [ "web"]}
 log                                     = { version = "0.4.21", default-features = false }

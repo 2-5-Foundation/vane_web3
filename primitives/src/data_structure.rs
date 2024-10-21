@@ -1,12 +1,12 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
-use codec::{Decode, Encode};
-use libp2p::request_response::OutboundRequestId;
+use codec::{Decode, Encode, Output};
+use libp2p::request_response::{InboundRequestId, OutboundRequestId};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 // /// The idea is similar to how future executor tasks are able to progress and have channels to send
 // /// themselves
@@ -21,17 +21,19 @@ use tokio::sync::Mutex;
 pub enum TxStatus {
     /// initial state,
     genesis,
-    /// if address has been confirmed
+    /// if receiver address has been confirmed
     addrConfirmed,
-    /// if chain network has been confirmed , used in tx simulation
+    /// if receiver chain network has been confirmed , used in tx simulation
     netConfirmed,
+    /// if the sender has confirmed, last stage and the txn is being submitted
+    senderConfirmed,
 }
 impl Default for TxStatus {
     fn default() -> Self {
         Self::genesis
     }
 }
-/// Transaction data structure to pass in rpc
+/// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
     pub sender_address: Vec<u8>,
@@ -50,6 +52,28 @@ pub struct TxStateMachine {
     pub signed_call_payload: Option<Vec<u8>>,
     /// call payload
     pub call_payload: Option<Vec<u8>>,
+    /// Inbound Request id for p2p
+    pub indbound_req_id: Option<u64>,
+    /// Outbound Request id for p2p
+    pub outbound_req_id: Option<u64>,
+}
+
+/// helper for solving passing `MutexGuard<TxStateMachine>`
+/// as encoding that type doesnt work
+pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine {
+    TxStateMachine {
+        sender_address: tx.sender_address.clone(),
+        receiver_address: tx.receiver_address.clone(),
+        multi_id: tx.multi_id,
+        signature: tx.signature.clone(),
+        network: tx.network,
+        status: tx.status.clone(),
+        amount: tx.amount.clone(),
+        signed_call_payload: tx.signed_call_payload.clone(),
+        call_payload: tx.call_payload.clone(),
+        indbound_req_id: tx.indbound_req_id,
+        outbound_req_id: tx.outbound_req_id,
+    }
 }
 
 /// Transaction data structure to store in the db
@@ -58,7 +82,7 @@ pub struct DbTxStateMachine {
     // Tx hash based on the chain hashing algorithm
     pub tx_hash: Vec<u8>,
     // amount to be sent
-    pub amount: u64,
+    pub amount: u128,
     // chain network
     pub network: ChainSupported,
     // status
@@ -150,30 +174,6 @@ pub struct PeerRecord {
 
 /// p2p config
 pub struct p2pConfig {}
-
-pub struct OuterRequest {
-    pub id: OutboundRequestId,
-    pub request: Request,
-}
-
-#[derive(Debug, Clone, Decode, Encode)]
-pub struct Request {
-    pub sender: Vec<u8>,
-    pub receiver: Vec<u8>,
-    pub amount: u64,
-    pub network: ChainSupported,
-    pub msg: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Decode, Encode)]
-pub struct Response {
-    pub sender: Vec<u8>,
-    pub receiver: Vec<u8>,
-    pub response: Vec<u8>,
-    pub sent_request_hash: Vec<u8>,
-    pub msg: Vec<u8>,
-    pub signature: Vec<u8>,
-}
 
 // Tx processing section
 

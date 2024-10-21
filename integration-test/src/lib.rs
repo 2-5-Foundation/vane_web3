@@ -1,7 +1,7 @@
 use db::DbWorker;
 use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
-use node::primitives::data_structure::{ChainSupported, OuterRequest, PeerRecord, Request};
+use primitives::data_structure::{ChainSupported, PeerRecord};
 
 use anyhow::{anyhow, Error};
 use libp2p::futures::FutureExt;

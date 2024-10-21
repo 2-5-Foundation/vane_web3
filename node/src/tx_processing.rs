@@ -77,9 +77,15 @@ impl TxProcessingWorker {
         })
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
-    async fn validate_receiver_address(&mut self, tx: TxStateMachine) -> Result<(), anyhow::Error> {
+    pub async fn validate_receiver_address(
+        &mut self,
+        tx: &TxStateMachine,
+    ) -> Result<(), anyhow::Error> {
         let network = tx.network;
-        let signature = tx.signature.ok_or(anyhow!("receiver didnt signed"))?;
+        let signature = tx
+            .clone()
+            .signature
+            .ok_or(anyhow!("receiver didnt signed"))?;
         let msg = tx.receiver_address.clone();
 
         match network {
@@ -132,7 +138,6 @@ impl TxProcessingWorker {
                     ))?
                 }
             }
-            _ => {}
         }
         Ok(())
     }
@@ -143,7 +148,10 @@ impl TxProcessingWorker {
     }
 
     /// create the tx to be signed by externally owned account
-    pub async fn create_tx(&mut self, tx: TxStateMachine) -> Result<Vec<u8>, anyhow::Error> {
+    pub async fn create_tx(
+        &mut self,
+        mut tx: TxStateMachine,
+    ) -> Result<TxStateMachine, anyhow::Error> {
         let network = tx.network;
         let to_signed_bytes = match network {
             ChainSupported::Polkadot => {
@@ -187,7 +195,8 @@ impl TxProcessingWorker {
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
                     .encode(&mut encoded_tx);
 
-                encoded_tx
+                tx.call_payload = Some(encoded_tx);
+                tx
             }
 
             ChainSupported::Bnb => {
@@ -209,13 +218,11 @@ impl TxProcessingWorker {
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
                     .encode(&mut encoded_tx);
 
-                encoded_tx
+                tx.call_payload = Some(encoded_tx);
+                tx
             }
 
             ChainSupported::Solana => {
-                todo!()
-            }
-            _ => {
                 todo!()
             }
         };
@@ -276,9 +283,7 @@ impl TxProcessingWorker {
                 let signature = tx
                     .signed_call_payload
                     .ok_or(anyhow!("sender did not signed the tx payload"))?;
-                let tx_payload = tx
-                    .call_payload
-                    .ok_or(anyhow!("call payload not found"))?;
+                let tx_payload = tx.call_payload.ok_or(anyhow!("call payload not found"))?;
                 let decoded_tx = TxEip7702::decode(&mut &tx_payload[..]).map_err(|err| {
                     anyhow!("failed to decode eth EIP7702 tx payload; caused by: {err:?}")
                 })?;

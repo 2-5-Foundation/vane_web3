@@ -14,3 +14,4 @@ libp2p                                      = { workspace = true}
 subxt-signer                                = { version = "0.37.0", features = ["sr25519","ecdsa"], default-features = false}
 simplelog                                   = "^0.12.0"
 log                                         = "0.4.22"
+primitives                                  = { workspace = true}
