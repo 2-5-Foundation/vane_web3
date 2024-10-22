@@ -1,4 +1,6 @@
 extern crate alloc;
+extern crate core;
+
 mod cryptography;
 pub mod p2p;
 pub mod rpc;
@@ -10,6 +12,7 @@ use alloc::sync::Arc;
 use alloy::hex;
 use anyhow::{anyhow, Error};
 use codec::Decode;
+use core::str::FromStr;
 use db::DbWorker;
 use jsonrpsee::server::ServerBuilder;
 use libp2p::futures::StreamExt;
@@ -18,8 +21,7 @@ use libp2p::PeerId;
 use log::{error, info, warn};
 use p2p::P2pWorker;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, PeerRecord, TxStateMachine,
-    TxStatus,
+    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, PeerRecord, TxStateMachine, TxStatus,
 };
 use rpc::TransactionRpcWorker;
 use std::net::SocketAddr;
@@ -33,8 +35,6 @@ use tx_processing::TxProcessingWorker;
 pub struct MainServiceWorker {
     db_worker: Arc<Mutex<DbWorker>>,
     tx_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
-    // for rpc server usage, it is the same as tx_rpc_worker but it is not behind a shared reference
-    tx_rpc_worker_cloned: Arc<TransactionRpcWorker>,
     tx_processing_worker: Arc<Mutex<TxProcessingWorker>>,
     p2p_worker: Arc<Mutex<P2pWorker>>,
     // holder for the response channel given by the request
@@ -50,10 +50,8 @@ impl MainServiceWorker {
 
         let txn_rpc_worker =
             TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel.clone(), port)
-                .await?;
-
-        let txn_rpc_worker_cloned =
-            TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel, port).await?;
+                .await
+                .map_err(|err| anyhow!("failed to instantiate rpc worker, caused by: {err}"))?;
 
         let tx_processing_worker = TxProcessingWorker::new(
             shared_recv_channel.clone(),
@@ -67,38 +65,11 @@ impl MainServiceWorker {
 
         let db_worker = txn_rpc_worker.db_worker.clone();
 
-        let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
-        let peer_account = PeerRecord {
-            peer_address: self_peer_id
-                .public()
-                .to_peer_id()
-                .to_base58()
-                .as_bytes()
-                .to_vec(),
-            account_id1: None,
-            account_id2: None,
-            account_id3: None,
-            account_id4: None,
-            multi_addr: txn_rpc_worker.url.to_string().as_bytes().to_vec(),
-            keypair: Some(
-                self_peer_id
-                    .to_protobuf_encoding()
-                    .map_err(|_| anyhow!("failed to encode keypair"))?,
-            ),
-        };
-
-        db_worker
-            .lock()
-            .await
-            .record_user_peer_id(peer_account.clone())
-            .await?;
-
-        let p2p_worker = P2pWorker::new(peer_account).await?;
+        let p2p_worker = P2pWorker::new(db_worker.clone(),port).await?;
 
         Ok(Self {
             db_worker,
             tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
-            tx_rpc_worker_cloned: Arc::new(txn_rpc_worker_cloned),
             tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
             response_channel: Arc::new(Mutex::new(None)),
@@ -113,7 +84,8 @@ impl MainServiceWorker {
         p2p_worker: Arc<Mutex<P2pWorker>>,
         txn_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
         txn_processing_worker: Arc<Mutex<TxProcessingWorker>>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), Error> {
+
         while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
             match swarm_msg_result.next().await {
                 Some(swarm_msg) => {
@@ -210,8 +182,8 @@ impl MainServiceWorker {
             .await
         {
             // dial the target
-            let multi_addr = String::from_utf8(acc.multi_addr)?.parse()?;
-            let peer_id = PeerId::from_bytes(&acc.node_id)?;
+            let multi_addr = acc.multi_addr.parse()?;
+            let peer_id = PeerId::from_str(&acc.node_id)?;
             self.p2p_worker
                 .lock()
                 .await
@@ -258,7 +230,8 @@ impl MainServiceWorker {
                         .clone()
                         .expect("failed to get multi addr")
                         .1
-                        .parse()?;
+                        .parse()
+                        .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
                     let peer_id = PeerId::from_bytes(
                         result_peer
                             .clone()
@@ -409,9 +382,8 @@ impl MainServiceWorker {
     pub(crate) async fn start_rpc_server(&self) -> Result<SocketAddr, anyhow::Error> {
         let server_builder = ServerBuilder::new();
 
-        let url = self.tx_rpc_worker.lock().await.url.clone();
-        let rpc_handler = Arc::try_unwrap(self.tx_rpc_worker_cloned.clone())
-            .map_err(|_err| anyhow!("expected to have only 1 strong reference"))?;
+        let url = self.tx_rpc_worker.lock().await.rpc_url.clone();
+        let rpc_handler = self.tx_rpc_worker.clone().lock().await.clone();
 
         let server = server_builder.build(url).await?;
         let address = server
@@ -427,9 +399,17 @@ impl MainServiceWorker {
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
     pub async fn run() -> Result<(), anyhow::Error> {
-        let main_worker = Self::new().await?;
+        info!(target:"MainWorker","vane web3; A safety layer for web3 transactions");
+        let main_worker = Self::new()
+            .await
+            .map_err(|err| anyhow!("failed to instantiate main worker, caused by: {err}"))?;
         // start rpc server
-        main_worker.start_rpc_server().await?;
+        let rpc_address = main_worker
+            .start_rpc_server()
+            .await
+            .map_err(|err| anyhow!("failed to start rpc server, caused by: {err}"))?;
+
+        info!(target: "RpcServer","listening to rpc url: {rpc_address}");
 
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_rpc_worker = main_worker.tx_rpc_worker.clone();

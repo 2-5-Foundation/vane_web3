@@ -161,12 +161,12 @@ pub struct UserAccount {
 /// Vane peer record
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
-    pub peer_address: Vec<u8>, // this should be just account address and it will be converted to libp2p::PeerId,
+    pub peer_address: String, // this should be just account address and it will be converted to libp2p::PeerId,
     pub account_id1: Option<Vec<u8>>,
     pub account_id2: Option<Vec<u8>>,
     pub account_id3: Option<Vec<u8>>,
     pub account_id4: Option<Vec<u8>>,
-    pub multi_addr: Vec<u8>,
+    pub multi_addr: String,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
 
@@ -224,12 +224,12 @@ impl From<Discovery> for PeerRecord {
         }
 
         Self {
-            peer_address: Vec::from(value.peer_id),
+            peer_address: value.peer_id,
             account_id1: acc.get(0).map(|x| x.clone()),
             account_id2: acc.get(1).map(|x| x.clone()),
             account_id3: acc.get(2).map(|x| x.clone()),
             account_id4: acc.get(3).map(|x| x.clone()),
-            multi_addr: Vec::from(value.multi_addr),
+            multi_addr: value.multi_addr,
             keypair: None,
         }
     }
@@ -267,14 +267,9 @@ pub struct Fields {
 
 impl From<PeerRecord> for Fields {
     fn from(value: PeerRecord) -> Self {
-        let multi_addr = String::from_utf8(value.multi_addr).expect("failed to convert multi addr");
-        let peer_id = libp2p::PeerId::from_str(
-            String::from_utf8(value.peer_address)
-                .expect("failed to convert peer address")
-                .as_str(),
-        )
-        .unwrap()
-        .to_base58();
+        let multi_addr = value.multi_addr;
+        let peer_id = value.peer_address;
+
         Self {
             multi_addr: Some(multi_addr),
             peer_id: Some(peer_id),

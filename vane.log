@@ -1,0 +1,4 @@
+15:25:51 [INFO] vane web3; A safety layer for web3 transactions
+15:25:51 [INFO] Starting a sqlite pool with 25 connections.
+15:25:51 [INFO] listening to rpc url: 192.168.1.138:8244
+15:25:51 [INFO] new listener address: "/ip4/192.168.1.138/tcp/7703"

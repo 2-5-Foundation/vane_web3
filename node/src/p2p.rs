@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use core::pin::Pin;
+use core::str::FromStr;
 use log::{debug, info, trace};
 use std::io;
 use std::sync::Arc;
@@ -8,19 +9,17 @@ use std::time::Duration;
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 use codec::Encode;
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
-use libp2p::request_response::{
-    Codec, ProtocolSupport, ResponseChannel,
-};
+use libp2p::request_response::{Behaviour, Event, Message};
+use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
-use libp2p::{
-    request_response::{Behaviour, Event, Message}
-};
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
-use primitives::data_structure::{new_tx_state_from_mutex, PeerRecord};
+use local_ip_address::local_ip;
 use primitives::data_structure::TxStateMachine;
+use primitives::data_structure::{new_tx_state_from_mutex, PeerRecord};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use db::DbWorker;
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 
@@ -175,26 +174,60 @@ type BlockStreamRes<T> = Result<BlockStream<T>, anyhow::Error>;
 pub struct P2pWorker {
     node_id: PeerId,
     swarm: Swarm<Behaviour<GenericCodec>>,
-    url: Multiaddr,
+    url: Multiaddr
 }
 
 impl P2pWorker {
     /// generate new ed25519 keypair for node identity and register the peer record in  the db
-    pub async fn new(user_peer_id: PeerRecord) -> Result<Self, anyhow::Error> {
-        let url = user_peer_id.multi_addr;
-        let multi_addr: Multiaddr = core::str::from_utf8(&url[..])
-            .map_err(|_| anyhow!("failed to convert bytes to str"))?
-            .parse()
-            .map_err(|_| anyhow!("failed to parse multi addr"))?;
+    pub async fn new(db_worker: Arc<Mutex<DbWorker>>,port:u16) -> Result<Self, anyhow::Error> {
 
-        let peer_id: PeerId = PeerId::from_bytes(&user_peer_id.peer_address[..])?;
+        let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
+        let peer_id = self_peer_id.public().to_peer_id().to_base58();
+        let mut p2p_url = String::new();
+
+        let local_ip = local_ip()
+            .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
+
+        if local_ip.is_ipv4() {
+            p2p_url = format!("/ip4/{}/tcp/{}/p2p/{}", local_ip.to_string(), port - 541,peer_id);
+        } else {
+            p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", local_ip.to_string(), port - 541,peer_id);
+        }
+
+        let user_peer_id = PeerRecord {
+            peer_address: peer_id,
+            account_id1: None,
+            account_id2: None,
+            account_id3: None,
+            account_id4: None,
+            multi_addr: p2p_url,
+            keypair: Some(
+                self_peer_id
+                    .to_protobuf_encoding()
+                    .map_err(|_| anyhow!("failed to encode keypair"))?,
+            ),
+        };
+
+        db_worker
+            .lock()
+            .await
+            .record_user_peer_id(user_peer_id.clone())
+            .await?;
+
+        let url = user_peer_id.multi_addr;
+        let multi_addr: Multiaddr = url
+            .parse()
+            .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
+
+        let peer_id: PeerId = PeerId::from_str(&user_peer_id.peer_address)
+            .map_err(|err| anyhow!("failed to convert PeerId, caused by: {err}"))?;
 
         let secret_bytes = user_peer_id.keypair.ok_or(anyhow!("KeyPair is not set"))?;
         let keypair = libp2p::identity::Keypair::from_protobuf_encoding(&secret_bytes[..])
             .map_err(|_| anyhow!("failed to decode keypair ed25519"))?;
 
         let behaviour = Behaviour::new(
-            vec![("vane", ProtocolSupport::Full)].into_iter(),
+            vec![("vane web3", ProtocolSupport::Full)].into_iter(),
             Default::default(),
         );
         let swarm = SwarmBuilder::with_existing_identity(keypair)
@@ -206,7 +239,7 @@ impl P2pWorker {
             )?
             .with_behaviour(|_| behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX))
+                cfg.with_idle_connection_timeout(Duration::from_secs(6000))
             })
             .build();
 
@@ -236,6 +269,7 @@ impl P2pWorker {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(256);
 
         let multi_addr = &self.url;
+
         let _listening_id = self.swarm.listen_on(multi_addr.clone())?;
         trace!(target:"p2p","listening to: {:?}",multi_addr);
 
@@ -266,17 +300,17 @@ impl P2pWorker {
                     num_established,
                     ..
                 } => {
-                    debug!("connection established: peer_id:{peer_id:?} endpoint:{endpoint:?} num_established:{num_established:?}")
+                    info!(target:"p2p","connection established: peer_id:{peer_id:?} endpoint:{endpoint:?} num_established:{num_established:?}")
                 }
                 SwarmEvent::IncomingConnection {
                     local_addr,
                     send_back_addr,
                     ..
                 } => {
-                    debug!("incoming connection: local_addr:{local_addr:?} send_back_addr:{send_back_addr:?}")
+                    info!(target:"p2p","incoming connection: local_addr:{local_addr:?} send_back_addr:{send_back_addr:?}")
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
-                    debug!("dialing to {peer_id:?}")
+                    info!(target:"p2p","dialing to {peer_id:?}")
                 }
                 SwarmEvent::ListenerError { error, .. } => {
                     Err(anyhow!("listener error {error:?}"))?
@@ -287,25 +321,25 @@ impl P2pWorker {
                     cause,
                     ..
                 } => {
-                    debug!("connection closed peer_id:{peer_id:?} endpoint:{endpoint:?} cause:{cause:?}")
+                    info!(target:"p2p","connection closed peer_id:{peer_id:?} endpoint:{endpoint:?} cause:{cause:?}")
                 }
                 SwarmEvent::IncomingConnectionError { error, .. } => {
-                    debug!("incoming connection error: {error:?}")
+                    debug!(target:"p2p","incoming connection error: {error:?}")
                 }
                 SwarmEvent::OutgoingConnectionError { error, .. } => {
-                    debug!("outgoing connection error: {error:?}")
+                    debug!(target:"p2p","outgoing connection error: {error:?}")
                 }
                 SwarmEvent::ListenerClosed { reason, .. } => debug!("listener closed: {reason:?}"),
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    debug!("new listener add: {address:?}")
+                    info!(target:"p2p","new listener address: {address:?}")
                 }
                 SwarmEvent::ExpiredListenAddr { address, .. } => {
-                    debug!("expired listener add: {address:?}")
+                    debug!(target:"p2p","expired listener add: {address:?}")
                 }
                 SwarmEvent::NewExternalAddrCandidate { address, .. } => {
-                    debug!("new external addr candidate: {address:?}")
+                    info!(target:"p2p","new external addr candidate: {address:?}")
                 }
-                _ => debug!("unhandled event"),
+                _ => debug!(target:"p2p","unhandled event"),
             }
         }
 

@@ -18,7 +18,7 @@ use primitives::data_structure::{ChainSupported, TxStateMachine};
 use sp_core::{
     ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256
+    keccak_256,
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
@@ -43,8 +43,7 @@ pub struct TxProcessingWorker {
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
     eth_client: ReqwestProvider,
-    bnb_client: ReqwestProvider
-    // solana_client: RpcClient
+    bnb_client: ReqwestProvider, // solana_client: RpcClient
 }
 
 impl TxProcessingWorker {
@@ -310,10 +309,9 @@ impl TxProcessingWorker {
                     .tx_hash()
                     .clone();
 
-                receipt
-                    .to_vec()
-                    .try_into()
-                    .map_err(|err| anyhow!("failed to convert to 32 bytes array; caused by: {err:?}"))?
+                receipt.to_vec().try_into().map_err(|err| {
+                    anyhow!("failed to convert to 32 bytes array; caused by: {err:?}")
+                })?
             }
             ChainSupported::Bnb => {
                 let signature = tx
@@ -324,12 +322,10 @@ impl TxProcessingWorker {
                     anyhow!("failed to decode eth EIP7702 tx payload; caused by: {err:?}")
                 })?;
 
-                let signed_tx = decoded_tx.into_signed(
-                    signature
-                        .as_slice()
-                        .try_into()
-                        .map_err(|err| anyhow!("failed to decode tx siganture; caused by: {err}"))?,
-                );
+                let signed_tx =
+                    decoded_tx.into_signed(signature.as_slice().try_into().map_err(|err| {
+                        anyhow!("failed to decode tx siganture; caused by: {err}")
+                    })?);
                 let mut encoded_signed_tx = vec![];
                 signed_tx.tx().encode_with_signature(
                     signed_tx.signature(),
@@ -345,10 +341,9 @@ impl TxProcessingWorker {
                     .tx_hash()
                     .clone();
 
-                receipt
-                    .to_vec()
-                    .try_into()
-                    .map_err(|err| anyhow!("failed to convert to 32 bytes array; caused by: {err:?}"))?
+                receipt.to_vec().try_into().map_err(|err| {
+                    anyhow!("failed to convert to 32 bytes array; caused by: {err:?}")
+                })?
             }
             ChainSupported::Solana => {
                 todo!()

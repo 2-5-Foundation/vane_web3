@@ -107,7 +107,7 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
     let db_client = DbWorker::initialize_db_client("./dev.db").await?;
 
     let test_keypair_peer = libp2p::identity::Keypair::generate_ed25519();
-    let peer_address = test_keypair_peer.public().to_peer_id().to_bytes();
+    let peer_address = test_keypair_peer.public().to_peer_id().to_base58();
     let bytes_keypair = test_keypair_peer.to_protobuf_encoding().unwrap();
 
     let key: &[u8] = &[42; 16];
@@ -119,17 +119,17 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
 
     let peer1 = PeerRecord {
         peer_address,
-        accountId1: "0x4690152131E5399dE5E76801Fc7742A087829F00".encode(),
-        accountId2: None,
-        accountId3: None,
-        accountId4: None,
-        multi_addr: "/ip4/127.0.0.1/tcp/8080".encode(),
+        account_id1: Some("0x4690152131E5399dE5E76801Fc7742A087829F00".encode()),
+        account_id2: None,
+        account_id3: None,
+        account_id4: None,
+        multi_addr: "/ip4/127.0.0.1/tcp/8080".to_string(),
         keypair: Some(encrypted_keypair),
     };
-    db_client.record_user_peerId(peer1.clone()).await?;
+    db_client.record_user_peer_id(peer1.clone()).await?;
 
     let get_peer1: PeerRecord = db_client
-        .get_user_peerId("0x4690152131E5399dE5E76801Fc7742A087829F00".encode())
+        .get_user_peer_id("0x4690152131E5399dE5E76801Fc7742A087829F00".encode())
         .await?
         .into();
     assert_eq!(get_peer1, peer1);

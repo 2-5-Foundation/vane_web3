@@ -38,12 +38,12 @@ model Transaction {
 
 model UserPeer {
     id                Int               @id @default(autoincrement())
-    peerId            Bytes             @unique // String or data structure encoded
+    peerId            String            @unique // String or data structure encoded
     accountId1        Bytes
     accountId2        Bytes
     accountId3        Bytes
     accountId4        Bytes
-    multiAddr         Bytes             // String or enum
+    multiAddr         String             // String or enum
     keypair           Bytes             // ed25519 node keypair encoded and encrypted
 }
 
@@ -51,11 +51,11 @@ model UserPeer {
 
 model SavedPeers {
     id                Int               @id @default(autoincrement())
-    nodeId            Bytes             @unique
+    nodeId            String            @unique
     accountId1        Bytes             // with network id 1
     accountId2        Bytes             // 2
     accountId3        Bytes
     accountId4        Bytes
-    multiAddr         Bytes
+    multiAddr         String
 }
 

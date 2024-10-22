@@ -15,6 +15,8 @@ use jsonrpsee::{
     proc_macros::rpc,
     PendingSubscriptionSink, SubscriptionMessage,
 };
+use local_ip_address;
+use local_ip_address::local_ip;
 use log::info;
 use primitives::data_structure::{
     AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Token, TxStateMachine,
@@ -23,7 +25,7 @@ use primitives::data_structure::{
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 const AIRTABLE_SECRET: &'static str =
     "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";
@@ -181,16 +183,17 @@ pub trait TransactionRpc {
 
 /// handling tx submission & tx confirmation & tx simulation interactions
 /// a first layer a user interact with and submits the tx to processing layer
+#[derive(Clone)]
 pub struct TransactionRpcWorker {
     pub db_worker: Arc<Mutex<DbWorker>>,
     /// central server to get peer data
     pub airtable_client: Arc<Mutex<Airtable>>,
-    /// peer url for p2p protocol
-    pub url: String,
+    /// rpc server url
+    pub rpc_url: String,
     /// receiving end of tx , updating state of tx to end user
     pub receiver_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
     /// sender channel to send self sending tx-state-machine
-    pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
+    pub sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
 }
 
 impl TransactionRpcWorker {
@@ -201,14 +204,23 @@ impl TransactionRpcWorker {
     ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
         let airtable_client = Airtable::new().await?;
-        let db_worker = DbWorker::initialize_db_client("./../db/dev.db").await?;
-        let url = format!("ip4/127.0.0.1:{}", port);
+        let db_worker = DbWorker::initialize_db_client("db/dev.db").await?;
+        let local_ip = local_ip()
+            .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
+
+        let mut rpc_url = String::new();
+
+        if local_ip.is_ipv4() {
+            rpc_url = format!("{}:{}", local_ip.to_string(), port);
+        } else {
+            rpc_url = format!("{}:{}", local_ip.to_string(), port);
+        }
         Ok(Self {
             db_worker: Arc::new(Mutex::new(db_worker)),
             airtable_client: Arc::new(Mutex::new(airtable_client)),
-            url,
+            rpc_url,
             receiver_channel: recv_channel,
-            sender_channel: Mutex::new(sender_channel),
+            sender_channel: Arc::new(Mutex::new(sender_channel)),
         })
     }
 
@@ -221,14 +233,10 @@ impl TransactionRpcWorker {
         _amount: u64,
     ) -> Result<u64, anyhow::Error> {
         let _fees = match network {
-            ChainSupported::Polkadot => {
-            }
-            ChainSupported::Ethereum => {
-            }
-            ChainSupported::Bnb => {
-            }
-            ChainSupported::Solana => {
-            }
+            ChainSupported::Polkadot => {}
+            ChainSupported::Ethereum => {}
+            ChainSupported::Bnb => {}
+            ChainSupported::Solana => {}
         };
         todo!()
     }
@@ -257,17 +265,12 @@ impl TransactionRpcServer for TransactionRpcWorker {
         // update: account address related to peer id
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_account = PeerRecord {
-            peer_address: self_peer_id
-                .public()
-                .to_peer_id()
-                .to_base58()
-                .as_bytes()
-                .to_vec(),
+            peer_address: self_peer_id.public().to_peer_id().to_base58(),
             account_id1: Some(account_id),
             account_id2: None,
             account_id3: None,
             account_id4: None,
-            multi_addr: self.url.to_string().as_bytes().to_vec(),
+            multi_addr: "".to_string(),
             keypair: Some(
                 self_peer_id
                     .to_protobuf_encoding()
@@ -287,7 +290,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
         Ok(())
     }
 
-    async fn add_account(&self, _name: Vec<u8>, _accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()> {
+    async fn add_account(
+        &self,
+        _name: Vec<u8>,
+        _accounts: Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> RpcResult<()> {
         todo!()
     }
 
