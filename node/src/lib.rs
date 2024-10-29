@@ -16,6 +16,7 @@ use libp2p::futures::{FutureExt, StreamExt};
 use libp2p::request_response::{Message, ResponseChannel};
 use libp2p::PeerId;
 use log::{error, info, warn};
+use sc_service::TaskManager;
 use p2p::P2pWorker;
 use primitives::data_structure::{
     new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, Fields, PeerRecord, TxStateMachine,
@@ -44,7 +45,7 @@ pub struct MainServiceWorker {
 }
 
 impl MainServiceWorker {
-    pub(crate) async fn new() -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(task_manager: &TaskManager) -> Result<Self, anyhow::Error> {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
         let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
 
@@ -428,37 +429,51 @@ impl MainServiceWorker {
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
-    pub async fn run() -> Result<(), anyhow::Error> {
-        let main_worker = Self::new().await?;
+    pub async fn run(task_manager: &TaskManager) -> Result<(), anyhow::Error> {
+        let main_worker = Self::new(task_manager).await?;
         // start rpc server
         main_worker.start_rpc_server().await?;
 
+        let rpc_worker = main_worker.clone();
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_rpc_worker = main_worker.tx_rpc_worker.clone();
         let txn_processing_worker = main_worker.tx_processing_worker.clone();
+        let swarm_worker = main_worker.clone();
+        let rpc_updates_worker = main_worker.clone();
 
         let cloned_main_worker = main_worker.clone();
-        let rpc_result_handle = tokio::spawn(async move {
+        
+        task_manager.spawn_handle().spawn("rpc-server", None, async move {
             // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
-            let res = cloned_main_worker.handle_incoming_rpc_tx_updates().await;
-        });
-
-        // listen to p2p swarm events
-        let swarm_result_handle = tokio::spawn(async move {
-            let res = main_worker
-                .handle_swarm_event_messages(p2p_worker, txn_rpc_worker, txn_processing_worker)
-                .await;
-            if let Err(err) = res {
-                error!("swarm handle encountered error; caused by {err}");
-            } else {
-                info!("swarm handle running; handling events messages ✅")
+            if let Err(e) = rpc_worker.start_rpc_server().await {
+                error!("Failed to start RPC server: {:?}", e);
             }
         });
 
-        // ============================================
-        // run the swarm and rpc event listener and handler as a background task
-        rpc_result_handle.await?;
-        swarm_result_handle.await?;
+        // listen to p2p swarm events
+        task_manager.spawn_handle().spawn("swarm-event-handler", None, async move {
+                async{
+                    if let Err(err) = swarm_worker
+                .handle_swarm_event_messages(p2p_worker, txn_rpc_worker, txn_processing_worker)
+                .await
+                {
+                    error!("swarm handle encountered error; caused by {err}");
+                } else {
+                    info!("swarm handle running; handling events messages ✅")
+                }
+            }.await
+
+        });
+
+
+        // Spawn the incoming RPC updates handler
+        task_manager.spawn_handle().spawn("rpc-updates-handler", None, {
+            async move {
+                if let Err(e) = rpc_updates_worker.handle_incoming_rpc_tx_updates().await {
+                            error!("RPC updates handler encountered error: {:?}", e);
+                        }
+                    }
+                });
         Ok(())
     }
 }
