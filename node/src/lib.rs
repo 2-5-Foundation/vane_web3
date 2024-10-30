@@ -18,14 +18,16 @@ use jsonrpsee::server::ServerBuilder;
 use libp2p::futures::StreamExt;
 use libp2p::request_response::{Message, ResponseChannel};
 use libp2p::PeerId;
+use local_ip_address::local_ip;
 use log::{error, info, warn};
 use p2p::P2pWorker;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, PeerRecord, TxStateMachine, TxStatus,
+    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, PeerRecord, SwarmMessage,
+    TxStateMachine, TxStatus,
 };
+use rand::Rng;
 use rpc::TransactionRpcWorker;
 use std::net::SocketAddr;
-use tinyrand::{Rand, Xorshift};
 use tokio::sync::Mutex;
 use tx_processing::TxProcessingWorker;
 
@@ -33,12 +35,11 @@ use tx_processing::TxProcessingWorker;
 /// this encompasses all node's logic and processing flow
 #[derive(Clone)]
 pub struct MainServiceWorker {
-    db_worker: Arc<Mutex<DbWorker>>,
-    tx_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
-    tx_processing_worker: Arc<Mutex<TxProcessingWorker>>,
-    p2p_worker: Arc<Mutex<P2pWorker>>,
-    // holder for the response channel given by the request
-    response_channel: Arc<Mutex<Option<ResponseChannel<Result<Vec<u8>, Error>>>>>, //telemetry_worker: TelemetryWorker,
+    pub db_worker: Arc<Mutex<DbWorker>>,
+    pub tx_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
+    pub tx_processing_worker: Arc<Mutex<TxProcessingWorker>>,
+    // for swarm events
+    pub p2p_worker: Arc<Mutex<P2pWorker>>, //telemetry_worker: TelemetryWorker,
 }
 
 impl MainServiceWorker {
@@ -46,12 +47,19 @@ impl MainServiceWorker {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
         let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
 
-        let port = Xorshift::default().next_lim_u16(u16::MAX - 100);
+        let port = rand::thread_rng().gen_range(0..=u16::MAX);
 
-        let txn_rpc_worker =
-            TransactionRpcWorker::new(shared_recv_channel.clone(), sender_channel.clone(), port)
-                .await
-                .map_err(|err| anyhow!("failed to instantiate rpc worker, caused by: {err}"))?;
+        let db_worker = Arc::new(Mutex::new(
+            DbWorker::initialize_db_client("db/dev.db").await?,
+        ));
+
+        let txn_rpc_worker = TransactionRpcWorker::new(
+            db_worker.clone(),
+            shared_recv_channel.clone(),
+            sender_channel.clone(),
+            port,
+        )
+        .await?;
 
         let tx_processing_worker = TxProcessingWorker::new(
             shared_recv_channel.clone(),
@@ -63,16 +71,13 @@ impl MainServiceWorker {
         )
         .await?;
 
-        let db_worker = txn_rpc_worker.db_worker.clone();
-
-        let p2p_worker = P2pWorker::new(db_worker.clone(),port).await?;
+        let p2p_worker = P2pWorker::new(db_worker.clone(), port).await?;
 
         Ok(Self {
             db_worker,
             tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
             tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
-            response_channel: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -85,7 +90,6 @@ impl MainServiceWorker {
         txn_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
         txn_processing_worker: Arc<Mutex<TxProcessingWorker>>,
     ) -> Result<(), Error> {
-
         while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
             match swarm_msg_result.next().await {
                 Some(swarm_msg) => {
@@ -98,14 +102,9 @@ impl MainServiceWorker {
                                 // 1. send the tx to the rpc
                                 // 2. sign the message attesting ownership of the private key and can control the acc in X network
                                 // 3. update the tx state machine and send it back to the initial sender
-                                Message::Request {
-                                    request_id,
-                                    request,
-                                    channel,
-                                } => {
-                                    let _ = self.response_channel.lock().await.insert(channel);
+                                SwarmMessage::Request { data, inbound_id } => {
                                     let decoded_req: TxStateMachine =
-                                        Decode::decode(&mut &request[..])
+                                        Decode::decode(&mut &data[..])
                                             .expect("failed to decode request body");
                                     // send it to be signed via Rpc
                                     txn_rpc_worker
@@ -122,15 +121,9 @@ impl MainServiceWorker {
                                 // the sender should;
                                 // 1. verify the recv signature public key to the one binded in the multi address
                                 // 2. send the tx to be signed to rpc
-                                Message::Response {
-                                    request_id,
-                                    response,
-                                } => {
-                                    let resp = response.map_err(|err| {
-                                        anyhow!("error on the response, caused by; {err}")
-                                    })?;
+                                SwarmMessage::Response { data, outbound_id } => {
                                     let decoded_resp: TxStateMachine =
-                                        Decode::decode(&mut &resp[..])
+                                        Decode::decode(&mut &data[..])
                                             .expect("failed to decode request body");
 
                                     txn_processing_worker
@@ -276,18 +269,8 @@ impl MainServiceWorker {
         &self,
         txn: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
-        let channel = self.response_channel.lock().await.take().ok_or(anyhow!(
-            "response channel not available yet; not yet received any request from p2p swarm"
-        ))?;
-        if channel.is_open() {
-            self.p2p_worker
-                .lock()
-                .await
-                .send_response(channel, txn)
-                .await?
-        } else {
-            Err(anyhow!("response channel timed out"))?
-        }
+        self.p2p_worker.lock().await.send_response(txn).await?;
+
         Ok(())
     }
 
@@ -399,10 +382,14 @@ impl MainServiceWorker {
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
     pub async fn run() -> Result<(), anyhow::Error> {
-        info!(target:"MainWorker","vane web3; A safety layer for web3 transactions");
-        let main_worker = Self::new()
-            .await
-            .map_err(|err| anyhow!("failed to instantiate main worker, caused by: {err}"))?;
+        info!(
+            "\n🔥 =========== Vane Web3 =========== 🔥\n\
+             A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
+             tokens without the fear of selecting the wrong address or network. \n\
+             It provides a safety net, giving you room to make mistakes without losing all your funds.\n"
+        );
+
+        let main_worker = Self::new().await?;
         // start rpc server
         let rpc_address = main_worker
             .start_rpc_server()
@@ -434,7 +421,89 @@ impl MainServiceWorker {
             if let Err(err) = res {
                 error!("swarm handle encountered error; caused by {err}");
             } else {
-                info!("swarm handle running; handling events messages ✅")
+                info!("swarm handle running: handling events messages ✅")
+            }
+        });
+
+        // ============================================
+        // run the swarm and rpc event listener and handler as a background task
+        rpc_result_handle.await?;
+        swarm_result_handle.await?;
+        Ok(())
+    }
+
+    // =================================== E2E ====================================== //
+
+    #[cfg(feature = "e2e")]
+    // return Self, rpc url, p2p url
+    pub async fn e2e_new(port: u16, db: &str) -> Result<Self, anyhow::Error> {
+        let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
+        let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
+
+        let db_worker = Arc::new(Mutex::new(DbWorker::initialize_db_client(db).await?));
+
+        let txn_rpc_worker = TransactionRpcWorker::new(
+            db_worker.clone(),
+            shared_recv_channel.clone(),
+            sender_channel.clone(),
+            port,
+        )
+        .await?;
+
+        let tx_processing_worker = TxProcessingWorker::new(
+            shared_recv_channel.clone(),
+            (
+                ChainSupported::Bnb,
+                ChainSupported::Ethereum,
+                ChainSupported::Solana,
+            ),
+        )
+        .await?;
+
+        let p2p_worker = P2pWorker::new(db_worker.clone(), port).await?;
+
+        Ok(Self {
+            db_worker,
+            tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
+            tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
+            p2p_worker: Arc::new(Mutex::new(p2p_worker)),
+        })
+    }
+
+    #[cfg(feature = "e2e")]
+    pub async fn e2e_run(self) -> Result<(), anyhow::Error> {
+        // start rpc server
+        let rpc_address = self
+            .start_rpc_server()
+            .await
+            .map_err(|err| anyhow!("failed to start rpc server, caused by: {err}"))?;
+
+        info!(target: "RpcServer","listening to rpc url: {rpc_address}");
+
+        let p2p_worker = self.p2p_worker.clone();
+        let txn_rpc_worker = self.tx_rpc_worker.clone();
+        let txn_processing_worker = self.tx_processing_worker.clone();
+
+        let cloned_main_worker = self.clone();
+        let rpc_result_handle = tokio::spawn(async move {
+            // watch tx messages from tx rpc worker and pass it to p2p to be verified by receiver
+            let res = cloned_main_worker.handle_incoming_rpc_tx_updates().await;
+            if let Err(err) = res {
+                error!("rpc handle encountered error; caused by {err}");
+            } else {
+                info!("rpc handle running; handling events messages ✅")
+            }
+        });
+
+        // listen to p2p swarm events
+        let swarm_result_handle = tokio::spawn(async move {
+            let res = self
+                .handle_swarm_event_messages(p2p_worker, txn_rpc_worker, txn_processing_worker)
+                .await;
+            if let Err(err) = res {
+                error!("swarm handle encountered error; caused by {err}");
+            } else {
+                info!("swarm handle running: handling events messages ✅")
             }
         });
 

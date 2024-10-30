@@ -1,9 +1,13 @@
+use codec::{Decode, Encode};
 use db::DbWorker;
 use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
+use node::MainServiceWorker;
 use primitives::data_structure::{ChainSupported, PeerRecord};
 use simplelog::*;
 use std::fs::File;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
@@ -16,137 +20,201 @@ fn log_setup() -> Result<(), anyhow::Error> {
         WriteLogger::new(
             LevelFilter::Info,
             Config::default(),
-            File::create("vane.log").unwrap(),
+            File::create("vane-test.log").unwrap(),
         ),
-    ])
-    .unwrap();
+    ])?;
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[ignore]
-async fn p2p_test() -> Result<(), anyhow::Error> {
-    log_setup()?;
-    //
-    // let (sender1, mut recv1) = tokio::sync::mpsc::channel(256);
-    //
-    // let alice1 = subxt_signer::sr25519::dev::alice().public_key().0;
-    // let self_keypair = libp2p::identity::Keypair::generate_ed25519();
-    // let self_multi_addr: Multiaddr = "/ip4/127.0.0.1/tcp/20200".parse()?;
-    //
-    // let bob = subxt_signer::sr25519::dev::bob().public_key().0;
-    // let target_keypair = libp2p::identity::Keypair::generate_ed25519();
-    // let target_multi_addr: Multiaddr = "/ip4/127.0.0.1/tcp/5820".parse()?;
-    //
-    // let self_peer_record = PeerRecord {
-    //     peer_address: self_keypair.public().to_peer_id().to_bytes(),
-    //     accountId1: alice1.to_vec(),
-    //     accountId2: None,
-    //     accountId3: None,
-    //     accountId4: None,
-    //     multi_addr: self_multi_addr.to_string().as_bytes().to_vec(),
-    //     keypair: Some(self_keypair.to_protobuf_encoding().unwrap()),
-    // };
-    //
-    // // store user record
-    // let target_peer_record = PeerRecord {
-    //     peer_address: target_keypair.public().to_peer_id().to_bytes(),
-    //     accountId1: bob.to_vec(),
-    //     accountId2: None,
-    //     accountId3: None,
-    //     accountId4: None,
-    //     multi_addr: target_multi_addr.to_string().as_bytes().to_vec(),
-    //     keypair: Some(target_keypair.to_protobuf_encoding().unwrap()),
-    // };
-    // // store target record and this should be fetched from PeerStore
-    //
-    // let worker1 = P2pWorker::new(self_peer_record).await?;
-    // let worker2 = P2pWorker::new(target_peer_record).await?;
-    //
-    // let worker1 = Arc::new(Mutex::new(worker1));
-    // let worker2 = Arc::new(Mutex::new(worker2));
-    //
-    // let worker1_clone = Arc::clone(&worker1);
-    // let worker2_clone = Arc::clone(&worker2);
-    //
-    // block_in_place(|| {
-    //     Handle::current().block_on(async move {
-    //         let res = worker1_clone.lock().await.start_swarm().await;
-    //         let sender_res = sender1.send(res).await;
-    //     });
-    // });
-    //
-    // // let mut stream2 = None;
-    // block_in_place(|| {
-    //     Handle::current().block_on(async move {
-    //         let res = worker2_clone.lock().await.start_swarm().await;
-    //         //stream2 = Some(res)
-    //     });
-    // });
-    //
-    // worker1
-    //     .lock()
-    //     .await
-    //     .dial_to_peer_id(target_multi_addr, target_keypair.public().to_peer_id())
-    //     .await?;
-    //
-    // let req = Request {
-    //     sender: vec![],
-    //     receiver: vec![],
-    //     amount: 1000,
-    //     network: ChainSupported::Polkadot,
-    //     msg: vec![],
-    // };
-    //
-    // worker1
-    //     .lock()
-    //     .await
-    //     .send_request(req, target_keypair.public().to_peer_id())
-    //     .await?;
-    //
-    // while let Some(stream_next) = recv1.recv().await {
-    //     match stream_next {
-    //         Ok(mut stream_inner) => {
-    //             while let Some(stream_inner_inner) = stream_inner.next().await {
-    //                 match stream_inner_inner {
-    //                     Ok(stream_msg) => {
-    //                         info!("msg {stream_msg:?}")
-    //                     }
-    //                     Err(e) => {
-    //                         error!("{e:?}")
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         Err(err) => {
-    //             error!("stream 1 next error: {err:?}")
-    //         }
-    //     }
-    // }
+#[cfg(feature = "e2e")]
+mod e2e_tests {
+    use super::*;
+    use crate::log_setup;
+    use anyhow::{anyhow, Error};
+    use db::db::new_client_with_url;
+    use libp2p::futures::StreamExt;
+    use libp2p::request_response::Message;
+    use log::{error, info};
+    use node::MainServiceWorker;
+    use primitives::data_structure::{SwarmMessage, TxStateMachine};
+    use std::sync::Arc;
 
-    Ok(())
+    // having 2 peers; peer 1 sends a tx-state-machine message to peer 2
+    // and peer2 respond a modified version of tx-state-machine.
+    // and the vice-versa
+    #[tokio::test]
+    async fn p2p_test() -> Result<(), anyhow::Error> {
+        log_setup();
+
+        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test1.db").await?;
+        let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test2.db").await?;
+
+        // Test state structure
+        struct TestState {
+            sent_msg: TxStateMachine,
+            response_msg: TxStateMachine,
+        }
+
+        // Create shared state using Arc
+        let test_state = Arc::new(TestState {
+            sent_msg: TxStateMachine::default(),
+            response_msg: TxStateMachine {
+                amount: 1000,
+                ..Default::default()
+            },
+        });
+
+        // Spawn worker 1 task
+        let worker_1 = main_worker_1.clone();
+        let state_1 = test_state.clone();
+
+        let swarm_task_1 = tokio::spawn(async move {
+            let mut swarm = worker_1.p2p_worker.lock().await.start_swarm().await?;
+
+            while let Some(event) = swarm.next().await {
+                match event {
+                    Ok(SwarmMessage::Request { .. }) => {
+                        info!("Worker 1 received request");
+                    }
+                    Ok(SwarmMessage::Response { data, outbound_id }) => {
+                        let received_response: TxStateMachine =
+                            Decode::decode(&mut &data[..]).unwrap();
+                        assert_eq!(received_response, state_1.response_msg);
+                        return Ok(());
+                    }
+                    Err(e) => error!("Worker 1 error: {}", e),
+                }
+            }
+            Ok::<_, anyhow::Error>(())
+        });
+
+        // Spawn worker 2 task
+        let worker_2 = main_worker_2.clone();
+        let state_2 = test_state.clone();
+
+        let swarm_task_2 = tokio::spawn(async move {
+            let mut swarm = worker_2.p2p_worker.lock().await.start_swarm().await?;
+
+            while let Some(event) = swarm.next().await {
+                match event {
+                    Ok(SwarmMessage::Request { data, inbound_id }) => {
+                        println!("received a req: {data:?}");
+                        // worker_2
+                        //     .req_resp
+                        //     .lock()
+                        //     .await
+                        //     .send_response(
+                        //         channel,
+                        //         Arc::new(Mutex::new(state_2.response_msg.clone())),
+                        //     )
+                        //     .await?;
+                    }
+                    Ok(SwarmMessage::Response { .. }) => {
+                        info!("Worker 2 received response");
+                    }
+                    Err(e) => error!("Worker 2 error: {}", e),
+                }
+            }
+            Ok::<_, anyhow::Error>(())
+        });
+
+        // sending the request
+        let peer_id_2 = main_worker_2.p2p_worker.lock().await.node_id;
+        let multi_addr_2 = main_worker_2.p2p_worker.lock().await.url.clone();
+
+        main_worker_1
+            .p2p_worker
+            .lock()
+            .await
+            .dial_to_peer_id(multi_addr_2, peer_id_2)
+            .await?;
+
+        main_worker_1
+            .p2p_worker
+            .lock()
+            .await
+            .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2)
+            .await?;
+
+        swarm_task_1.await??;
+        swarm_task_2.await??;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rpc_test() -> Result<(), anyhow::Error> {
+        log_setup();
+        // // test airtable data
+        // let rpc_worker = RpcWorker::new().await?;
+        // let data = rpc_worker
+        //     .airtable_client
+        //     .lock()
+        //     .await
+        //     .list_all_peers()
+        //     .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn airtable_test() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn transaction_processing_test() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn telemetry_test() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    // user creating an account, and sending a correct eth transaction works with recv and sender confirmation
+    #[tokio::test]
+    async fn user_flow_eth_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    // user creating an account, and sending a wrong eth address transaction reverts
+    #[tokio::test]
+    async fn user_flow_eth_wrong_address_reverts() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn user_flow_erc20_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn user_flow_bnb_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn user_flow_bnb_wrong_network_reverts() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+    #[tokio::test]
+    async fn user_flow_bnb_reverts() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn user_flow_brc20_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revenue_eth_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revenue_bnb_works() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
-
-#[tokio::test]
-async fn rpc_test() -> Result<(), anyhow::Error> {
-    log_setup()?;
-    // // test airtable data
-    // let rpc_worker = RpcWorker::new().await?;
-    // let data = rpc_worker
-    //     .airtable_client
-    //     .lock()
-    //     .await
-    //     .list_all_peers()
-    //     .await?;
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn telemetry_test() -> Result<(), anyhow::Error> {
-    Ok(())
-}
-
-// send tx and confirm both sender and receiver successfully
-
-// send tx and revert tx due to address error and network error

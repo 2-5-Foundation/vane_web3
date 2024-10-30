@@ -1,21 +1,16 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
 use alloc::vec::Vec;
+use anyhow::Error;
 use codec::{Decode, Encode};
+use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
+use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tokio::sync::MutexGuard;
 
-// /// The idea is similar to how future executor tasks are able to progress and have channels to send
-// /// themselves
-// pub struct TxStateMachine {
-//     /// Sender channel to propagate itself
-//     pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
-//     pub data: RpcTxStateMachine,
-// }
-
 /// tx state
-#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
     Genesis,
@@ -32,7 +27,7 @@ impl Default for TxStatus {
     }
 }
 /// Transaction data structure state machine, passed in rpc and p2p swarm
-#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
     pub sender_address: Vec<u8>,
     pub receiver_address: Vec<u8>,
@@ -72,6 +67,32 @@ pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine
         indbound_req_id: tx.indbound_req_id,
         outbound_req_id: tx.outbound_req_id,
     }
+}
+
+pub enum NetworkCommand {
+    SendRequest {
+        request: Vec<u8>,
+        peer_id: PeerId,
+    },
+    SendResponse {
+        response: Vec<u8>,
+        channel: ResponseChannel<Result<Vec<u8>, Error>>,
+    },
+    Dial {
+        peer_id: PeerId
+    }
+}
+
+#[derive(Clone)]
+pub enum SwarmMessage {
+    Request {
+        data: Vec<u8>,
+        inbound_id: InboundRequestId,
+    },
+    Response {
+        data: Vec<u8>,
+        outbound_id: OutboundRequestId,
+    },
 }
 
 /// Transaction data structure to store in the db
@@ -119,6 +140,12 @@ pub enum ChainSupported {
     Ethereum,
     Bnb,
     Solana,
+}
+
+impl Default for ChainSupported {
+    fn default() -> Self {
+        ChainSupported::Polkadot
+    }
 }
 
 impl From<ChainSupported> for &'static str {

@@ -59,11 +59,15 @@ impl TxProcessingWorker {
         // let sub_client = OnlineClient::from_url(polkadot_url)
         //     .await
         //     .map_err(|_| anyhow!("failed to connect polkadot url"))?;
-        let eth_rpc_url = eth_url.parse()?;
+        let eth_rpc_url = eth_url
+            .parse()
+            .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
         // Create a provider with the HTTP transport using the `reqwest` crate.
         let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
 
-        let bnb_rpc_url = bnb_url.parse()?;
+        let bnb_rpc_url = bnb_url
+            .parse()
+            .map_err(|err| anyhow!("bnb rpc url parse errror: {err}"))?;
         let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {

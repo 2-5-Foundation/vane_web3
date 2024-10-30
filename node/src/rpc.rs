@@ -185,6 +185,7 @@ pub trait TransactionRpc {
 /// a first layer a user interact with and submits the tx to processing layer
 #[derive(Clone)]
 pub struct TransactionRpcWorker {
+    /// local database worker
     pub db_worker: Arc<Mutex<DbWorker>>,
     /// central server to get peer data
     pub airtable_client: Arc<Mutex<Airtable>>,
@@ -198,25 +199,27 @@ pub struct TransactionRpcWorker {
 
 impl TransactionRpcWorker {
     pub async fn new(
+        db_worker: Arc<Mutex<DbWorker>>,
         recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
         port: u16,
     ) -> Result<Self, anyhow::Error> {
         // fetch to the db, if not then set one
-        let airtable_client = Airtable::new().await?;
-        let db_worker = DbWorker::initialize_db_client("db/dev.db").await?;
+        let airtable_client = Airtable::new()
+            .await
+            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
         let local_ip = local_ip()
             .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
 
         let mut rpc_url = String::new();
 
         if local_ip.is_ipv4() {
-            rpc_url = format!("{}:{}", local_ip.to_string(), port);
+            rpc_url = format!("{}:{}", local_ip.to_string(), port - 290);
         } else {
-            rpc_url = format!("{}:{}", local_ip.to_string(), port);
+            rpc_url = format!("{}:{}", local_ip.to_string(), port - 290);
         }
         Ok(Self {
-            db_worker: Arc::new(Mutex::new(db_worker)),
+            db_worker,
             airtable_client: Arc::new(Mutex::new(airtable_client)),
             rpc_url,
             receiver_channel: recv_channel,

@@ -20,7 +20,7 @@ model UserAccount {
 
 // ===========================================Tx=======================================
 model TransactionsData {
-    id                Int               @id
+    id                Int               @id @default(autoincrement())
     successValue      BigInt               // amount
     failedValue       BigInt               // amount
 }
@@ -58,4 +58,3 @@ model SavedPeers {
     accountId4        Bytes
     multiAddr         String
 }
-

@@ -2,7 +2,7 @@
 #![allow(unused)]
 extern crate alloc;
 
-mod db;
+pub mod db;
 
 #[cfg(test)]
 mod db_tests;
@@ -30,26 +30,39 @@ pub struct DbWorker {
     db: Arc<PrismaClient>,
 }
 
-const SERVER_DATA_ID: i32 = 100;
+const SERVER_DATA_ID: i32 = 1;
 
 impl DbWorker {
     pub async fn initialize_db_client(file_url: &str) -> Result<Self, anyhow::Error> {
         let url = format!("file:{}", file_url);
-        let client = new_client_with_url(&url).await?;
+        let client = new_client_with_url(&url)
+            .await
+            .map_err(|err| anyhow!("failed to initialize db client, caused by: {err}"))?;
+
         let client = Arc::new(client);
-        let data_option = client
+
+        cfg!(feature = "e2e");
+        client._migrate_deploy().await?;
+
+        // we are initializing transaction data as all of following operations is going to be updating this storage item
+        let return_data = client
             .transactions_data()
-            .find_first(vec![WhereParam::Id(IntFilter::Equals(SERVER_DATA_ID))])
+            .find_first(vec![WhereParam::Id(IntFilter::Equals(1))])
             .exec()
-            .await?;
-        match data_option {
-            Some(_data) => {}
-            None => {
+            .await;
+
+        if let Ok(return_data) = return_data {
+            if let None = return_data {
                 client
                     .transactions_data()
-                    .create(SERVER_DATA_ID, 0, 0, vec![])
+                    .create(0, 0, vec![])
                     .exec()
                     .await?;
+            }
+        } else {
+            // create new tx data
+            if let Err(err) = client.transactions_data().create(0, 0, vec![]).exec().await {
+                error!(target:"db","failed to create new transaction data; caused by: {err}");
             }
         }
         Ok(Self { db: client })
@@ -102,7 +115,7 @@ impl DbWorker {
         self.db
             .transactions_data()
             .update(
-                transactions_data::id::equals(SERVER_DATA_ID),
+                transactions_data::id::equals(1),
                 vec![transactions_data::success_value::increment(
                     tx_state.amount as i64,
                 )],
@@ -130,7 +143,7 @@ impl DbWorker {
         self.db
             .transactions_data()
             .update(
-                transactions_data::id::equals(SERVER_DATA_ID),
+                transactions_data::id::equals(1),
                 vec![transactions_data::failed_value::increment(
                     tx_state.amount as i64,
                 )],

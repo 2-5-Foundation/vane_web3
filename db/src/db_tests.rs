@@ -138,8 +138,8 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
 
 #[tokio::test]
 async fn all_db_tests_in_order_works() -> Result<(), anyhow::Error> {
-    storing_success_n_failed_tx_works().await?;
     user_creation_n_retrieving_works().await?;
     storing_user_peer_id_n_retrieving_works().await?;
+    storing_success_n_failed_tx_works().await?;
     Ok(())
 }

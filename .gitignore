@@ -3,3 +3,5 @@
 Cargo.lock
 /db/src/db.rs
 /db/migrations
+/integration-test/vane.log
+/integration-test/vane-test.log
