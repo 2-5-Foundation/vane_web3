@@ -1,6 +1,3 @@
-13:19:21 [INFO] Starting a sqlite pool with 25 connections.
-13:19:21 [INFO] dialing to: 12D3KooWNkNCQorzHB8ohJ9yWuoKAAJVoZq5JFmFsSvBN67Rnx8H, url: /ip4/192.168.1.138/tcp/3459/p2p/12D3KooWNkNCQorzHB8ohJ9yWuoKAAJVoZq5JFmFsSvBN67Rnx8H
-13:19:21 [INFO] sending request command to the swarm thread :PeerId("12D3KooWNkNCQorzHB8ohJ9yWuoKAAJVoZq5JFmFsSvBN67Rnx8H")
-13:19:21 [INFO] new listener address: "/ip4/192.168.1.138/tcp/2459"
-13:19:21 [INFO] dialing
-13:19:21 [INFO] new listener address: "/ip4/192.168.1.138/tcp/3459"
+16:59:55 [INFO] Starting a sqlite pool with 25 connections.
+16:59:55 [INFO] listening to rpc url: 192.168.1.138:2710
+16:59:55 [INFO] new listener address: "/ip4/192.168.1.138/tcp/2459"

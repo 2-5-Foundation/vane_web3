@@ -209,12 +209,12 @@ impl DbWorker {
         self.db
             .user_peer()
             .create(
-                peer_record.peer_address,
+                peer_record.peer_id.unwrap(),
                 peer_record.account_id1.unwrap_or(vec![]),
                 peer_record.account_id2.unwrap_or(vec![]),
                 peer_record.account_id3.unwrap_or(vec![]),
                 peer_record.account_id4.unwrap_or(vec![]),
-                peer_record.multi_addr,
+                peer_record.multi_addr.unwrap(),
                 peer_record.keypair.unwrap(),
                 Default::default(),
             )
@@ -233,7 +233,7 @@ impl DbWorker {
         // Check and push updates for each account ID
         if let Some(account_id) = peer_record.account_id1 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
                 vec![user_peer::account_id_1::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -241,7 +241,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id2 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
                 vec![user_peer::account_id_2::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -249,7 +249,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id3 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
                 vec![user_peer::account_id_3::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -257,7 +257,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id4 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_address.clone()),
+                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
                 vec![user_peer::account_id_4::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -293,12 +293,12 @@ impl DbWorker {
         self.db
             .saved_peers()
             .create(
-                peer_record.peer_address,
+                peer_record.peer_id.unwrap(),
                 peer_record.account_id1.unwrap_or(vec![]),
                 peer_record.account_id2.unwrap_or(vec![]),
                 peer_record.account_id3.unwrap_or(vec![]),
                 peer_record.account_id4.unwrap_or(vec![]),
-                peer_record.multi_addr,
+                peer_record.multi_addr.unwrap(),
                 Default::default(),
             )
             .exec()
@@ -328,12 +328,12 @@ impl DbWorker {
 impl From<user_peer::Data> for PeerRecord {
     fn from(value: user_peer::Data) -> Self {
         Self {
-            peer_address: value.peer_id,
+            peer_id: Some(value.peer_id),
             account_id1: Some(value.account_id_1),
             account_id2: None,
             account_id3: None,
             account_id4: None,
-            multi_addr: value.multi_addr,
+            multi_addr: Some(value.multi_addr),
             keypair: Some(value.keypair),
         }
     }
@@ -342,12 +342,12 @@ impl From<user_peer::Data> for PeerRecord {
 impl From<saved_peers::Data> for PeerRecord {
     fn from(value: saved_peers::Data) -> Self {
         Self {
-            peer_address: value.node_id,
+            peer_id: Some(value.node_id),
             account_id1: Some(value.account_id_1),
             account_id2: None,
             account_id3: None,
             account_id4: None,
-            multi_addr: value.multi_addr,
+            multi_addr: Some(value.multi_addr),
             keypair: None,
         }
     }

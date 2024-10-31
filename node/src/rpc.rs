@@ -65,8 +65,8 @@ impl Airtable {
 
     pub async fn list_all_peers(&self) -> Result<Vec<Discovery>, anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
-
         let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
+
         let req = self.client.get(list_record_url).build()?;
         let resp = self.client.execute(req).await?;
 
@@ -75,7 +75,7 @@ impl Airtable {
         }
         let body = resp.bytes().await?;
         let json_value = serde_json::from_slice::<&serde_json::value::RawValue>(&*body)?;
-        //
+
         let record: AirtableResponse = serde_json::from_str(json_value.get())?;
 
         let mut peers: Vec<Discovery> = vec![];
@@ -98,14 +98,8 @@ impl Airtable {
 
             // build the discovery object
             let disc = Discovery {
-                peer_id: record
-                    .fields
-                    .peer_id
-                    .unwrap_or("0x0000000000000000".to_string()),
-                multi_addr: record
-                    .fields
-                    .multi_addr
-                    .unwrap_or("ip4/1.1.1/tcp/1000/p2p/0x000000".to_string()),
+                peer_id: record.fields.peer_id,
+                multi_addr: record.fields.multi_addr,
                 account_ids: accounts,
             };
             peers.push(disc)
@@ -120,7 +114,7 @@ impl Airtable {
 
         let resp = self
             .client
-            .patch(list_record_url)
+            .post(list_record_url)
             .json::<Fields>(&record.into())
             .send()
             .await?;
@@ -133,7 +127,24 @@ impl Airtable {
         Ok(())
     }
 
-    pub async fn update_peer() -> Result<(), anyhow::Error> {
+    // a patch request
+    pub async fn update_peer(&self, record: Fields) -> Result<(), anyhow::Error> {
+        let url = Url::parse(AIRTABLE_URL)?;
+        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
+
+        let resp = self
+            .client
+            .patch(list_record_url)
+            .json::<Fields>(&record.into())
+            .send()
+            .await?;
+
+        if resp.status().is_server_error() || resp.status().is_client_error() {
+            Err(anyhow!("server or client error"))?
+        }
+        if resp.status().is_success() {
+            info!("succesfully created peer in airtable");
+        }
         Ok(())
     }
 }
@@ -253,6 +264,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
         account_id: Vec<u8>,
         network: ChainSupported,
     ) -> RpcResult<()> {
+        // TODO verify the account id as it belongs to the registerer
+
         let user_account = UserAccount {
             user_name: name,
             account_id: account_id.clone(),
@@ -266,29 +279,26 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
-        let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
+
         let peer_account = PeerRecord {
-            peer_address: self_peer_id.public().to_peer_id().to_base58(),
+            peer_id: None,
             account_id1: Some(account_id),
             account_id2: None,
             account_id3: None,
             account_id4: None,
-            multi_addr: "".to_string(),
-            keypair: Some(
-                self_peer_id
-                    .to_protobuf_encoding()
-                    .map_err(|_| anyhow!("failed to encode keypair"))?,
-            ),
+            multi_addr: None,
+            keypair: None,
         };
         self.db_worker
             .lock()
             .await
-            .update_user_peer_id_accounts(peer_account)
+            .update_user_peer_id_accounts(peer_account.clone())
             .await?;
 
-        // let field: Fields = peer_account.clone().into();
-        //
-        // self.airtable_client.lock().await.create_peer(field).await?;
+        // update to airtable
+        let field: Fields = peer_account.into();
+
+        self.airtable_client.lock().await.update_peer(field).await?;
 
         Ok(())
     }

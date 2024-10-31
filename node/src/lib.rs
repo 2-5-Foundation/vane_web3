@@ -16,7 +16,7 @@ use core::str::FromStr;
 use db::DbWorker;
 use jsonrpsee::server::ServerBuilder;
 use libp2p::futures::StreamExt;
-use libp2p::request_response::{Message, ResponseChannel};
+use libp2p::request_response::{InboundRequestId, Message, ResponseChannel};
 use libp2p::PeerId;
 use local_ip_address::local_ip;
 use log::{error, info, warn};
@@ -71,7 +71,8 @@ impl MainServiceWorker {
         )
         .await?;
 
-        let p2p_worker = P2pWorker::new(db_worker.clone(), port).await?;
+        let airtable = txn_rpc_worker.airtable_client.clone();
+        let p2p_worker = P2pWorker::new(airtable, db_worker.clone(), port).await?;
 
         Ok(Self {
             db_worker,
@@ -199,6 +200,7 @@ impl MainServiceWorker {
                 .await
                 .list_all_peers()
                 .await?;
+
             let target_id_addr = hex::encode(txn.lock().await.receiver_address.clone());
 
             if !acc_ids.is_empty() {
@@ -223,6 +225,7 @@ impl MainServiceWorker {
                         .clone()
                         .expect("failed to get multi addr")
                         .1
+                        .unwrap()
                         .parse()
                         .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
                     let peer_id = PeerId::from_bytes(
@@ -230,6 +233,7 @@ impl MainServiceWorker {
                             .clone()
                             .expect("failed to get peer id")
                             .0
+                            .unwrap()
                             .as_bytes(),
                     )?;
 
@@ -267,9 +271,10 @@ impl MainServiceWorker {
     /// send the response to the sender via p2p swarm
     pub(crate) async fn handle_recv_addr_confirmed_tx_state(
         &self,
+        id: u64,
         txn: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
-        self.p2p_worker.lock().await.send_response(txn).await?;
+        self.p2p_worker.lock().await.send_response(id, txn).await?;
 
         Ok(())
     }
@@ -347,7 +352,12 @@ impl MainServiceWorker {
                     self.handle_genesis_tx_state(txn.clone()).await?;
                 }
                 TxStatus::AddrConfirmed => {
-                    self.handle_recv_addr_confirmed_tx_state(txn.clone())
+                    let inbound_id = txn
+                        .lock()
+                        .await
+                        .indbound_req_id
+                        .expect("no inbound req id found");
+                    self.handle_recv_addr_confirmed_tx_state(inbound_id, txn.clone())
                         .await?;
                 }
                 TxStatus::NetConfirmed => {
@@ -460,7 +470,8 @@ impl MainServiceWorker {
         )
         .await?;
 
-        let p2p_worker = P2pWorker::new(db_worker.clone(), port).await?;
+        let airtable = txn_rpc_worker.airtable_client.clone();
+        let p2p_worker = P2pWorker::new(airtable, db_worker.clone(), port).await?;
 
         Ok(Self {
             db_worker,

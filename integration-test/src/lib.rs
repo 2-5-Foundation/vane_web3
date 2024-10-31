@@ -1,5 +1,7 @@
 use codec::{Decode, Encode};
 use db::DbWorker;
+use jsonrpsee::core::client::ClientT;
+use jsonrpsee::http_client::HttpClient;
 use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
 use node::MainServiceWorker;
@@ -32,6 +34,8 @@ mod e2e_tests {
     use crate::log_setup;
     use anyhow::{anyhow, Error};
     use db::db::new_client_with_url;
+    use jsonrpsee::http_client::HttpClientBuilder;
+    use jsonrpsee::ws_client::WsClientBuilder;
     use libp2p::futures::StreamExt;
     use libp2p::request_response::Message;
     use log::{error, info};
@@ -145,14 +149,20 @@ mod e2e_tests {
     #[tokio::test]
     async fn rpc_test() -> Result<(), anyhow::Error> {
         log_setup();
-        // // test airtable data
-        // let rpc_worker = RpcWorker::new().await?;
-        // let data = rpc_worker
-        //     .airtable_client
-        //     .lock()
-        //     .await
-        //     .list_all_peers()
-        //     .await?;
+        // main worker
+        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test3.db").await?;
+        main_worker_1.clone().e2e_run().await?;
+
+        let rpc_url = main_worker_1.tx_rpc_worker.lock().await.rpc_url.clone();
+        let full_url = format!("ws://{rpc_url}");
+        let rpc_client = WsClientBuilder::default()
+            .build(full_url.as_str())
+            .await
+            .expect("failed to intialize rpc ws client");
+
+        // creating account
+
+        // initializing a transaction
 
         Ok(())
     }

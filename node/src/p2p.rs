@@ -3,21 +3,24 @@ use core::pin::Pin;
 use core::str::FromStr;
 use log::{debug, error, info, trace};
 use std::collections::{HashMap, VecDeque};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
+use crate::rpc::Airtable;
 use codec::Encode;
 use db::DbWorker;
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
-use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message};
+use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
 use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
 use local_ip_address::local_ip;
-use primitives::data_structure::{new_tx_state_from_mutex, PeerRecord};
+use primitives::data_structure::{new_tx_state_from_mutex, Fields, PeerRecord};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
+use sp_core::H256;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
@@ -183,16 +186,19 @@ pub struct P2pWorker {
     pub command_tx: Arc<Sender<NetworkCommand>>,
     // for receiving network commands
     pub command_recv: Arc<Mutex<Receiver<NetworkCommand>>>,
-    // for pending requests to be replied, along with the response channel
-    pub pending_request:
-        Arc<Mutex<HashMap<InboundRequestId, ResponseChannel<Result<Vec<u8>, Error>>>>>,
+    // for pending requests to be replied, along with the response channel <InboundRequestId, Channel>
+    pub pending_request: Arc<Mutex<HashMap<u64, ResponseChannel<Result<Vec<u8>, Error>>>>>,
     // for storing current ongoing request data
     pub current_req: VecDeque<SwarmMessage>, // (reqId,request_data)
 }
 
 impl P2pWorker {
     /// generate new ed25519 keypair for node identity and register the peer record in  the db
-    pub async fn new(db_worker: Arc<Mutex<DbWorker>>, port: u16) -> Result<Self, Error> {
+    pub async fn new(
+        airtable_client: Arc<Mutex<Airtable>>,
+        db_worker: Arc<Mutex<DbWorker>>,
+        port: u16,
+    ) -> Result<Self, Error> {
         let (command_tx, mut command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(256); // For requests/responses
 
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
@@ -219,12 +225,12 @@ impl P2pWorker {
         }
 
         let user_peer_id = PeerRecord {
-            peer_address: peer_id,
+            peer_id: Some(peer_id),
             account_id1: None,
             account_id2: None,
             account_id3: None,
             account_id4: None,
-            multi_addr: p2p_url,
+            multi_addr: Some(p2p_url),
             keypair: Some(
                 self_peer_id
                     .to_protobuf_encoding()
@@ -232,18 +238,23 @@ impl P2pWorker {
             ),
         };
 
+        // store in the local db and airtable db
         db_worker
             .lock()
             .await
             .record_user_peer_id(user_peer_id.clone())
             .await?;
 
-        let url = user_peer_id.multi_addr;
+        let field: Fields = user_peer_id.clone().into();
+
+        airtable_client.lock().await.create_peer(field).await?;
+
+        let url = user_peer_id.multi_addr.unwrap();
         let multi_addr: Multiaddr = url
             .parse()
             .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
-        let peer_id: PeerId = PeerId::from_str(&user_peer_id.peer_address)
+        let peer_id: PeerId = PeerId::from_str(&user_peer_id.peer_id.unwrap())
             .map_err(|err| anyhow!("failed to convert PeerId, caused by: {err}"))?;
 
         let secret_bytes = user_peer_id.keypair.ok_or(anyhow!("keyPair is not set"))?;
@@ -298,11 +309,9 @@ impl P2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Arc<
-            Mutex<HashMap<InboundRequestId, ResponseChannel<Result<Vec<u8>, Error>>>>,
-        >,
+        pending_request: Arc<Mutex<HashMap<u64, ResponseChannel<Result<Vec<u8>, Error>>>>>,
         events: SwarmEvent<Event<Vec<u8>, Result<Vec<u8>, Error>>>,
-        sender: Sender<Result<primitives::data_structure::SwarmMessage, Error>>,
+        sender: Sender<Result<SwarmMessage, Error>>,
     ) {
         match events {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -320,7 +329,12 @@ impl P2pWorker {
                                 data: request,
                                 inbound_id: request_id,
                             };
-                            pending_request.lock().await.insert(request_id, channel);
+
+                            let mut req_id_hash = DefaultHasher::default();
+                            request_id.hash(&mut req_id_hash);
+
+                            let req_id_hash = req_id_hash.finish();
+                            pending_request.lock().await.insert(req_id_hash, channel);
 
                             info!("storing current request data");
                             if let Err(e) = sender.send(Ok(req_msg)).await {
@@ -406,9 +420,7 @@ impl P2pWorker {
         }
     }
 
-    pub async fn start_swarm(
-        &mut self,
-    ) -> Result<BlockStream<SwarmMessage>, Error> {
+    pub async fn start_swarm(&mut self) -> Result<BlockStream<SwarmMessage>, Error> {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(256);
 
         let multi_addr = &self.url;
@@ -458,7 +470,6 @@ impl P2pWorker {
                             }
                         },
                         Some(NetworkCommand::Dial {peer_id}) => {
-                            info!("dialing");
                             swarm.dial(peer_id).map_err(|err|anyhow!("failed to dial: {err}"))?
                         },
                         None => {}
@@ -493,16 +504,24 @@ impl P2pWorker {
 
     pub async fn send_response(
         &mut self,
+        outbound_id: u64,
         response: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
         let txn = response.lock().await;
         let txn_state = new_tx_state_from_mutex(txn);
         let encoded_resp = txn_state.encode();
-        // let resp_command = NetworkCommand::SendResponse {
-        //     response: vec![],
-        //     channel: (),
-        // };
-        // self.command_tx.send(encoded_resp)
+        let channel = self
+            .clone()
+            .pending_request
+            .lock_owned()
+            .await
+            .remove(&outbound_id)
+            .ok_or(anyhow!("failed to get response channel"))?;
+        let resp_command = NetworkCommand::SendResponse {
+            response: encoded_resp,
+            channel,
+        };
+        self.command_tx.send(resp_command).await?;
         info!(target: "p2p","sending response command");
 
         Ok(())

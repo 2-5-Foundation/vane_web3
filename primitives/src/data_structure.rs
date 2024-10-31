@@ -6,6 +6,7 @@ use codec::{Decode, Encode};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use sp_core::H256;
 use std::str::FromStr;
 use tokio::sync::MutexGuard;
 
@@ -79,8 +80,8 @@ pub enum NetworkCommand {
         channel: ResponseChannel<Result<Vec<u8>, Error>>,
     },
     Dial {
-        peer_id: PeerId
-    }
+        peer_id: PeerId,
+    },
 }
 
 #[derive(Clone)]
@@ -188,12 +189,12 @@ pub struct UserAccount {
 /// Vane peer record
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
-    pub peer_address: String, // this should be just account address and it will be converted to libp2p::PeerId,
+    pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
     pub account_id1: Option<Vec<u8>>,
     pub account_id2: Option<Vec<u8>>,
     pub account_id3: Option<Vec<u8>>,
     pub account_id4: Option<Vec<u8>>,
-    pub multi_addr: String,
+    pub multi_addr: Option<String>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
 
@@ -225,8 +226,8 @@ pub const BEP20: [u8; 20] = [
 // airtable db or peer discovery
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Discovery {
-    pub peer_id: String,
-    pub multi_addr: String,
+    pub peer_id: Option<String>,
+    pub multi_addr: Option<String>,
     pub account_ids: Vec<String>,
 }
 
@@ -251,7 +252,7 @@ impl From<Discovery> for PeerRecord {
         }
 
         Self {
-            peer_address: value.peer_id,
+            peer_id: value.peer_id,
             account_id1: acc.get(0).map(|x| x.clone()),
             account_id2: acc.get(1).map(|x| x.clone()),
             account_id3: acc.get(2).map(|x| x.clone()),
@@ -295,11 +296,12 @@ pub struct Fields {
 impl From<PeerRecord> for Fields {
     fn from(value: PeerRecord) -> Self {
         let multi_addr = value.multi_addr;
-        let peer_id = value.peer_address;
+        let peer_id = value.peer_id;
 
+        // TODO convert all accounts
         Self {
-            multi_addr: Some(multi_addr),
-            peer_id: Some(peer_id),
+            multi_addr,
+            peer_id,
             account_id1: Some(
                 String::from_utf8(value.account_id1.expect("no account id 1 from peer record"))
                     .unwrap(),
