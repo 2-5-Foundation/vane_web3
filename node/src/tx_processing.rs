@@ -14,6 +14,7 @@ use alloy::primitives::ruint::aliases::U256;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
 use anyhow::anyhow;
+use core::str::FromStr;
 use primitives::data_structure::{ChainSupported, TxStateMachine};
 use sp_core::{
     ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
@@ -108,9 +109,9 @@ impl TxProcessingWorker {
                 todo!()
             }
             ChainSupported::Ethereum | ChainSupported::Bnb => {
-                let ec_receiver_public = EcdsaPublic::from_slice(&tx.receiver_address[..])
+                let ec_receiver_public = EcdsaPublic::from_str(&tx.receiver_address)
                     .map_err(|_| anyhow!("failed to convert ecdsa recv addr bytes"))?;
-                let hashed_msg = keccak_256(&msg[..]);
+                let hashed_msg = keccak_256(msg.as_bytes());
                 let sig = EcdsaSignature::from_slice(&signature[..])
                     .map_err(|_| anyhow!("failed to convert Ecdsa_signature"))?;
                 if sig.verify(&hashed_msg[..], &ec_receiver_public) {
@@ -129,12 +130,12 @@ impl TxProcessingWorker {
                 }
             }
             ChainSupported::Solana => {
-                let ed_receiver_public = EdPublic::from_slice(&tx.receiver_address[..])
+                let ed_receiver_public = EdPublic::from_str(&tx.receiver_address)
                     .map_err(|_| anyhow!("failed to convert ed25519 recv addr bytes"))?;
                 let sig = EdSignature::from_slice(&signature[..])
                     .map_err(|_| anyhow!("failed to convert ed25519_signature"))?;
 
-                if sig.verify(&msg[..], &ed_receiver_public) {
+                if sig.verify(msg.as_bytes(), &ed_receiver_public) {
                     Ok::<(), anyhow::Error>(())?
                 } else {
                     Err(anyhow!(
@@ -182,7 +183,7 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Ethereum => {
-                let to_address = Address::from_slice(&tx.receiver_address);
+                let to_address = Address::from_slice(&tx.receiver_address.as_bytes());
                 let value = U256::from(tx.amount);
 
                 let tx_builder = alloy::rpc::types::TransactionRequest::default()
@@ -204,7 +205,7 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Bnb => {
-                let to_address = Address::from_slice(&tx.receiver_address);
+                let to_address = Address::from_slice(&tx.receiver_address.as_bytes());
                 let value = U256::from(tx.amount);
 
                 let tx_builder = alloy::rpc::types::TransactionRequest::default()

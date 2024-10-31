@@ -30,8 +30,8 @@ impl Default for TxStatus {
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
-    pub sender_address: Vec<u8>,
-    pub receiver_address: Vec<u8>,
+    pub sender_address: String,
+    pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
     pub multi_id: sp_core::H256,
     /// signature of the receiver id
@@ -149,13 +149,27 @@ impl Default for ChainSupported {
     }
 }
 
-impl From<ChainSupported> for &'static str {
+impl From<ChainSupported> for String {
     fn from(value: ChainSupported) -> Self {
         match value {
-            ChainSupported::Polkadot => "Polkadot",
-            ChainSupported::Ethereum => "Ethereum",
-            ChainSupported::Bnb => "Bnb",
-            ChainSupported::Solana => "Solana",
+            ChainSupported::Polkadot => "Polkadot".to_string(),
+            ChainSupported::Ethereum => "Ethereum".to_string(),
+            ChainSupported::Bnb => "Bnb".to_string(),
+            ChainSupported::Solana => "Solana".to_string(),
+        }
+    }
+}
+
+impl From<&str> for ChainSupported {
+    fn from(value: &str) -> Self {
+        match value {
+            "Polkadot" => ChainSupported::Polkadot,
+            "Ethereum" => ChainSupported::Ethereum,
+            "Bnb" => ChainSupported::Bnb,
+            "Solana" => ChainSupported::Solana,
+            _ => {
+                unreachable!()
+            }
         }
     }
 }
@@ -181,8 +195,8 @@ impl ChainSupported {
 /// User account
 #[derive(Clone, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct UserAccount {
-    pub user_name: Vec<u8>,
-    pub account_id: Vec<u8>,
+    pub user_name: String,
+    pub account_id: String,
     pub network: ChainSupported,
 }
 
@@ -190,10 +204,10 @@ pub struct UserAccount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
     pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub account_id1: Option<Vec<u8>>,
-    pub account_id2: Option<Vec<u8>>,
-    pub account_id3: Option<Vec<u8>>,
-    pub account_id4: Option<Vec<u8>>,
+    pub account_id1: Option<String>,
+    pub account_id2: Option<String>,
+    pub account_id3: Option<String>,
+    pub account_id4: Option<String>,
     pub multi_addr: Option<String>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
@@ -235,19 +249,19 @@ impl From<Discovery> for PeerRecord {
     fn from(value: Discovery) -> Self {
         let mut acc = vec![];
         if let Some(addr) = value.account_ids.get(0) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(1) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(2) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(3) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
 
@@ -298,17 +312,20 @@ impl From<PeerRecord> for Fields {
         let multi_addr = value.multi_addr;
         let peer_id = value.peer_id;
 
-        // TODO convert all accounts
-        Self {
+        let mut fields = Fields {
             multi_addr,
             peer_id,
-            account_id1: Some(
-                String::from_utf8(value.account_id1.expect("no account id 1 from peer record"))
-                    .unwrap(),
-            ),
+            account_id1: None,
             account_id2: None,
             account_id3: None,
             account_id4: None,
+        };
+
+        if let Some(acc_1) = value.account_id1 {
+            fields.account_id1 = Some(acc_1)
         }
+        // TODO convert all accounts
+
+        fields
     }
 }

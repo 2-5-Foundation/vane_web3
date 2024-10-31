@@ -153,23 +153,40 @@ impl Airtable {
 #[rpc(server, client)]
 pub trait TransactionRpc {
     /// register user profile, generate node peer id and push the profile for vane discovery server
-    /// params: `name`,`vec![(address, networkId)]`
+    /// params:
+    ///
+    ///  - `name`
+    ///  - `accountId`
+    ///  - `network`
+
     #[method(name = "register")]
     async fn register_vane_web3(
         &self,
-        name: Vec<u8>,
-        account_id: Vec<u8>,
+        name: String,
+        account_id: String,
         network: ChainSupported,
     ) -> RpcResult<()>;
 
     /// add crypto address account
-    /// params: `vec![(address, networkId)]`
+    /// params:
+    ///
+    /// - `name`
+    /// - `vec![(address, networkId)]`
     #[method(name = "addAccount")]
-    async fn add_account(&self, name: Vec<u8>, accounts: Vec<(Vec<u8>, Vec<u8>)>) -> RpcResult<()>;
+    async fn add_account(
+        &self,
+        name: String,
+        accounts: Vec<(String, ChainSupported)>,
+    ) -> RpcResult<()>;
 
     /// initiate tx to be verified recv address and network choice
-    /// params: `sender address`,`receiver_address`, `amount`, `Optional networkId`
-    #[method(name = "sendTx")]
+    /// params:
+    ///
+    /// - `sender address`,
+    /// - `receiver_address`,
+    /// - `amount`,
+    /// - `networkId`
+    #[method(name = "sendTransaction")]
     async fn initiate_transaction(
         &self,
         sender: String,
@@ -260,8 +277,8 @@ impl TransactionRpcWorker {
 impl TransactionRpcServer for TransactionRpcWorker {
     async fn register_vane_web3(
         &self,
-        name: Vec<u8>,
-        account_id: Vec<u8>,
+        name: String,
+        account_id: String,
         network: ChainSupported,
     ) -> RpcResult<()> {
         // TODO verify the account id as it belongs to the registerer
@@ -305,8 +322,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
     async fn add_account(
         &self,
-        _name: Vec<u8>,
-        _accounts: Vec<(Vec<u8>, Vec<u8>)>,
+        _name: String,
+        _accounts: Vec<(String, ChainSupported)>,
     ) -> RpcResult<()> {
         todo!()
     }
@@ -332,8 +349,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             let multi_addr = Blake2Hasher::hash(&sender_recv[..]);
 
             let tx_state_machine = TxStateMachine {
-                sender_address: sender.as_bytes().to_vec(),
-                receiver_address: receiver.as_bytes().to_vec(),
+                sender_address: sender,
+                receiver_address: receiver,
                 multi_id: multi_addr,
                 signature: None,
                 network: net_sender,

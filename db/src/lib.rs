@@ -7,7 +7,7 @@ pub mod db;
 #[cfg(test)]
 mod db_tests;
 
-use crate::db::read_filters::BoolFilter;
+use crate::db::read_filters::{BoolFilter, StringFilter};
 use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
 use crate::db::{
     new_client_with_url,
@@ -74,7 +74,7 @@ impl DbWorker {
             .create(
                 user.user_name,
                 user.account_id,
-                user.network.encode(),
+                user.network.into(),
                 Default::default(),
             )
             .exec()
@@ -91,7 +91,7 @@ impl DbWorker {
             .db
             .user_account()
             .find_many(vec![user_account::WhereParam::NetworkId(
-                BytesFilter::Equals(network.encode()),
+                StringFilter::Equals(network.into()),
             )])
             .exec()
             .await?;
@@ -105,7 +105,7 @@ impl DbWorker {
             .create(
                 tx_state.tx_hash,
                 tx_state.amount as i64,
-                tx_state.network.encode(),
+                tx_state.network.into(),
                 tx_state.success,
                 Default::default(),
             )
@@ -133,7 +133,7 @@ impl DbWorker {
             .create(
                 tx_state.tx_hash,
                 tx_state.amount as i64,
-                tx_state.network.encode(),
+                tx_state.network.into(),
                 tx_state.success,
                 Default::default(),
             )
@@ -210,10 +210,10 @@ impl DbWorker {
             .user_peer()
             .create(
                 peer_record.peer_id.unwrap(),
-                peer_record.account_id1.unwrap_or(vec![]),
-                peer_record.account_id2.unwrap_or(vec![]),
-                peer_record.account_id3.unwrap_or(vec![]),
-                peer_record.account_id4.unwrap_or(vec![]),
+                peer_record.account_id1.unwrap_or("".to_string()),
+                peer_record.account_id2.unwrap_or("".to_string()),
+                peer_record.account_id3.unwrap_or("".to_string()),
+                peer_record.account_id4.unwrap_or("".to_string()),
                 peer_record.multi_addr.unwrap(),
                 peer_record.keypair.unwrap(),
                 Default::default(),
@@ -271,13 +271,13 @@ impl DbWorker {
     // get peer by account id
     pub async fn get_user_peer_id(
         &self,
-        account_id: Vec<u8>,
+        account_id: String,
     ) -> Result<user_peer::Data, anyhow::Error> {
         let peer_data = self
             .db
             .user_peer()
             .find_first(vec![user_peer::WhereParam::AccountId1(
-                BytesFilter::Equals(account_id),
+                StringFilter::Equals(account_id),
             )])
             .exec()
             .await?
@@ -294,10 +294,10 @@ impl DbWorker {
             .saved_peers()
             .create(
                 peer_record.peer_id.unwrap(),
-                peer_record.account_id1.unwrap_or(vec![]),
-                peer_record.account_id2.unwrap_or(vec![]),
-                peer_record.account_id3.unwrap_or(vec![]),
-                peer_record.account_id4.unwrap_or(vec![]),
+                peer_record.account_id1.unwrap(),
+                peer_record.account_id2.unwrap_or("".to_string()),
+                peer_record.account_id3.unwrap_or("".to_string()),
+                peer_record.account_id4.unwrap_or("".to_string()),
                 peer_record.multi_addr.unwrap(),
                 Default::default(),
             )
@@ -309,13 +309,13 @@ impl DbWorker {
     // get saved peers
     pub async fn get_saved_user_peers(
         &self,
-        account_id: Vec<u8>,
+        account_id: String,
     ) -> Result<saved_peers::Data, anyhow::Error> {
         let peer_data = self
             .db
             .saved_peers()
             .find_first(vec![saved_peers::WhereParam::AccountId1(
-                BytesFilter::Equals(account_id),
+                StringFilter::Equals(account_id),
             )])
             .exec()
             .await?
@@ -355,25 +355,23 @@ impl From<saved_peers::Data> for PeerRecord {
 
 impl From<user_account::Data> for UserAccount {
     fn from(value: user_account::Data) -> Self {
-        let decoded_network: ChainSupported = Decode::decode(&mut &value.network_id[..]).unwrap();
         Self {
             user_name: value.username,
             account_id: value.account_id,
-            network: decoded_network,
+            network: ChainSupported::from(value.network_id.as_str()),
         }
     }
 }
 
 impl From<transaction::Data> for DbTxStateMachine {
     fn from(value: transaction::Data) -> Self {
-        let decoded_network: ChainSupported = Decode::decode(&mut &value.network[..]).unwrap();
         Self {
             tx_hash: value.tx_hash,
             amount: value
                 .value
                 .try_into()
                 .expect("failed to convert u128 to u64"),
-            network: decoded_network,
+            network: ChainSupported::from(value.network.as_str()),
             success: value.status,
         }
     }

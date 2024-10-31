@@ -199,7 +199,7 @@ impl P2pWorker {
         db_worker: Arc<Mutex<DbWorker>>,
         port: u16,
     ) -> Result<Self, Error> {
-        let (command_tx, mut command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(256); // For requests/responses
+        let (command_tx, command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(256); // For requests/responses
 
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
@@ -420,9 +420,10 @@ impl P2pWorker {
         }
     }
 
-    pub async fn start_swarm(&mut self) -> Result<BlockStream<SwarmMessage>, Error> {
-        let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(256);
-
+    pub async fn start_swarm(
+        &mut self,
+        sender_channel: Sender<Result<SwarmMessage, Error>>,
+    ) -> Result<(), Error> {
         let multi_addr = &self.url;
         let _listening_id = self.swarm.lock().await.listen_on(multi_addr.clone())?;
         trace!(target:"p2p","listening to: {:?}",multi_addr);
@@ -477,9 +478,6 @@ impl P2pWorker {
                 }
             }
         }
-
-        // Return the stream immediately
-        Ok(Box::pin(ReceiverStream::new(recv_channel)) as BlockStream<_>)
     }
 
     pub async fn send_request(

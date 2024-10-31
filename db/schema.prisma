@@ -13,9 +13,9 @@ generator client {
 // User can have multiple address per chain network
 model UserAccount {
     id                Int               @id @default(autoincrement())
-    username          Bytes             // string
-    accountId         Bytes
-    networkId         Bytes             // string or enum encoded
+    username          String             // string
+    accountId         String
+    networkId         String             // string or enum encoded
 }
 
 // ===========================================Tx=======================================
@@ -29,7 +29,7 @@ model Transaction {
     id                Int               @id @default(autoincrement())
     txHash            Bytes             // string encoded
     value             BigInt            // amount
-    network           Bytes             // string or enum encoded
+    network           String             // string or enum encoded
     status            Boolean
 }
 
@@ -39,10 +39,10 @@ model Transaction {
 model UserPeer {
     id                Int               @id @default(autoincrement())
     peerId            String            @unique // String or data structure encoded
-    accountId1        Bytes
-    accountId2        Bytes
-    accountId3        Bytes
-    accountId4        Bytes
+    accountId1        String
+    accountId2        String
+    accountId3        String
+    accountId4        String
     multiAddr         String             // String or enum
     keypair           Bytes             // ed25519 node keypair encoded and encrypted
 }
@@ -52,9 +52,9 @@ model UserPeer {
 model SavedPeers {
     id                Int               @id @default(autoincrement())
     nodeId            String            @unique
-    accountId1        Bytes             // with network id 1
-    accountId2        Bytes             // 2
-    accountId3        Bytes
-    accountId4        Bytes
+    accountId1        String             // with network id 1
+    accountId2        String            // 2
+    accountId3        String
+    accountId4        String
     multiAddr         String
 }

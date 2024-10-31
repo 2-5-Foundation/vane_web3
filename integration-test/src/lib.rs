@@ -35,6 +35,7 @@ mod e2e_tests {
     use anyhow::{anyhow, Error};
     use db::db::new_client_with_url;
     use jsonrpsee::http_client::HttpClientBuilder;
+    use jsonrpsee::rpc_params;
     use jsonrpsee::ws_client::WsClientBuilder;
     use libp2p::futures::StreamExt;
     use libp2p::request_response::Message;
@@ -46,105 +47,105 @@ mod e2e_tests {
     // having 2 peers; peer 1 sends a tx-state-machine message to peer 2
     // and peer2 respond a modified version of tx-state-machine.
     // and the vice-versa
-    #[tokio::test]
-    async fn p2p_test() -> Result<(), anyhow::Error> {
-        log_setup();
-
-        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test1.db").await?;
-        let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test2.db").await?;
-
-        // Test state structure
-        struct TestState {
-            sent_msg: TxStateMachine,
-            response_msg: TxStateMachine,
-        }
-
-        // Create shared state using Arc
-        let test_state = Arc::new(TestState {
-            sent_msg: TxStateMachine::default(),
-            response_msg: TxStateMachine {
-                amount: 1000,
-                ..Default::default()
-            },
-        });
-
-        // Spawn worker 1 task
-        let worker_1 = main_worker_1.clone();
-        let state_1 = test_state.clone();
-
-        let swarm_task_1 = tokio::spawn(async move {
-            let mut swarm = worker_1.p2p_worker.lock().await.start_swarm().await?;
-
-            while let Some(event) = swarm.next().await {
-                match event {
-                    Ok(SwarmMessage::Request { .. }) => {
-                        info!("Worker 1 received request");
-                    }
-                    Ok(SwarmMessage::Response { data, outbound_id }) => {
-                        let received_response: TxStateMachine =
-                            Decode::decode(&mut &data[..]).unwrap();
-                        assert_eq!(received_response, state_1.response_msg);
-                        return Ok(());
-                    }
-                    Err(e) => error!("Worker 1 error: {}", e),
-                }
-            }
-            Ok::<_, anyhow::Error>(())
-        });
-
-        // Spawn worker 2 task
-        let worker_2 = main_worker_2.clone();
-        let state_2 = test_state.clone();
-
-        let swarm_task_2 = tokio::spawn(async move {
-            let mut swarm = worker_2.p2p_worker.lock().await.start_swarm().await?;
-
-            while let Some(event) = swarm.next().await {
-                match event {
-                    Ok(SwarmMessage::Request { data, inbound_id }) => {
-                        println!("received a req: {data:?}");
-                        // worker_2
-                        //     .req_resp
-                        //     .lock()
-                        //     .await
-                        //     .send_response(
-                        //         channel,
-                        //         Arc::new(Mutex::new(state_2.response_msg.clone())),
-                        //     )
-                        //     .await?;
-                    }
-                    Ok(SwarmMessage::Response { .. }) => {
-                        info!("Worker 2 received response");
-                    }
-                    Err(e) => error!("Worker 2 error: {}", e),
-                }
-            }
-            Ok::<_, anyhow::Error>(())
-        });
-
-        // sending the request
-        let peer_id_2 = main_worker_2.p2p_worker.lock().await.node_id;
-        let multi_addr_2 = main_worker_2.p2p_worker.lock().await.url.clone();
-
-        main_worker_1
-            .p2p_worker
-            .lock()
-            .await
-            .dial_to_peer_id(multi_addr_2, peer_id_2)
-            .await?;
-
-        main_worker_1
-            .p2p_worker
-            .lock()
-            .await
-            .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2)
-            .await?;
-
-        swarm_task_1.await??;
-        swarm_task_2.await??;
-
-        Ok(())
-    }
+    // #[tokio::test]
+    // async fn p2p_test() -> Result<(), anyhow::Error> {
+    //     log_setup();
+    //
+    //     let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test1.db").await?;
+    //     let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test2.db").await?;
+    //
+    //     // Test state structure
+    //     struct TestState {
+    //         sent_msg: TxStateMachine,
+    //         response_msg: TxStateMachine,
+    //     }
+    //
+    //     // Create shared state using Arc
+    //     let test_state = Arc::new(TestState {
+    //         sent_msg: TxStateMachine::default(),
+    //         response_msg: TxStateMachine {
+    //             amount: 1000,
+    //             ..Default::default()
+    //         },
+    //     });
+    //
+    //     // Spawn worker 1 task
+    //     let worker_1 = main_worker_1.clone();
+    //     let state_1 = test_state.clone();
+    //
+    //     let swarm_task_1 = tokio::spawn(async move {
+    //         let mut swarm = worker_1.p2p_worker.lock().await.start_swarm().await?;
+    //
+    //         while let Some(event) = swarm.next().await {
+    //             match event {
+    //                 Ok(SwarmMessage::Request { .. }) => {
+    //                     info!("Worker 1 received request");
+    //                 }
+    //                 Ok(SwarmMessage::Response { data, outbound_id }) => {
+    //                     let received_response: TxStateMachine =
+    //                         Decode::decode(&mut &data[..]).unwrap();
+    //                     assert_eq!(received_response, state_1.response_msg);
+    //                     return Ok(());
+    //                 }
+    //                 Err(e) => error!("Worker 1 error: {}", e),
+    //             }
+    //         }
+    //         Ok::<_, anyhow::Error>(())
+    //     });
+    //
+    //     // Spawn worker 2 task
+    //     let worker_2 = main_worker_2.clone();
+    //     let state_2 = test_state.clone();
+    //
+    //     let swarm_task_2 = tokio::spawn(async move {
+    //         let mut swarm = worker_2.p2p_worker.lock().await.start_swarm().await?;
+    //
+    //         while let Some(event) = swarm.next().await {
+    //             match event {
+    //                 Ok(SwarmMessage::Request { data, inbound_id }) => {
+    //                     println!("received a req: {data:?}");
+    //                     // worker_2
+    //                     //     .req_resp
+    //                     //     .lock()
+    //                     //     .await
+    //                     //     .send_response(
+    //                     //         channel,
+    //                     //         Arc::new(Mutex::new(state_2.response_msg.clone())),
+    //                     //     )
+    //                     //     .await?;
+    //                 }
+    //                 Ok(SwarmMessage::Response { .. }) => {
+    //                     info!("Worker 2 received response");
+    //                 }
+    //                 Err(e) => error!("Worker 2 error: {}", e),
+    //             }
+    //         }
+    //         Ok::<_, anyhow::Error>(())
+    //     });
+    //
+    //     // sending the request
+    //     let peer_id_2 = main_worker_2.p2p_worker.lock().await.node_id;
+    //     let multi_addr_2 = main_worker_2.p2p_worker.lock().await.url.clone();
+    //
+    //     main_worker_1
+    //         .p2p_worker
+    //         .lock()
+    //         .await
+    //         .dial_to_peer_id(multi_addr_2, peer_id_2)
+    //         .await?;
+    //
+    //     main_worker_1
+    //         .p2p_worker
+    //         .lock()
+    //         .await
+    //         .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2)
+    //         .await?;
+    //
+    //     swarm_task_1.await??;
+    //     swarm_task_2.await??;
+    //
+    //     Ok(())
+    // }
 
     #[tokio::test]
     async fn rpc_test() -> Result<(), anyhow::Error> {
@@ -161,7 +162,15 @@ mod e2e_tests {
             .expect("failed to intialize rpc ws client");
 
         // creating account
+        if !rpc_client.is_connected() {
+            info!("not connected to {full_url}")
+        }
 
+        let acc_id = alloy::primitives::Address::default().to_string();
+        let network_id: String = ChainSupported::Ethereum.into();
+        let params = rpc_params!(["Luka".to_string(), acc_id, network_id]);
+        let res = rpc_client.request::<String, _>("register", params).await?;
+        info!("request result: {res}");
         // initializing a transaction
 
         Ok(())

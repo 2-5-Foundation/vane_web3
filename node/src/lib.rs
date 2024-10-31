@@ -91,66 +91,65 @@ impl MainServiceWorker {
         txn_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
         txn_processing_worker: Arc<Mutex<TxProcessingWorker>>,
     ) -> Result<(), Error> {
-        while let Ok(mut swarm_msg_result) = p2p_worker.lock().await.start_swarm().await {
-            match swarm_msg_result.next().await {
-                Some(swarm_msg) => {
+        let (sender_channel, mut recv_channel) = tokio::sync::mpsc::channel(256);
+
+        while let Some(swarm_msg_result) = recv_channel.recv().await {
+            p2p_worker
+                .lock()
+                .await
+                .start_swarm(sender_channel.clone())
+                .await?;
+
+            match swarm_msg_result {
+                Ok(swarm_msg) => {
+                    // handle the req and resp
                     match swarm_msg {
-                        Ok(msg) => {
-                            // handle the req and resp
-                            match msg {
-                                // context of a receiver, receiving the request and handling it
-                                // at this point, the receiver should;
-                                // 1. send the tx to the rpc
-                                // 2. sign the message attesting ownership of the private key and can control the acc in X network
-                                // 3. update the tx state machine and send it back to the initial sender
-                                SwarmMessage::Request { data, inbound_id } => {
-                                    let decoded_req: TxStateMachine =
-                                        Decode::decode(&mut &data[..])
-                                            .expect("failed to decode request body");
-                                    // send it to be signed via Rpc
-                                    txn_rpc_worker
-                                        .lock()
-                                        .await
-                                        .sender_channel
-                                        .lock()
-                                        .await
-                                        .send(Arc::new(Mutex::new(decoded_req)))
-                                        .await?
-                                }
-
-                                // context of a sender, receiving the response from the target receiver
-                                // the sender should;
-                                // 1. verify the recv signature public key to the one binded in the multi address
-                                // 2. send the tx to be signed to rpc
-                                SwarmMessage::Response { data, outbound_id } => {
-                                    let decoded_resp: TxStateMachine =
-                                        Decode::decode(&mut &data[..])
-                                            .expect("failed to decode request body");
-
-                                    txn_processing_worker
-                                        .lock()
-                                        .await
-                                        .validate_receiver_address(&decoded_resp)
-                                        .await?;
-                                    // send it to be signed via Rpc by the sender
-                                    txn_rpc_worker
-                                        .lock()
-                                        .await
-                                        .sender_channel
-                                        .lock()
-                                        .await
-                                        .send(Arc::new(Mutex::new(decoded_resp)))
-                                        .await?
-                                }
-                            }
+                        // context of a receiver, receiving the request and handling it
+                        // at this point, the receiver should;
+                        // 1. send the tx to the rpc
+                        // 2. sign the message attesting ownership of the private key and can control the acc in X network
+                        // 3. update the tx state machine and send it back to the initial sender
+                        SwarmMessage::Request { data, inbound_id } => {
+                            let decoded_req: TxStateMachine = Decode::decode(&mut &data[..])
+                                .expect("failed to decode request body");
+                            // send it to be signed via Rpc
+                            txn_rpc_worker
+                                .lock()
+                                .await
+                                .sender_channel
+                                .lock()
+                                .await
+                                .send(Arc::new(Mutex::new(decoded_req)))
+                                .await?
                         }
-                        Err(err) => {
-                            error!("failed to return swarm msg event; caused by: {err:?}")
+
+                        // context of a sender, receiving the response from the target receiver
+                        // the sender should;
+                        // 1. verify the recv signature public key to the one binded in the multi address
+                        // 2. send the tx to be signed to rpc
+                        SwarmMessage::Response { data, outbound_id } => {
+                            let decoded_resp: TxStateMachine = Decode::decode(&mut &data[..])
+                                .expect("failed to decode request body");
+
+                            txn_processing_worker
+                                .lock()
+                                .await
+                                .validate_receiver_address(&decoded_resp)
+                                .await?;
+                            // send it to be signed via Rpc by the sender
+                            txn_rpc_worker
+                                .lock()
+                                .await
+                                .sender_channel
+                                .lock()
+                                .await
+                                .send(Arc::new(Mutex::new(decoded_resp)))
+                                .await?
                         }
                     }
                 }
-                None => {
-                    warn!("no new messages from swarm")
+                Err(err) => {
+                    error!("no new messages from swarm: {err}")
                 }
             }
         }

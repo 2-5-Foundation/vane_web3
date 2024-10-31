@@ -18,6 +18,7 @@ primitives                                  = { workspace = true}
 sp-core                                     = { workspace = true}
 codec                                       = { workspace = true}
 jsonrpsee                                   = { workspace = true}
+alloy                                       = { workspace = true}
 
 [features]
 e2e = []
