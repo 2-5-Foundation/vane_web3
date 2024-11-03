@@ -209,6 +209,7 @@ impl DbWorker {
         self.db
             .user_peer()
             .create(
+                peer_record.record_id,
                 peer_record.peer_id.unwrap(),
                 peer_record.account_id1.unwrap_or("".to_string()),
                 peer_record.account_id2.unwrap_or("".to_string()),
@@ -268,21 +269,24 @@ impl DbWorker {
         Ok(())
     }
 
-    // get peer by account id
+    // get peer by account id by either account id or peerId
     pub async fn get_user_peer_id(
         &self,
-        account_id: String,
+        account_id: Option<String>,
+        peer_id: Option<String>,
     ) -> Result<user_peer::Data, anyhow::Error> {
-        let peer_data = self
-            .db
+        let where_param = match (account_id, peer_id) {
+            (Some(acc_id), _) => user_peer::WhereParam::AccountId1(StringFilter::Equals(acc_id)),
+            (_, Some(pid)) => user_peer::WhereParam::PeerId(StringFilter::Equals(pid)),
+            (None, None) => return Err(anyhow!("Please provide either account ID or peer ID")),
+        };
+
+        self.db
             .user_peer()
-            .find_first(vec![user_peer::WhereParam::AccountId1(
-                StringFilter::Equals(account_id),
-            )])
+            .find_first(vec![where_param])
             .exec()
             .await?
-            .ok_or(anyhow!("Peer Not found in DB"))?;
-        Ok(peer_data)
+            .ok_or_else(|| anyhow!("Peer not found in DB"))
     }
 
     // saved peers interacted with
@@ -328,6 +332,7 @@ impl DbWorker {
 impl From<user_peer::Data> for PeerRecord {
     fn from(value: user_peer::Data) -> Self {
         Self {
+            record_id: value.record_id,
             peer_id: Some(value.peer_id),
             account_id1: Some(value.account_id_1),
             account_id2: None,
@@ -342,6 +347,7 @@ impl From<user_peer::Data> for PeerRecord {
 impl From<saved_peers::Data> for PeerRecord {
     fn from(value: saved_peers::Data) -> Self {
         Self {
+            record_id: "".to_string(),
             peer_id: Some(value.node_id),
             account_id1: Some(value.account_id_1),
             account_id2: None,

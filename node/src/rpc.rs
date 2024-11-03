@@ -15,12 +15,13 @@ use jsonrpsee::{
     proc_macros::rpc,
     PendingSubscriptionSink, SubscriptionMessage,
 };
+use libp2p::PeerId;
 use local_ip_address;
 use local_ip_address::local_ip;
 use log::info;
 use primitives::data_structure::{
-    AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, Token, TxStateMachine,
-    TxStatus, UserAccount,
+    AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord,
+    PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
@@ -37,6 +38,7 @@ const TABLE_ID: &'static str = "tblWKDAWkSieIHsO8";
 const AIRTABLE_URL: &'static str = "https://api.airtable.com/v0/";
 
 // minimal airtable client
+#[derive(Clone)]
 pub struct Airtable {
     client: reqwest::Client,
 }
@@ -71,11 +73,10 @@ impl Airtable {
         let resp = self.client.execute(req).await?;
 
         if resp.status().is_server_error() || resp.status().is_client_error() {
-            Err(anyhow!("server or client error"))?
+            Err(anyhow!("server or client error listing peers"))?
         }
         let body = resp.bytes().await?;
         let json_value = serde_json::from_slice::<&serde_json::value::RawValue>(&*body)?;
-
         let record: AirtableResponse = serde_json::from_str(json_value.get())?;
 
         let mut peers: Vec<Discovery> = vec![];
@@ -98,6 +99,7 @@ impl Airtable {
 
             // build the discovery object
             let disc = Discovery {
+                id: "".to_string(),
                 peer_id: record.fields.peer_id,
                 multi_addr: record.fields.multi_addr,
                 account_ids: accounts,
@@ -108,42 +110,79 @@ impl Airtable {
         Ok(peers)
     }
 
-    pub async fn create_peer(&self, record: Fields) -> Result<(), anyhow::Error> {
+    pub async fn create_peer(&self, record: AirtableRequestBody) -> Result<Record, anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
-        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
+        let create_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
 
         let resp = self
             .client
-            .post(list_record_url)
-            .json::<Fields>(&record.into())
+            .post(create_record_url)
+            .json::<AirtableRequestBody>(&record.into())
             .send()
             .await?;
-        if resp.status().is_server_error() || resp.status().is_client_error() {
-            Err(anyhow!("server or client error"))?
+
+        if resp.status().is_server_error() {
+            Err(anyhow!("server, create peer: {}", resp.status()))?
+        }
+        if resp.status().is_client_error() {
+            Err(anyhow!("client error, create peer: {}", resp.status()))?
         }
         if resp.status().is_success() {
             info!("succesfully created peer in airtable");
         }
-        Ok(())
+
+        let resp_object = resp.json::<AirtableResponse>().await?;
+        let resp = resp_object.records.first().unwrap().clone();
+        Ok(resp)
     }
 
     // a patch request
-    pub async fn update_peer(&self, record: Fields) -> Result<(), anyhow::Error> {
+    pub async fn update_peer(
+        &self,
+        record: PostRecord,
+        record_id: String,
+    ) -> Result<Record, anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
-        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
+        let patch_record_url =
+            url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
 
         let resp = self
             .client
-            .patch(list_record_url)
-            .json::<Fields>(&record.into())
+            .patch(patch_record_url)
+            .json::<PostRecord>(&record.into())
             .send()
             .await?;
 
-        if resp.status().is_server_error() || resp.status().is_client_error() {
-            Err(anyhow!("server or client error"))?
+        if resp.status().is_server_error() {
+            Err(anyhow!("server error, update peer"))?
+        }
+        if resp.status().is_client_error() {
+            Err(anyhow!("client error, update peer"))?
         }
         if resp.status().is_success() {
-            info!("succesfully created peer in airtable");
+            info!("succesfully updated peer in airtable");
+        }
+
+        let resp = resp.json::<Record>().await?;
+        Ok(resp)
+    }
+
+    #[cfg(feature = "e2e")]
+    pub async fn delete_all(&self) -> Result<(), anyhow::Error> {
+        todo!(); // make it work to delete all records
+        let url = Url::parse(AIRTABLE_URL)?;
+        let delete_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
+
+        let resp = self.client.delete(delete_record_url).send().await?;
+
+        if resp.status().is_server_error() {
+            Err(anyhow!("server, delete record: {}", resp.status()))?
+        }
+        if resp.status().is_client_error() {
+            Err(anyhow!("client error, delete records: {}", resp.status()))?
+        }
+        if resp.status().is_success() {
+            info!("succesfully deleted records in airtable");
         }
         Ok(())
     }
@@ -223,19 +262,19 @@ pub struct TransactionRpcWorker {
     pub receiver_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
     /// sender channel to send self sending tx-state-machine
     pub sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
+    /// P2p peerId
+    pub peer_id: PeerId,
 }
 
 impl TransactionRpcWorker {
     pub async fn new(
+        airtable_client: Airtable,
         db_worker: Arc<Mutex<DbWorker>>,
         recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
         port: u16,
+        peer_id: PeerId,
     ) -> Result<Self, anyhow::Error> {
-        // fetch to the db, if not then set one
-        let airtable_client = Airtable::new()
-            .await
-            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
         let local_ip = local_ip()
             .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
 
@@ -252,6 +291,7 @@ impl TransactionRpcWorker {
             rpc_url,
             receiver_channel: recv_channel,
             sender_channel: Arc::new(Mutex::new(sender_channel)),
+            peer_id,
         })
     }
 
@@ -296,8 +336,18 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
+        // ========================================================================================//
+
+        // fetch the record
+        let record = self
+            .db_worker
+            .lock()
+            .await
+            .get_user_peer_id(None, Some(self.peer_id.to_string()))
+            .await?;
 
         let peer_account = PeerRecord {
+            record_id: record.record_id.clone(),
             peer_id: None,
             account_id1: Some(account_id),
             account_id2: None,
@@ -314,8 +364,12 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         // update to airtable
         let field: Fields = peer_account.into();
-
-        self.airtable_client.lock().await.update_peer(field).await?;
+        let req_body = PostRecord::new(field);
+        self.airtable_client
+            .lock()
+            .await
+            .update_peer(req_body, record.record_id)
+            .await?;
 
         Ok(())
     }

@@ -18,7 +18,9 @@ use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
 use local_ip_address::local_ip;
-use primitives::data_structure::{new_tx_state_from_mutex, Fields, PeerRecord};
+use primitives::data_structure::{
+    new_tx_state_from_mutex, AirtableRequestBody, Fields, PeerRecord,
+};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
 use sp_core::H256;
 use tokio::select;
@@ -224,7 +226,8 @@ impl P2pWorker {
             );
         }
 
-        let user_peer_id = PeerRecord {
+        let mut user_peer_id = PeerRecord {
+            record_id: "".to_string(),
             peer_id: Some(peer_id),
             account_id1: None,
             account_id2: None,
@@ -238,16 +241,17 @@ impl P2pWorker {
             ),
         };
 
+        let field: Fields = user_peer_id.clone().into();
+        let req_body = AirtableRequestBody::new(field);
+        let record_data = airtable_client.lock().await.create_peer(req_body).await?;
+
         // store in the local db and airtable db
+        user_peer_id.record_id = record_data.id;
         db_worker
             .lock()
             .await
             .record_user_peer_id(user_peer_id.clone())
             .await?;
-
-        let field: Fields = user_peer_id.clone().into();
-
-        airtable_client.lock().await.create_peer(field).await?;
 
         let url = user_peer_id.multi_addr.unwrap();
         let multi_addr: Multiaddr = url

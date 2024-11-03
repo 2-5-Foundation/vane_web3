@@ -40,8 +40,11 @@ mod e2e_tests {
     use libp2p::futures::StreamExt;
     use libp2p::request_response::Message;
     use log::{error, info};
+    use node::rpc::Airtable;
     use node::MainServiceWorker;
-    use primitives::data_structure::{SwarmMessage, TxStateMachine};
+    use primitives::data_structure::{
+        AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine,
+    };
     use std::sync::Arc;
 
     // having 2 peers; peer 1 sends a tx-state-machine message to peer 2
@@ -178,6 +181,24 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
+        log_setup();
+
+        let client = Airtable::new().await?;
+        let mut peer = Fields::default();
+        let req_body = AirtableRequestBody::new(peer.clone());
+        let record_data = client.create_peer(req_body).await?;
+        assert_eq!(record_data.fields, peer.clone());
+
+        // try updating
+        peer.account_id1 = Some("4456".to_string());
+        let new_req_body = PostRecord::new(peer.clone());
+        let updated_record = client.update_peer(new_req_body, record_data.id).await?;
+        // try fetching
+        assert_eq!(updated_record.fields, peer);
+
+        // delete all
+        //client.delete_all().await?;
+
         Ok(())
     }
 

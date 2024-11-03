@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 db                                          = { workspace = true}
 log                                         = { workspace = true}
-primitives                                  = { workspace = true}
+primitives                                  = { workspace = true, features = ["e2e"]}
 libp2p                                      = { workspace = true}
 sc-network                                  = "0.44.0"
 async-trait                                 = "0.1.81"

@@ -203,6 +203,7 @@ pub struct UserAccount {
 /// Vane peer record
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
+    pub record_id: String,       // for airtable
     pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
     pub account_id1: Option<String>,
     pub account_id2: Option<String>,
@@ -240,6 +241,7 @@ pub const BEP20: [u8; 20] = [
 // airtable db or peer discovery
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Discovery {
+    pub id: String,
     pub peer_id: Option<String>,
     pub multi_addr: Option<String>,
     pub account_ids: Vec<String>,
@@ -266,6 +268,7 @@ impl From<Discovery> for PeerRecord {
         }
 
         Self {
+            record_id: value.id,
             peer_id: value.peer_id,
             account_id1: acc.get(0).map(|x| x.clone()),
             account_id2: acc.get(1).map(|x| x.clone()),
@@ -291,9 +294,35 @@ pub struct Record {
     pub fields: Fields,
 }
 
+// airtable request body
 #[derive(Debug, Serialize, Clone, Deserialize)]
+pub struct AirtableRequestBody {
+    pub records: Vec<PostRecord>,
+}
+
+#[derive(Debug, Serialize, Clone, Deserialize)]
+pub struct PostRecord {
+    pub fields: Fields,
+}
+
+impl PostRecord {
+    pub fn new(fields: Fields) -> Self {
+        Self { fields }
+    }
+}
+
+impl AirtableRequestBody {
+    pub fn new(fields: Fields) -> Self {
+        let record = PostRecord { fields };
+        AirtableRequestBody {
+            records: vec![record],
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Deserialize)]
 pub struct Fields {
-    #[serde(rename = "portId", default)]
+    #[serde(rename = "multiAddr", default)]
     pub multi_addr: Option<String>,
     #[serde(rename = "peerId", default)]
     pub peer_id: Option<String>,
@@ -305,6 +334,20 @@ pub struct Fields {
     pub account_id3: Option<String>,
     #[serde(rename = "accountId4", default)]
     pub account_id4: Option<String>,
+}
+
+#[cfg(feature = "e2e")]
+impl Default for Fields {
+    fn default() -> Self {
+        Fields {
+            multi_addr: Some("ip4/127.0.0.1/tcp/3000".to_string()),
+            peer_id: Some("0x378z9".to_string()),
+            account_id1: Some("1".to_string()),
+            account_id2: Some("2".to_string()),
+            account_id3: Some("3".to_string()),
+            account_id4: Some("4".to_string()),
+        }
+    }
 }
 
 impl From<PeerRecord> for Fields {

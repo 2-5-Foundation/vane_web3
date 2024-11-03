@@ -13,3 +13,6 @@ anyhow                                      = "1.0.86"
 log                                         = { workspace = true}
 libp2p                                      = { workspace = true }
 sp-core                                     = { workspace = true}
+
+[features]
+e2e = []

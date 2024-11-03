@@ -38,6 +38,7 @@ model Transaction {
 
 model UserPeer {
     id                Int               @id @default(autoincrement())
+    recordId          String
     peerId            String            @unique // String or data structure encoded
     accountId1        String
     accountId2        String

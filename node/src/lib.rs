@@ -7,7 +7,7 @@ pub mod rpc;
 pub mod telemetry;
 pub mod tx_processing;
 
-use crate::rpc::TransactionRpcServer;
+use crate::rpc::{Airtable, TransactionRpcServer};
 use alloc::sync::Arc;
 use alloy::hex;
 use anyhow::{anyhow, Error};
@@ -52,12 +52,25 @@ impl MainServiceWorker {
         let db_worker = Arc::new(Mutex::new(
             DbWorker::initialize_db_client("db/dev.db").await?,
         ));
+        // fetch to the db, if not then set one
+        let airtable_client = Airtable::new()
+            .await
+            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
+
+        let p2p_worker = P2pWorker::new(
+            Arc::new(Mutex::new(airtable_client.clone())),
+            db_worker.clone(),
+            port,
+        )
+        .await?;
 
         let txn_rpc_worker = TransactionRpcWorker::new(
+            airtable_client,
             db_worker.clone(),
             shared_recv_channel.clone(),
             sender_channel.clone(),
             port,
+            p2p_worker.node_id,
         )
         .await?;
 
@@ -70,9 +83,6 @@ impl MainServiceWorker {
             ),
         )
         .await?;
-
-        let airtable = txn_rpc_worker.airtable_client.clone();
-        let p2p_worker = P2pWorker::new(airtable, db_worker.clone(), port).await?;
 
         Ok(Self {
             db_worker,
@@ -449,13 +459,30 @@ impl MainServiceWorker {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
         let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
 
-        let db_worker = Arc::new(Mutex::new(DbWorker::initialize_db_client(db).await?));
+        let port = rand::thread_rng().gen_range(0..=u16::MAX);
+
+        let db_worker = Arc::new(Mutex::new(
+            DbWorker::initialize_db_client("db/dev.db").await?,
+        ));
+        // fetch to the db, if not then set one
+        let airtable_client = Airtable::new()
+            .await
+            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
+
+        let p2p_worker = P2pWorker::new(
+            Arc::new(Mutex::new(airtable_client.clone())),
+            db_worker.clone(),
+            port,
+        )
+        .await?;
 
         let txn_rpc_worker = TransactionRpcWorker::new(
+            airtable_client,
             db_worker.clone(),
             shared_recv_channel.clone(),
             sender_channel.clone(),
             port,
+            p2p_worker.node_id,
         )
         .await?;
 
@@ -468,9 +495,6 @@ impl MainServiceWorker {
             ),
         )
         .await?;
-
-        let airtable = txn_rpc_worker.airtable_client.clone();
-        let p2p_worker = P2pWorker::new(airtable, db_worker.clone(), port).await?;
 
         Ok(Self {
             db_worker,

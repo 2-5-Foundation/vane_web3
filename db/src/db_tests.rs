@@ -118,7 +118,8 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
     let encrypted_keypair = cipher.encrypt(nonce, bytes_keypair.as_ref()).unwrap();
 
     let peer1 = PeerRecord {
-        peer_id: Some(peer_id),
+        record_id: "recn190".to_string(),
+        peer_id: Some(peer_id.clone()),
         account_id1: Some("0x4690152131E5399dE5E76801Fc7742A087829F00".to_string()),
         account_id2: None,
         account_id3: None,
@@ -128,10 +129,22 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
     };
     db_client.record_user_peer_id(peer1.clone()).await?;
 
+    // fetch by account id
     let get_peer1: PeerRecord = db_client
-        .get_user_peer_id("0x4690152131E5399dE5E76801Fc7742A087829F00".to_string())
+        .get_user_peer_id(
+            Some("0x4690152131E5399dE5E76801Fc7742A087829F00".to_string()),
+            None,
+        )
         .await?
         .into();
+
+    // fetch by peer_id
+    let get_peer_1: PeerRecord = db_client
+        .get_user_peer_id(None, Some(peer_id))
+        .await?
+        .into();
+
+    assert_eq!(get_peer1, get_peer_1);
     assert_eq!(get_peer1, peer1);
     Ok(())
 }
