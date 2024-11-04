@@ -1,6 +1,6 @@
 # vane_web3
 
-A full sovereign custodian implementation of risk-free transaction sending for web3 businesses and degens
+A full sovereign custodian implementation of risk-free transaction sending for web3 users.
 
 ### What are we solving?
   - Losing funds due wrong address input ( a huge pain currently in web3 as the action is not reversible after sending the transaction ).
@@ -50,4 +50,9 @@ In itself is not a wallet, but can work with any type of wallet as it acts as an
 7. Remote Db (Airtable)
 
     - a naive solution to dht ( peer discovery mechanism) as new users for vane will register their peer id along with account addresses
-   to remote airtable server as a means to be discovered by other peers. 
+   to remote airtable server as a means to be discovered by other peers.
+
+## Features
+1. Vane provides a comprehensive safety net for Web3 users by ensuring receiver address confirmation, transaction execution simulation, and ownership verification of the receiver's account, thereby preventing losses from incorrect addresses and network selections before routing transactions to the intended destination.
+
+2. Batching transactions, reducing fees drastically.
