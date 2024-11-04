@@ -18,7 +18,7 @@ use jsonrpsee::{
 use libp2p::PeerId;
 use local_ip_address;
 use local_ip_address::local_ip;
-use log::info;
+use log::{info, trace};
 use primitives::data_structure::{
     AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord,
     PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount,
@@ -146,10 +146,16 @@ impl Airtable {
         let patch_record_url =
             url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
 
+        let acc_id = record.fields.account_id1.unwrap();
+        let patch_value = serde_json::json!({
+            "fields":{
+                "accountId1":acc_id
+            }
+        });
         let resp = self
             .client
             .patch(patch_record_url)
-            .json::<PostRecord>(&record.into())
+            .json(&patch_value)
             .send()
             .await?;
 
@@ -203,7 +209,7 @@ pub trait TransactionRpc {
         &self,
         name: String,
         account_id: String,
-        network: ChainSupported,
+        network: String,
     ) -> RpcResult<()>;
 
     /// add crypto address account
@@ -319,10 +325,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
         &self,
         name: String,
         account_id: String,
-        network: ChainSupported,
+        network: String,
     ) -> RpcResult<()> {
         // TODO verify the account id as it belongs to the registerer
 
+        let network = network.as_str().into();
         let user_account = UserAccount {
             user_name: name,
             account_id: account_id.clone(),
@@ -345,6 +352,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
             .await?;
+        info!("load local db user peer record: {record:?}");
 
         let peer_account = PeerRecord {
             record_id: record.record_id.clone(),
@@ -356,6 +364,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             multi_addr: None,
             keypair: None,
         };
+        info!("updated user peer record to be stored in local db: {peer_account:?}");
+
         self.db_worker
             .lock()
             .await
@@ -365,11 +375,14 @@ impl TransactionRpcServer for TransactionRpcWorker {
         // update to airtable
         let field: Fields = peer_account.into();
         let req_body = PostRecord::new(field);
+
         self.airtable_client
             .lock()
             .await
             .update_peer(req_body, record.record_id)
             .await?;
+
+        info!("updated airtable db with user peer id");
 
         Ok(())
     }

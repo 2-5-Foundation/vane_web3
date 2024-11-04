@@ -46,6 +46,7 @@ mod e2e_tests {
         AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine,
     };
     use std::sync::Arc;
+    use jsonrpsee::core::params::ArrayParams;
 
     // having 2 peers; peer 1 sends a tx-state-machine message to peer 2
     // and peer2 respond a modified version of tx-state-machine.
@@ -153,29 +154,31 @@ mod e2e_tests {
     #[tokio::test]
     async fn rpc_test() -> Result<(), anyhow::Error> {
         log_setup();
-        // main worker
+
         let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test3.db").await?;
-        main_worker_1.clone().e2e_run().await?;
+        let _worker_handle = tokio::spawn(main_worker_1.clone().e2e_run());
 
         let rpc_url = main_worker_1.tx_rpc_worker.lock().await.rpc_url.clone();
-        let full_url = format!("ws://{rpc_url}");
-        let rpc_client = WsClientBuilder::default()
-            .build(full_url.as_str())
-            .await
-            .expect("failed to intialize rpc ws client");
+        let full_url = format!("http://{rpc_url}");
+        println!("full url: {full_url}");
 
-        // creating account
-        if !rpc_client.is_connected() {
-            info!("not connected to {full_url}")
-        }
+        // Create RPC client and wait for it to be ready
+        let rpc_client = HttpClientBuilder::default()
+            .build(full_url.as_str())
+            .expect("failed to initialize rpc http client");
 
         let acc_id = alloy::primitives::Address::default().to_string();
         let network_id: String = ChainSupported::Ethereum.into();
-        let params = rpc_params!(["Luka".to_string(), acc_id, network_id]);
-        let res = rpc_client.request::<String, _>("register", params).await?;
-        info!("request result: {res}");
-        // initializing a transaction
+        let mut params = ArrayParams::new();
+        params.insert("Luka").expect("TODO: panic message");
+        params.insert(acc_id).expect("TODO: panic message");
+        params.insert(network_id).expect("ll");
 
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        // Now proceed with your actual test
+        let res = rpc_client.request("register", params.clone()).await?;
+        // println!("res; {res}");
         Ok(())
     }
 

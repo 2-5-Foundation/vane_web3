@@ -459,10 +459,8 @@ impl MainServiceWorker {
         let (sender_channel, recv_channel) = tokio::sync::mpsc::channel(u8::MAX as usize);
         let shared_recv_channel = Arc::new(Mutex::new(recv_channel));
 
-        let port = rand::thread_rng().gen_range(0..=u16::MAX);
-
         let db_worker = Arc::new(Mutex::new(
-            DbWorker::initialize_db_client("db/dev.db").await?,
+            DbWorker::initialize_db_client(db).await?,
         ));
         // fetch to the db, if not then set one
         let airtable_client = Airtable::new()

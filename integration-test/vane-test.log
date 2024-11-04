@@ -1,1 +1,7 @@
-01:58:50 [INFO] Starting a sqlite pool with 25 connections.
+21:35:56 [INFO] Starting a sqlite pool with 25 connections.
+21:35:57 [INFO] succesfully created peer in airtable
+21:35:57 [INFO] listening to rpc url: 192.168.1.138:2710
+21:35:58 [INFO] load local db user peer record: Data { id: 11, record_id: "recINTspblZRDhFYA", peer_id: "12D3KooWBQy5eoHp2GvsvTtYCdhbHCzDsYeTgE7idvzX9RTDcPrW", account_id_1: "", account_id_2: "", account_id_3: "", account_id_4: "", multi_addr: "/ip4/192.168.1.138/tcp/2459/p2p/12D3KooWBQy5eoHp2GvsvTtYCdhbHCzDsYeTgE7idvzX9RTDcPrW", keypair: [8, 1, 18, 64, 112, 58, 21, 91, 15, 202, 236, 66, 174, 118, 177, 140, 192, 255, 200, 159, 33, 233, 115, 93, 106, 32, 60, 74, 215, 182, 51, 39, 170, 154, 175, 243, 23, 184, 232, 232, 70, 82, 249, 100, 75, 29, 26, 171, 234, 218, 30, 41, 32, 187, 50, 120, 239, 43, 126, 21, 78, 213, 244, 59, 39, 8, 132, 199] }
+21:35:58 [INFO] updated user peer record to be stored in local db: PeerRecord { record_id: "recINTspblZRDhFYA", peer_id: None, account_id1: Some("0x0000000000000000000000000000000000000000"), account_id2: None, account_id3: None, account_id4: None, multi_addr: None, keypair: None }
+21:35:58 [INFO] succesfully updated peer in airtable
+21:35:58 [INFO] updated airtable db with user peer id

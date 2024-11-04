@@ -234,7 +234,7 @@ impl DbWorker {
         // Check and push updates for each account ID
         if let Some(account_id) = peer_record.account_id1 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
+                user_peer::id::equals(1),
                 vec![user_peer::account_id_1::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -242,7 +242,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id2 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
+                user_peer::id::equals(1),
                 vec![user_peer::account_id_2::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -250,7 +250,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id3 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
+                user_peer::id::equals(1),
                 vec![user_peer::account_id_3::set(account_id)],
             );
             batch_updates.push(update_future);
@@ -258,7 +258,7 @@ impl DbWorker {
 
         if let Some(account_id) = peer_record.account_id4 {
             let update_future = self.db.user_peer().update(
-                user_peer::peer_id::equals(peer_record.peer_id.clone().unwrap()),
+                user_peer::id::equals(1),
                 vec![user_peer::account_id_4::set(account_id)],
             );
             batch_updates.push(update_future);

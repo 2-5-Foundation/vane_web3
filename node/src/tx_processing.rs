@@ -68,7 +68,7 @@ impl TxProcessingWorker {
 
         let bnb_rpc_url = bnb_url
             .parse()
-            .map_err(|err| anyhow!("bnb rpc url parse errror: {err}"))?;
+            .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
         let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {
