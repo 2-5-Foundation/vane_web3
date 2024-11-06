@@ -56,3 +56,4 @@ In itself is not a wallet, but can work with any type of wallet as it acts as an
 1. Vane provides a comprehensive safety net for Web3 users by ensuring receiver address confirmation, transaction execution simulation, and ownership verification of the receiver's account, thereby preventing losses from incorrect addresses and network selections before routing transactions to the intended destination.
 
 2. Batching transactions, reducing fees drastically.
+3. Turn any wallet into a smart account abstraction wallet
