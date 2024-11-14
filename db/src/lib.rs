@@ -19,13 +19,14 @@ use alloc::sync::Arc;
 use anyhow::anyhow;
 use codec::{Decode, Encode};
 use hex;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, UserAccount};
 use prisma_client_rust::{query_core::RawQuery, BatchItem, Direction, PrismaValue, Raw};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 
 /// Handling connection and interaction with the database
+#[derive(Clone)]
 pub struct DbWorker {
     db: Arc<PrismaClient>,
 }
@@ -150,6 +151,7 @@ impl DbWorker {
             )
             .exec()
             .await?;
+        info!(target: "db","updated failed transaction in local db");
         Ok(())
     }
 

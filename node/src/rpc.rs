@@ -4,12 +4,19 @@
 // send to tx processing layer
 // NGIX for ssl
 
+// ========================================
+// TODO!
+// Make sure that user cannot manually change the STATUS,RECEIVER AND SENDER ADDRESSES, AND NETWORK AND TOKEN ID
+// hence hash all those values and everytime user updates, assert if they are intact
+// ========================================
+
 extern crate alloc;
 use crate::cryptography::verify_public_bytes;
 use alloc::sync::Arc;
+use alloy::primitives::private::serde::{Deserialize, Serialize};
 use anyhow::anyhow;
 use db::DbWorker;
-use jsonrpsee::core::__reexports::serde_json;
+use jsonrpsee::core::Error;
 use jsonrpsee::{
     core::{async_trait, RpcResult, SubscriptionResult},
     proc_macros::rpc,
@@ -99,7 +106,7 @@ impl Airtable {
 
             // build the discovery object
             let disc = Discovery {
-                id: "".to_string(),
+                id: record.id,
                 peer_id: record.fields.peer_id,
                 multi_addr: record.fields.multi_addr,
                 account_ids: accounts,
@@ -175,20 +182,38 @@ impl Airtable {
 
     #[cfg(feature = "e2e")]
     pub async fn delete_all(&self) -> Result<(), anyhow::Error> {
-        todo!(); // make it work to delete all records
         let url = Url::parse(AIRTABLE_URL)?;
         let delete_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
 
-        let resp = self.client.delete(delete_record_url).send().await?;
+        // fetch all records
+        let record_ids = self
+            .list_all_peers()
+            .await?
+            .into_iter()
+            .map(|discv| discv.id)
+            .collect::<Vec<String>>();
 
-        if resp.status().is_server_error() {
-            Err(anyhow!("server, delete record: {}", resp.status()))?
-        }
-        if resp.status().is_client_error() {
-            Err(anyhow!("client error, delete records: {}", resp.status()))?
-        }
-        if resp.status().is_success() {
-            info!("succesfully deleted records in airtable");
+        // Process records in batches of 10
+        for chunk in record_ids.chunks(10) {
+            // Reset query parameters for each batch
+            let mut url = delete_record_url.clone();
+
+            // Add each record ID as a query parameter
+            for id in chunk {
+                url.query_pairs_mut().append_pair("records[]", id);
+            }
+
+            let resp = self.client.delete(url).send().await?;
+
+            if resp.status().is_server_error() {
+                Err(anyhow!("server, delete record: {}", resp.status()))?
+            }
+            if resp.status().is_client_error() {
+                Err(anyhow!("client error, delete records: {}", resp.status()))?
+            }
+            if resp.status().is_success() {
+                info!("succesfully deleted records in airtable");
+            }
         }
         Ok(())
     }
@@ -237,8 +262,8 @@ pub trait TransactionRpc {
         sender: String,
         receiver: String,
         amount: u128,
-        token: Token,
-        network: ChainSupported,
+        token: String,
+        network: String,
     ) -> RpcResult<()>;
 
     /// confirm sender signifying agreeing all tx state after verification and this will trigger actual submission
@@ -264,20 +289,22 @@ pub struct TransactionRpcWorker {
     pub airtable_client: Arc<Mutex<Airtable>>,
     /// rpc server url
     pub rpc_url: String,
-    /// receiving end of tx , updating state of tx to end user
-    pub receiver_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
-    /// sender channel to send self sending tx-state-machine
-    pub sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
+    /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
+    pub rpc_receiver_channel: Arc<Mutex<Receiver<TxStateMachine>>>,
+    /// sender channel when user updates the transaction state, propagating to main service worker
+    pub user_rpc_update_sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
     /// P2p peerId
     pub peer_id: PeerId,
+    // txn_counter
+    // HashMap<txn_counter,Integrity hash>
 }
 
 impl TransactionRpcWorker {
     pub async fn new(
         airtable_client: Airtable,
         db_worker: Arc<Mutex<DbWorker>>,
-        recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
-        sender_channel: Sender<Arc<Mutex<TxStateMachine>>>,
+        rpc_recv_channel: Arc<Mutex<Receiver<TxStateMachine>>>,
+        user_rpc_update_sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
         port: u16,
         peer_id: PeerId,
     ) -> Result<Self, anyhow::Error> {
@@ -295,8 +322,8 @@ impl TransactionRpcWorker {
             db_worker,
             airtable_client: Arc::new(Mutex::new(airtable_client)),
             rpc_url,
-            receiver_channel: recv_channel,
-            sender_channel: Arc::new(Mutex::new(sender_channel)),
+            rpc_receiver_channel: rpc_recv_channel,
+            user_rpc_update_sender_channel,
             peer_id,
         })
     }
@@ -352,7 +379,6 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
             .await?;
-        info!("load local db user peer record: {record:?}");
 
         let peer_account = PeerRecord {
             record_id: record.record_id.clone(),
@@ -364,7 +390,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             multi_addr: None,
             keypair: None,
         };
-        info!("updated user peer record to be stored in local db: {peer_account:?}");
+        info!("updated user peer record to be stored in local db");
 
         self.db_worker
             .lock()
@@ -400,9 +426,13 @@ impl TransactionRpcServer for TransactionRpcWorker {
         sender: String,
         receiver: String,
         amount: u128,
-        token: Token,
-        network: ChainSupported,
+        token: String,
+        network: String,
     ) -> RpcResult<()> {
+        info!("initiated sending transaction");
+        let token = token.as_str().into();
+
+        let network = network.as_str().into();
         if let (Ok(net_sender), Ok(net_recv)) = (
             verify_public_bytes(sender.as_str(), token, network),
             verify_public_bytes(receiver.as_str(), token, network),
@@ -410,6 +440,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             if net_sender != net_recv {
                 Err(anyhow!("sender and receiver should be same network"))?
             }
+
+            info!("successfully initially verified sender and receiver and related network bytes");
             // construct the tx
             let mut sender_recv = sender.as_bytes().to_vec();
             sender_recv.extend_from_slice(receiver.as_bytes());
@@ -419,13 +451,13 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 sender_address: sender,
                 receiver_address: receiver,
                 multi_id: multi_addr,
-                signature: None,
+                recv_signature: None,
                 network: net_sender,
                 status: TxStatus::default(),
                 amount,
                 signed_call_payload: None,
                 call_payload: None,
-                indbound_req_id: None,
+                inbound_req_id: None,
                 outbound_req_id: None,
             };
 
@@ -433,14 +465,15 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
             //let fees = self::dry_run_tx().map_err(|err|anyhow!("{}",err))?;
 
-            // propagate the tx to lower layer
-            let sender_channel = self.sender_channel.lock().await;
+            // propagate the tx to lower layer (Main service worker layer)
+            let sender_channel = self.user_rpc_update_sender_channel.lock().await;
 
             let sender = sender_channel.clone();
             sender
                 .send(Arc::from(Mutex::new(tx_state_machine)))
                 .await
                 .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))?;
+            info!("propagated initiated transaction to tx handling layer")
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
@@ -449,25 +482,41 @@ impl TransactionRpcServer for TransactionRpcWorker {
         Ok(())
     }
 
+    /// sender confirms by updating TxStatus to SenderConfirmed
+    /// at this stage receiver should have confirmed and sender should also have confirmed
     async fn sender_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
-        let sender_channel = self.sender_channel.lock().await;
-
-        let sender = sender_channel.clone();
-        sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
-            anyhow!("failed to send sender confirmation tx state to sender-channel")
-        })?;
+        let sender_channel = self.user_rpc_update_sender_channel.lock().await;
+        if tx.recv_signature.is_none() && &tx.status != &TxStatus::SenderConfirmed {
+            // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
+            Err(Error::Custom(
+                "Wait for Receiver to confirm or sender should confirm".to_string(),
+            ))?
+        } else {
+            // verify the tx-state-machine integrity
+            // TODO
+            let sender = sender_channel.clone();
+            sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
+                anyhow!("failed to send sender confirmation tx state to sender-channel")
+            })?;
+        }
         Ok(())
     }
 
+    /// receiver confirms by signing msg and updating TxStatus to RecvConfirmed
     async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
-        let sender_channel = self.sender_channel.lock().await;
-
-        let sender = sender_channel.clone();
-        sender
-            .send(Arc::from(Mutex::new(tx)))
-            .await
-            .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))?;
-        Ok(())
+        let sender_channel = self.user_rpc_update_sender_channel.lock().await;
+        if &tx.status != &TxStatus::RecvAddrConfirmed && tx.recv_signature.is_none() {
+            // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
+            Err(Error::Custom("Receiver did not confirm".to_string()))?
+        } else {
+            // verify the tx-state-machine integrity
+            // TODO
+            let sender = sender_channel.clone();
+            sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
+                anyhow!("failed to send recv confirmation tx state to sender channel")
+            })?;
+            Ok(())
+        }
     }
 
     async fn watch_tx_update(
@@ -478,10 +527,10 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .accept()
             .await
             .map_err(|_| anyhow!("failed to accept rpc ws channel"))?;
-        while let Some(tx_update) = self.receiver_channel.lock().await.recv().await {
-            let tx: TxStateMachine = tx_update.lock().await.clone();
+        while let Some(tx_update) = self.rpc_receiver_channel.lock().await.recv().await {
+            trace!(target:"rpc","\n watching tx: {tx_update:?} \n");
 
-            let subscription_msg = SubscriptionMessage::from_json(&tx)
+            let subscription_msg = SubscriptionMessage::from_json(&tx_update)
                 .map_err(|_| anyhow!("failed to convert tx update to json"))?;
             sink.send(subscription_msg)
                 .await

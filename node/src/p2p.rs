@@ -25,7 +25,7 @@ use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
 use sp_core::H256;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
@@ -184,14 +184,12 @@ pub struct P2pWorker {
     pub node_id: PeerId,
     pub swarm: Arc<Mutex<Swarm<Behaviour<GenericCodec>>>>,
     pub url: Multiaddr,
-    // for sending network commands
-    pub command_tx: Arc<Sender<NetworkCommand>>,
     // for receiving network commands
-    pub command_recv: Arc<Mutex<Receiver<NetworkCommand>>>,
+    pub p2p_command_recv: Arc<Mutex<Receiver<NetworkCommand>>>,
     // for pending requests to be replied, along with the response channel <InboundRequestId, Channel>
     pub pending_request: Arc<Mutex<HashMap<u64, ResponseChannel<Result<Vec<u8>, Error>>>>>,
     // for storing current ongoing request data
-    pub current_req: VecDeque<SwarmMessage>, // (reqId,request_data)
+    pub current_req: VecDeque<SwarmMessage>,
 }
 
 impl P2pWorker {
@@ -200,9 +198,8 @@ impl P2pWorker {
         airtable_client: Arc<Mutex<Airtable>>,
         db_worker: Arc<Mutex<DbWorker>>,
         port: u16,
+        command_recv_channel: Receiver<NetworkCommand>,
     ) -> Result<Self, Error> {
-        let (command_tx, command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(256); // For requests/responses
-
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
         let mut p2p_url = String::new();
@@ -226,6 +223,7 @@ impl P2pWorker {
             );
         }
 
+        info!("listening to p2p url: {p2p_url}");
         let mut user_peer_id = PeerRecord {
             record_id: "".to_string(),
             peer_id: Some(peer_id),
@@ -266,7 +264,7 @@ impl P2pWorker {
             .map_err(|_| anyhow!("failed to decode keypair ed25519"))?;
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(tokio::time::Duration::from_secs(10)); // 10 minutes waiting time for a response
+            .with_request_timeout(tokio::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
 
         let behaviour = Behaviour::new(
             vec![("/vane-web3/1.0.0", ProtocolSupport::Full)].into_iter(),
@@ -281,35 +279,19 @@ impl P2pWorker {
                 libp2p::yamux::Config::default,
             )?
             .with_behaviour(|_| behaviour)?
-            .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
+            .with_swarm_config(|cfg| {
+                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(6000))
+            })
             .build();
 
         Ok(Self {
             node_id: peer_id,
             swarm: Arc::new(Mutex::new(swarm)),
             url: multi_addr,
-            command_tx: Arc::new(command_tx),
-            command_recv: Arc::new(Mutex::new(command_recv)),
+            p2p_command_recv: Arc::new(Mutex::new(command_recv_channel)),
             pending_request: Default::default(),
             current_req: Default::default(),
         })
-    }
-
-    // dialing the target peer_id
-    pub async fn dial_to_peer_id(
-        &mut self,
-        target_url: Multiaddr,
-        target_peer_id: PeerId,
-    ) -> Result<(), anyhow::Error> {
-        let dial_command = NetworkCommand::Dial {
-            peer_id: target_peer_id,
-        };
-        self.command_tx
-            .send(dial_command)
-            .await
-            .map_err(|err| anyhow!("failed to send dial command; {err}"))?;
-        info!("dialing to: {target_peer_id}, url: {target_url}");
-        Ok(())
     }
 
     pub async fn handle_swarm_events(
@@ -320,7 +302,7 @@ impl P2pWorker {
         match events {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 Event::Message { message, .. } => {
-                    info!(target: "p2p","message: {message:?}");
+                    info!(target: "p2p","received message: {message:?}");
 
                     // update pending request for requests messages
                     match message {
@@ -336,14 +318,14 @@ impl P2pWorker {
 
                             let mut req_id_hash = DefaultHasher::default();
                             request_id.hash(&mut req_id_hash);
-
                             let req_id_hash = req_id_hash.finish();
+
                             pending_request.lock().await.insert(req_id_hash, channel);
 
-                            info!("storing current request data");
                             if let Err(e) = sender.send(Ok(req_msg)).await {
                                 error!("Failed to send message: {}", e);
                             }
+                            info!(target: "p2p","propagating txn request msg to main service worker");
                         }
                         Message::Response {
                             response,
@@ -357,6 +339,7 @@ impl P2pWorker {
                                 if let Err(e) = sender.send(Ok(resp_msg)).await {
                                     error!("Failed to send message: {}", e);
                                 }
+                                info!(target: "p2p","propagating txn response msg to main service worker");
                             }
                         }
                     }
@@ -432,75 +415,126 @@ impl P2pWorker {
         let _listening_id = self.swarm.lock().await.listen_on(multi_addr.clone())?;
         trace!(target:"p2p","listening to: {:?}",multi_addr);
 
-        // Clone the sender for the spawned task
-        let sender = sender_channel.clone();
-
-        // Spawn the event handling loop in a separate task
-        let cloned_self = self.clone();
-
+        let sender = sender_channel;
         let mut swarm = self.swarm.lock().await;
-        let mut command_recv = self.command_recv.lock().await;
+        let mut p2p_command_recv = self.p2p_command_recv.lock().await;
 
         loop {
+            // Create futures before select to ensure they're polled fairly
+            let next_event = swarm.next();
+            let next_command = p2p_command_recv.recv();
+
             select! {
-            event = swarm.next() => {
+                event = next_event => {
+
                     if let Some(event) = event {
-                        Self::handle_swarm_events(self.clone().pending_request,event,sender.clone()).await
-                    }else{
+                        Self::handle_swarm_events(self.clone().pending_request, event, sender.clone()).await
+                    } else {
                         info!("no current swarm event")
                     }
+
                 },
-                // handle req and resp commands
-                cmd = command_recv.recv() => {
+                cmd = next_command => {
+
                     match cmd {
                         Some(NetworkCommand::SendResponse {response,channel}) => {
-
                             if channel.is_open() {
-                                swarm.behaviour_mut().send_response(channel,Ok(response)).map_err(|err|anyhow!("failed to send response; {err:?}"))?;
-                            }else{
+                                swarm.behaviour_mut().send_response(channel,Ok(response))
+                                    .map_err(|err|anyhow!("failed to send response; {err:?}"))?;
+                            } else {
                                 error!("response channel is closed");
                             }
                         },
-                        Some(NetworkCommand::SendRequest {request,peer_id}) => {
-                            // check if peer is connected
+                        Some(NetworkCommand::SendRequest {request,peer_id,target_multi_addr}) => {
                             if swarm.is_connected(&peer_id) {
                                 swarm.behaviour_mut().send_request(&peer_id,request);
-                            // TODO record inbound req id
-                            }else{
-                                // dial first
+                                info!("request sent to peer: {peer_id:?}");
+                            } else {
                                 info!("re dialing");
-                                swarm.dial(peer_id).map_err(|err|anyhow!("failed to re dial: {err}"))?;
-                                // send request
+                                swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to re dial: {err}"))?;
                                 swarm.behaviour_mut().send_request(&peer_id,request);
+                                info!("request sent to peer: {peer_id:?}");
                             }
                         },
-                        Some(NetworkCommand::Dial {peer_id}) => {
-                            swarm.dial(peer_id).map_err(|err|anyhow!("failed to dial: {err}"))?
+                        Some(NetworkCommand::Dial {target_multi_addr,target_peer_id}) => {
+                            // check first if the peer communication is already connected
+                            if swarm.is_connected(&target_peer_id){
+                                info!("peer already connected: {target_peer_id}")
+                            }else{
+                                swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
+                                info!("dialing peer: {target_peer_id} ")
+                            }
                         },
-                        None => {}
+                        None => {
+                            info!("command channel closed");
+                        }
                     }
                 }
             }
+
+            // Optional: Add a small delay to prevent tight loop
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct P2pNetworkService {
+    // for sending p2p network commands
+    pub p2p_command_tx: Arc<Sender<NetworkCommand>>,
+    // p2p worker instance
+    pub p2p_worker: P2pWorker,
+}
+
+impl P2pNetworkService {
+    pub fn new(
+        p2p_command_tx: Arc<Sender<NetworkCommand>>,
+        p2p_worker: P2pWorker,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            p2p_command_tx,
+            p2p_worker,
+        })
+    }
+
+    // dialing the target peer_id
+    pub async fn dial_to_peer_id(
+        &mut self,
+        target_url: Multiaddr,
+        peer_id: &PeerId,
+    ) -> Result<(), anyhow::Error> {
+        let dial_command = NetworkCommand::Dial {
+            target_multi_addr: target_url.clone(),
+            target_peer_id: peer_id.clone(),
+        };
+
+        self.p2p_command_tx
+            .send(dial_command)
+            .await
+            .map_err(|err| anyhow!("failed to send dial command; {err}"))?;
+
+        Ok(())
     }
 
     pub async fn send_request(
         &mut self,
         request: Arc<Mutex<TxStateMachine>>,
         target_peer_id: PeerId,
+        target_multi_addr: Multiaddr,
     ) -> Result<(), Error> {
         let request = request.lock().await;
         let encoded_req = request.encode();
         let req_command = NetworkCommand::SendRequest {
             request: encoded_req,
             peer_id: target_peer_id,
+            target_multi_addr,
         };
 
-        self.command_tx
+        self.p2p_command_tx
             .send(req_command)
             .await
             .map_err(|err| anyhow!("failed to send req command; {err}"))?;
-        info!(target: "p2p","sending request command to the swarm thread :{target_peer_id:?}");
+        info!(target: "p2p","sending request command to the swarm thread ");
         Ok(())
     }
 
@@ -514,16 +548,18 @@ impl P2pWorker {
         let encoded_resp = txn_state.encode();
         let channel = self
             .clone()
+            .p2p_worker
             .pending_request
             .lock_owned()
             .await
             .remove(&outbound_id)
             .ok_or(anyhow!("failed to get response channel"))?;
+
         let resp_command = NetworkCommand::SendResponse {
             response: encoded_resp,
             channel,
         };
-        self.command_tx.send(resp_command).await?;
+        self.p2p_command_tx.send(resp_command).await?;
         info!(target: "p2p","sending response command");
 
         Ok(())

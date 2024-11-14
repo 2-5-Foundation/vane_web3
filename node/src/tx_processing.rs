@@ -15,11 +15,12 @@ use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
 use anyhow::anyhow;
 use core::str::FromStr;
+use log::error;
 use primitives::data_structure::{ChainSupported, TxStateMachine};
 use sp_core::{
     ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256,
+    keccak_256, Blake2Hasher, Hasher,
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
@@ -31,9 +32,8 @@ use tokio::sync::Mutex;
 
 /// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
 /// & tx submission to specified and confirmed chain
+#[derive(Clone)]
 pub struct TxProcessingWorker {
-    /// for receiving queued to be processed tx
-    pub tx_state_machine_receiver: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
     /// In-memory Db for tx processing at any stage
     tx_staging: Arc<Mutex<BTreeMap<H256, TxStateMachine>>>,
     /// In-memory Db for to be confirmed tx on sender
@@ -49,7 +49,6 @@ pub struct TxProcessingWorker {
 
 impl TxProcessingWorker {
     pub async fn new(
-        recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
         chain_networks: (ChainSupported, ChainSupported, ChainSupported),
     ) -> Result<Self, anyhow::Error> {
         let (_solana, eth, bnb) = chain_networks;
@@ -72,7 +71,6 @@ impl TxProcessingWorker {
         let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {
-            tx_state_machine_receiver: recv_channel,
             tx_staging: Arc::new(Default::default()),
             sender_tx_pending: Arc::new(Default::default()),
             receiver_tx_pending: Arc::new(Default::default()),
@@ -82,16 +80,32 @@ impl TxProcessingWorker {
         })
     }
     /// cryptographically verify the receiver address, validity and address ownership on receiver's end
-    pub async fn validate_receiver_address(
-        &mut self,
+    pub fn validate_receiver_sender_address(
+        &self,
         tx: &TxStateMachine,
+        who: &str
     ) -> Result<(), anyhow::Error> {
-        let network = tx.network;
-        let signature = tx
-            .clone()
-            .signature
-            .ok_or(anyhow!("receiver didnt signed"))?;
-        let msg = tx.receiver_address.clone();
+        let (network,signature,msg) = if who == "Receiver" {
+
+            let network = tx.network;
+            let signature = tx
+                .clone()
+                .recv_signature
+                .ok_or(anyhow!("receiver didnt signed"))?;
+            let msg = tx.receiver_address.clone();
+            (network,signature,msg)
+
+        }else{
+            // who is Sender
+            let network = tx.network;
+            let signature = tx
+                .clone()
+                .signed_call_payload
+                .ok_or(anyhow!("original sender didnt signed"))?;
+            let msg = tx.sender_address.clone();
+            (network,signature,msg)
+
+        };
 
         match network {
             ChainSupported::Polkadot => {
@@ -145,6 +159,17 @@ impl TxProcessingWorker {
             }
         }
         Ok(())
+    }
+
+
+    pub fn validate_multi_id(&self, txn: &TxStateMachine) -> bool {
+        let post_multi_id = {
+            let mut sender_recv = txn.sender_address.as_bytes().to_vec();
+            sender_recv.extend_from_slice(txn.receiver_address.as_bytes());
+            Blake2Hasher::hash(&sender_recv[..])
+        };
+
+        post_multi_id == txn.multi_id
     }
 
     /// simulate the recipient blockchain network for mitigating errors resulting to wrong network selection

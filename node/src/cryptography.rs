@@ -47,7 +47,8 @@ pub mod VaneCrypto {
             Token::Eth | Token::UsdtEth | Token::UsdcEth => {
                 // check if it belongs to a point on Ecdsa secp256k1 curve !!! cannot do this as the public key is hashed
                 // check if the account is 20 bytes
-                if account.as_bytes().len() == 20 {
+                if account.as_bytes().len() == 42 {
+                    /* 2 bytes for 0x and 40 bytes for rem as hex takes 2 character per bytes*/
                     Ok(ChainSupported::Ethereum)
                 } else {
                     Err(anyhow!("Not ethereum address"))

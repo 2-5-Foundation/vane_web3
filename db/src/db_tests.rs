@@ -149,10 +149,49 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
     Ok(())
 }
 
+async fn storing_n_retrieving_saved_peers_works() -> Result<(), anyhow::Error> {
+    let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+
+    let test_keypair_peer = libp2p::identity::Keypair::generate_ed25519();
+    let peer_id = test_keypair_peer.public().to_peer_id().to_base58();
+    let bytes_keypair = test_keypair_peer.to_protobuf_encoding().unwrap();
+
+    let key: &[u8] = &[42; 16];
+    let key: [u8; 16] = key.try_into()?;
+    let key = Key::<Aes128Gcm>::from_slice(&key);
+    let cipher = Aes128Gcm::new(&key);
+    let nonce = Nonce::from_slice(&key[..12]);
+    let encrypted_keypair = cipher.encrypt(nonce, bytes_keypair.as_ref()).unwrap();
+
+    let saved_peer_1 = PeerRecord {
+        record_id: "".to_string(),
+        peer_id: Some(peer_id.clone()),
+        account_id1: Some("0x4690152131E5399dE5E76801Fc7742A087829F00".to_string()),
+        account_id2: None,
+        account_id3: None,
+        account_id4: None,
+        multi_addr: Some("/ip4/127.0.0.1/tcp/8080".to_string()),
+        keypair: None,
+    };
+    db_client
+        .record_saved_user_peers(saved_peer_1.clone())
+        .await?;
+
+    // retrieving
+    let recorded_saved_peer_1: PeerRecord = db_client
+        .get_saved_user_peers(saved_peer_1.account_id1.clone().unwrap())
+        .await?
+        .into();
+
+    assert_eq!(saved_peer_1, recorded_saved_peer_1);
+    Ok(())
+}
+
 #[tokio::test]
 async fn all_db_tests_in_order_works() -> Result<(), anyhow::Error> {
     user_creation_n_retrieving_works().await?;
     storing_user_peer_id_n_retrieving_works().await?;
     storing_success_n_failed_tx_works().await?;
+    storing_n_retrieving_saved_peers_works().await?;
     Ok(())
 }

@@ -11,6 +11,7 @@ aes-gcm                                 = { version = "0.10.3", features = ["aes
 # ========================================= Node ========================================
 libp2p                                  = { version = "0.53.2",features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
 alloy                                   = { version = "0.3", features = ["full"] }
+alloy-primitives                        = "0.8.11"
 sp-runtime                              = { version = "39.0.0",default-features = false}
 jsonrpsee                               = { version = "0.17", features = ["server", "client-core", "http-client", "ws-client", "macros"] }
 notion                                  = "0.6.0"

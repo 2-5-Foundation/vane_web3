@@ -1,9 +1,0 @@
-17:28:31 [INFO] 
-🔥 =========== Vane Web3 =========== 🔥
-A safety layer for web3 transactions, allows you to feel secure when sending and receiving 
-tokens without the fear of selecting the wrong address or network. 
-It provides a safety net, giving you room to make mistakes without losing all your funds.
-
-17:28:31 [INFO] Starting a sqlite pool with 25 connections.
-17:28:31 [INFO] listening to rpc url: 192.168.1.138:19943
-17:28:31 [INFO] new listener address: "/ip4/192.168.1.138/tcp/19692"

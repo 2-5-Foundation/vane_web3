@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use anyhow::Error;
 use codec::{Decode, Encode};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
-use libp2p::PeerId;
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sp_core::H256;
 use std::str::FromStr;
@@ -15,12 +15,22 @@ use tokio::sync::MutexGuard;
 pub enum TxStatus {
     /// initial state,
     Genesis,
-    /// if receiver address has been confirmed
-    AddrConfirmed,
+    /// if receiver just confirmed
+    RecvAddrConfirmed,
+    /// if receiver address confirmation has passed
+    RecvAddrConfirmationPassed,
     /// if receiver chain network has been confirmed , used in tx simulation
     NetConfirmed,
     /// if the sender has confirmed, last stage and the txn is being submitted
     SenderConfirmed,
+    /// if non-original sender tries to sign
+    SenderConfirmationfailed,
+    /// if receiver failed to verify
+    RecvAddrFailed,
+    /// if transaction failed to be submitted due to some reasons
+    FailedToSubmitTxn(String),
+    /// if submission passed (tx-hash)
+    TxSubmissionPassed([u8; 32]),
 }
 impl Default for TxStatus {
     fn default() -> Self {
@@ -35,10 +45,10 @@ pub struct TxStateMachine {
     /// hashed sender and receiver address to bind the addresses while sending
     pub multi_id: sp_core::H256,
     /// signature of the receiver id
-    pub signature: Option<Vec<u8>>,
+    pub recv_signature: Option<Vec<u8>>,
     /// chain network
     pub network: ChainSupported,
-    /// State Machine main params
+    /// State Machine status
     pub status: TxStatus,
     /// amount to be sent
     pub amount: u128,
@@ -46,10 +56,40 @@ pub struct TxStateMachine {
     pub signed_call_payload: Option<Vec<u8>>,
     /// call payload
     pub call_payload: Option<Vec<u8>>,
+    // /// used for simplifying tx identification
+    // pub code_word: String,
+    // pub sender_name: String,
     /// Inbound Request id for p2p
-    pub indbound_req_id: Option<u64>,
+    pub inbound_req_id: Option<u64>,
     /// Outbound Request id for p2p
     pub outbound_req_id: Option<u64>,
+}
+
+impl TxStateMachine {
+    pub fn recv_confirmation_passed(&mut self) {
+        self.status = TxStatus::RecvAddrConfirmed
+    }
+    pub fn recv_confirmation_failed(&mut self) {
+        self.status = TxStatus::RecvAddrFailed
+    }
+    pub fn recv_confirmed(&mut self) {
+        self.status = TxStatus::RecvAddrConfirmed
+    }
+    pub fn sender_confirmation(&mut self) {
+        self.status = TxStatus::SenderConfirmed
+    }
+    pub fn sender_confirmation_failed(&mut self){
+        self.status = TxStatus::SenderConfirmationfailed
+    }
+    pub fn tx_submission_failed(&mut self, reason: String) {
+        self.status = TxStatus::FailedToSubmitTxn(reason)
+    }
+    pub fn tx_submission_passed(&mut self, tx_hash: [u8; 32]) {
+        self.status = TxStatus::TxSubmissionPassed(tx_hash)
+    }
+    pub fn net_confirmed(&mut self) {
+        self.status = TxStatus::NetConfirmed
+    }
 }
 
 /// helper for solving passing `MutexGuard<TxStateMachine>`
@@ -59,32 +99,35 @@ pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine
         sender_address: tx.sender_address.clone(),
         receiver_address: tx.receiver_address.clone(),
         multi_id: tx.multi_id,
-        signature: tx.signature.clone(),
+        recv_signature: tx.recv_signature.clone(),
         network: tx.network,
         status: tx.status.clone(),
         amount: tx.amount.clone(),
         signed_call_payload: tx.signed_call_payload.clone(),
         call_payload: tx.call_payload.clone(),
-        indbound_req_id: tx.indbound_req_id,
+        inbound_req_id: tx.inbound_req_id,
         outbound_req_id: tx.outbound_req_id,
     }
 }
 
+#[derive(Debug)]
 pub enum NetworkCommand {
     SendRequest {
         request: Vec<u8>,
         peer_id: PeerId,
+        target_multi_addr: Multiaddr,
     },
     SendResponse {
         response: Vec<u8>,
         channel: ResponseChannel<Result<Vec<u8>, Error>>,
     },
     Dial {
-        peer_id: PeerId,
+        target_multi_addr: Multiaddr,
+        target_peer_id: PeerId,
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SwarmMessage {
     Request {
         data: Vec<u8>,
@@ -121,6 +164,39 @@ pub enum Token {
     UsdtEth,
     UsdcEth,
     UsdtDot,
+}
+
+impl From<Token> for String {
+    fn from(value: Token) -> Self {
+        match value {
+            Token::Dot => "Dot".to_string(),
+            Token::Bnb => "Bnb".to_string(),
+            Token::Sol => "Sol".to_string(),
+            Token::Eth => "Eth".to_string(),
+            Token::UsdtSol => "UsdtSol".to_string(),
+            Token::UsdcSol => "UsdcSol".to_string(),
+            Token::UsdtEth => "UsdtEth".to_string(),
+            Token::UsdcEth => "UsdcEth".to_string(),
+            Token::UsdtDot => "UsdtDot".to_string(),
+        }
+    }
+}
+
+impl From<&str> for Token {
+    fn from(value: &str) -> Self {
+        match value {
+            "Dot" => Token::Dot,
+            "Bnb" => Token::Bnb,
+            "Sol" => Token::Sol,
+            "Eth" => Token::Eth,
+            "UsdtSol" => Token::UsdtSol,
+            "UsdcSol" => Token::UsdcSol,
+            "UsdtEth" => Token::UsdtEth,
+            "UsdcEth" => Token::UsdcEth,
+            "UsdtDot" => Token::UsdtDot,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl From<Token> for ChainSupported {
