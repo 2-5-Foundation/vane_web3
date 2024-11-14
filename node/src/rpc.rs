@@ -484,9 +484,10 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
     /// sender confirms by updating TxStatus to SenderConfirmed
     /// at this stage receiver should have confirmed and sender should also have confirmed
-    async fn sender_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
+    /// sender cannot confirm if TxStatus is RecvAddrFailed
+    async fn sender_confirm(&self, mut tx: TxStateMachine) -> RpcResult<()> {
         let sender_channel = self.user_rpc_update_sender_channel.lock().await;
-        if tx.recv_signature.is_none() && &tx.status != &TxStatus::SenderConfirmed {
+        if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed{
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(Error::Custom(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
@@ -494,6 +495,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
         } else {
             // verify the tx-state-machine integrity
             // TODO
+            // update the TxStatus to TxStatus::SenderConfirmed
+            tx.sender_confirmation();
             let sender = sender_channel.clone();
             sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
                 anyhow!("failed to send sender confirmation tx state to sender-channel")
@@ -503,14 +506,16 @@ impl TransactionRpcServer for TransactionRpcWorker {
     }
 
     /// receiver confirms by signing msg and updating TxStatus to RecvConfirmed
-    async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()> {
+    async fn receiver_confirm(&self, mut tx: TxStateMachine) -> RpcResult<()> {
         let sender_channel = self.user_rpc_update_sender_channel.lock().await;
-        if &tx.status != &TxStatus::RecvAddrConfirmed && tx.recv_signature.is_none() {
+        if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(Error::Custom("Receiver did not confirm".to_string()))?
         } else {
             // verify the tx-state-machine integrity
             // TODO
+            // tx status to TxStatus::RecvAddrConfirmed
+            tx.recv_confirmed();
             let sender = sender_channel.clone();
             sender.send(Arc::from(Mutex::new(tx))).await.map_err(|_| {
                 anyhow!("failed to send recv confirmation tx state to sender channel")

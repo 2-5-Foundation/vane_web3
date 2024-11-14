@@ -25,7 +25,7 @@ use local_ip_address::local_ip;
 use log::{error, info, warn};
 use p2p::P2pWorker;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, NetworkCommand, PeerRecord,
+    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, HashId, NetworkCommand, PeerRecord,
     SwarmMessage, TxStateMachine, TxStatus,
 };
 use rand::Rng;
@@ -135,7 +135,7 @@ impl MainServiceWorker {
     pub(crate) async fn handle_swarm_event_messages(
         &self,
         p2p_worker: Arc<Mutex<P2pWorker>>,
-        txn_processing_worker: Arc<Mutex<TxProcessingWorker>>,
+        txn_processing_worker: TxProcessingWorker,
     ) -> Result<(), Error> {
         let (sender_channel, mut recv_channel) = tokio::sync::mpsc::channel(256);
 
@@ -156,12 +156,7 @@ impl MainServiceWorker {
                             let mut decoded_req: TxStateMachine = Decode::decode(&mut &data[..])
                                 .expect("failed to decode request body");
 
-                            let inbound_req_id = {
-                                let mut req_id_hash = DefaultHasher::default();
-                                inbound_id.hash(&mut req_id_hash);
-                                req_id_hash.finish()
-                            };
-
+                            let inbound_req_id = inbound_id.get_hash_id();
                             decoded_req.inbound_req_id = Some(inbound_req_id);
                             // ===================================================================== //
                             // propagate transaction state to rpc layer for user updating (receiver updating)
@@ -176,33 +171,34 @@ impl MainServiceWorker {
                             let mut decoded_resp: TxStateMachine = Decode::decode(&mut &data[..])
                                 .expect("failed to decode request body");
 
-                            let outbound_req_id = {
-                                let mut req_id_hash = DefaultHasher::default();
-                                outbound_id.hash(&mut req_id_hash);
-                                req_id_hash.finish()
-                            };
-
+                            let outbound_req_id = outbound_id.get_hash_id();
                             decoded_resp.outbound_req_id = Some(outbound_req_id);
                             // ===================================================================== //
                             // handle error, by returning the tx status to the sender
-                            if let Ok(_) = txn_processing_worker
-                                .lock()
-                                .await
-                                .validate_receiver_sender_address(&decoded_resp,"Receiver")
+                            match txn_processing_worker
+                                .validate_receiver_sender_address(&decoded_resp, "Receiver")
                             {
-                                decoded_resp.recv_confirmation_passed();
-                                info!(target:"MainServiceWorker","receiver confirmation passed")
-                            } else {
-                                decoded_resp.recv_confirmation_failed();
-                                info!(target:"MainServiceWorker","receiver confirmation passed");
-                                // record failed txn in local db
-                                let db_tx = DbTxStateMachine {
-                                    tx_hash: vec![],
-                                    amount: decoded_resp.amount,
-                                    network: decoded_resp.network,
-                                    success: false,
-                                };
-                                self.db_worker.lock().await.update_failed_tx(db_tx).await?;
+                                Ok(_) => {
+                                    decoded_resp.recv_confirmation_passed();
+                                    info!(target:"MainServiceWorker","receiver confirmation passed");
+                                    // create a signable tx for sender to sign upon confirmation
+                                    let mut tx_processing = self.tx_processing_worker.lock().await.clone();
+                                    tx_processing.create_tx(&mut decoded_resp).await?;
+
+                                    info!(target:"MainServiceWorker","created a signable transaction");
+                                }
+                                Err(err) => {
+                                    decoded_resp.recv_confirmation_failed();
+                                    error!(target:"MainServiceWorker","receiver confirmation failed, reason: {err}");
+                                    // record failed txn in local db
+                                    let db_tx = DbTxStateMachine {
+                                        tx_hash: vec![],
+                                        amount: decoded_resp.amount,
+                                        network: decoded_resp.network,
+                                        success: false,
+                                    };
+                                    self.db_worker.lock().await.update_failed_tx(db_tx).await?;
+                                }
                             }
 
                             // propagate transaction state to rpc layer for user updating ( this time sender verification)
@@ -359,6 +355,7 @@ impl MainServiceWorker {
     }
 
     /// send the response to the sender via p2p swarm
+    /// this will be executed on receiver's end
     pub(crate) async fn handle_recv_addr_confirmed_tx_state(
         &self,
         id: u64,
@@ -373,6 +370,7 @@ impl MainServiceWorker {
     }
 
     /// last stage, submit the txn state-machine object to rpc to be signed and then submit to the target chain
+    /// this will be executed on sender's end
     pub(crate) async fn handle_sender_confirmed_tx_state(
         &self,
         txn: Arc<Mutex<TxStateMachine>>,
@@ -380,89 +378,58 @@ impl MainServiceWorker {
         let txn_guard = txn.lock().await;
         let mut txn_inner = new_tx_state_from_mutex(txn_guard);
 
-        if let Some(_) = txn_inner.signed_call_payload {
-            // verify first sender confirmation
-            if let Ok(_) = self.tx_processing_worker.lock().await.validate_receiver_sender_address(&txn_inner,"Sender"){
-                // TODO! handle submission errors
-                // signed and ready to be submitted to target chain
-                match self
-                    .tx_processing_worker
-                    .lock()
-                    .await
-                    .submit_tx(txn_inner.clone())
-                    .await
-                {
-                    Ok(tx_hash) => {
-                        // update user via rpc on tx success
-                        txn_inner.tx_submission_passed(tx_hash);
-                        self.rpc_sender_channel
-                            .lock()
-                            .await
-                            .send(txn_inner.clone())
-                            .await?;
-                        // update local db on success tx
-                        let db_tx = DbTxStateMachine {
-                            tx_hash: tx_hash.to_vec(),
-                            amount: txn_inner.amount.clone(),
-                            network: txn_inner.network.clone(),
-                            success: true,
-                        };
-                        self.db_worker.lock().await.update_success_tx(db_tx).await?;
-                    }
-                    Err(err) => {
-                        txn_inner.tx_submission_failed(format!(
-                            "{err:?}: the tx will be resubmitted rest assured"
-                        ));
-                        self.rpc_sender_channel.lock().await.send(txn_inner).await?;
-                    }
-                }
-
-            }else{
-                // non original sender confirmed, return error, send to rpc
-                txn_inner.sender_confirmation_failed();
-                error!(target: "MainServiceWorker","Non original sender signed");
-                self.rpc_sender_channel.lock().await.send(txn_inner).await?;
-
-            }
-
-        } else {
-            // verify multi-id, attesting to the actual recv address intended to send
-            if !self
+        // verify sender
+        self
+            .tx_processing_worker
+            .lock()
+            .await
+            .validate_receiver_sender_address(&txn_inner, "Sender")?;
+        // verify multi id
+        if self
+            .tx_processing_worker
+            .lock()
+            .await
+            .validate_multi_id(&txn_inner)
+        {
+            // TODO! handle submission errors
+            // signed and ready to be submitted to target chain
+            match self
                 .tx_processing_worker
                 .lock()
                 .await
-                .validate_multi_id(&txn_inner)
+                .submit_tx(txn_inner.clone())
+                .await
             {
-                // if not true then send the txn state to sender and record to local db as failed tx
-                // and this is added to amount saved from loss as the sender could have sent to a wrong address
-
-                let db_txn = DbTxStateMachine {
-                    tx_hash: vec![],
-                    amount: txn_inner.amount,
-                    network: txn_inner.network,
-                    success: false,
-                };
-
-                self.db_worker.lock().await.update_failed_tx(db_txn).await?;
-                error!(target:"MainServiceWorker","multi-id verification failed, hence receiver is not one intended");
-                self.rpc_sender_channel.lock().await.send(txn_inner).await?;
-
-            } else {
-                // ===================================================================== //
-                // not signed yet, send to rpc to be signed
-                let to_send_tx_state_machine = self
-                    .tx_processing_worker
-                    .lock()
-                    .await
-                    .create_tx(txn_inner)
-                    .await?;
-
-                self.rpc_sender_channel
-                    .lock()
-                    .await
-                    .send(to_send_tx_state_machine)
-                    .await?;
+                Ok(tx_hash) => {
+                    // update user via rpc on tx success
+                    txn_inner.tx_submission_passed(tx_hash);
+                    self.rpc_sender_channel
+                        .lock()
+                        .await
+                        .send(txn_inner.clone())
+                        .await?;
+                    // update local db on success tx
+                    let db_tx = DbTxStateMachine {
+                        tx_hash: tx_hash.to_vec(),
+                        amount: txn_inner.amount.clone(),
+                        network: txn_inner.network.clone(),
+                        success: true,
+                    };
+                    self.db_worker.lock().await.update_success_tx(db_tx).await?;
+                }
+                Err(err) => {
+                    txn_inner.tx_submission_failed(format!(
+                        "{err:?}: the tx will be resubmitted rest assured"
+                    ));
+                    self.rpc_sender_channel.lock().await.send(txn_inner).await?;
+                }
             }
+
+        }else{
+            // non original sender confirmed, return error, send to rpc
+            txn_inner.sender_confirmation_failed();
+            error!(target: "MainServiceWorker","Non original sender signed");
+            self.rpc_sender_channel.lock().await.send(txn_inner).await?;
         }
 
         Ok(())
@@ -555,7 +522,7 @@ impl MainServiceWorker {
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
-        let txn_processing_worker = main_worker.tx_processing_worker.clone();
+        let txn_processing_worker = main_worker.tx_processing_worker.clone().lock().await.clone();
 
         // ====================================================================================== //
 
@@ -689,7 +656,7 @@ impl MainServiceWorker {
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
-        let txn_processing_worker = main_worker.tx_processing_worker.clone();
+        let txn_processing_worker = main_worker.tx_processing_worker.clone().lock().await.clone();
 
         // ====================================================================================== //
 

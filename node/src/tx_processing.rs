@@ -7,18 +7,19 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use alloy::consensus::{SignableTransaction, TxEip7702};
+use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
 use alloy::network::TransactionBuilder;
 use alloy::primitives::private::alloy_rlp::{Decodable, Encodable};
-use alloy::primitives::ruint::aliases::U256;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256, Signature};
+use alloy::rpc::types::TransactionRequest;
+use alloy::primitives::{U256, keccak256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
+use alloy::signers::k256::sha2::digest::Mac;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
 use primitives::data_structure::{ChainSupported, TxStateMachine};
 use sp_core::{
-    ecdsa::{Public as EcdsaPublic, Signature as EcdsaSignature},
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256, Blake2Hasher, Hasher,
 };
@@ -44,7 +45,8 @@ pub struct TxProcessingWorker {
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
     eth_client: ReqwestProvider,
-    bnb_client: ReqwestProvider, // solana_client: RpcClient
+    bnb_client: ReqwestProvider,
+    // solana_client: RpcClient
 }
 
 impl TxProcessingWorker {
@@ -83,30 +85,36 @@ impl TxProcessingWorker {
     pub fn validate_receiver_sender_address(
         &self,
         tx: &TxStateMachine,
-        who: &str
+        who: &str,
     ) -> Result<(), anyhow::Error> {
-        let (network,signature,msg) = if who == "Receiver" {
+        let (network, signature, msg, address) = if who == "Receiver" {
+            println!("\n receiver address verification \n");
 
             let network = tx.network;
             let signature = tx
                 .clone()
                 .recv_signature
                 .ok_or(anyhow!("receiver didnt signed"))?;
-            let msg = tx.receiver_address.clone();
-            (network,signature,msg)
 
-        }else{
-            // who is Sender
+            let recv_address= tx.receiver_address.clone();
+            let msg = tx.receiver_address.as_bytes().to_vec();
+
+            (network, signature, msg,recv_address)
+
+        } else {
+            println!("\n sender address verification \n");
+            // who == Sender
             let network = tx.network;
             let signature = tx
                 .clone()
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
-            let msg = tx.sender_address.clone();
-            (network,signature,msg)
 
+            let msg = tx.call_payload.expect("unexpected error, call payload should be available");
+            let sender_address= tx.sender_address.clone();
+
+            (network, signature, msg.to_vec(), sender_address)
         };
-
         match network {
             ChainSupported::Polkadot => {
                 // let sr_receiver_public = SrPublic::from_slice(&tx.data.receiver_address[..])
@@ -123,24 +131,34 @@ impl TxProcessingWorker {
                 todo!()
             }
             ChainSupported::Ethereum | ChainSupported::Bnb => {
-                let ec_receiver_public = EcdsaPublic::from_str(&tx.receiver_address)
-                    .map_err(|_| anyhow!("failed to convert ecdsa recv addr bytes"))?;
-                let hashed_msg = keccak_256(msg.as_bytes());
-                let sig = EcdsaSignature::from_slice(&signature[..])
-                    .map_err(|_| anyhow!("failed to convert Ecdsa_signature"))?;
-                if sig.verify(&hashed_msg[..], &ec_receiver_public) {
-                    let addr = sig
-                        .recover(hashed_msg)
-                        .ok_or(anyhow!("cannot recover addr"))?;
-                    if addr == ec_receiver_public {
-                        Ok::<(), anyhow::Error>(())?
-                    } else {
-                        Err(anyhow!("addr recovery equality failed hence recv failed"))?
+
+                let address: Address = address.parse()
+                    .expect("Invalid address");
+
+                let hashed_msg = {
+                  if who == "Receiver"{
+                      keccak_256(msg.as_slice())
+                  }else{
+                      msg.try_into().unwrap()
+                  }
+                };
+                let signature = EcdsaSignature::try_from(signature.as_slice())
+                    .map_err(|err| anyhow!("failed to convert ecdsa signature"))?;
+
+                match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
+                    Ok(recovered_addr) => {
+                        println!("recovered addr: {recovered_addr:?} == address: {address:?} ==== {:?}",tx.status);
+                        if recovered_addr == address {
+                            Ok::<(),anyhow::Error>(())?
+                        } else {
+                            Err(anyhow!(
+                                "addr recovery equality failed hence account invalid"
+                            ))?
+                        }
                     }
-                } else {
-                    Err(anyhow!(
-                        "ec signature verification failed hence recv failed"
-                    ))?
+                    Err(err) => Err(anyhow!(
+                        "ec signature verification failed: {err}"
+                    ))?,
                 }
             }
             ChainSupported::Solana => {
@@ -149,7 +167,7 @@ impl TxProcessingWorker {
                 let sig = EdSignature::from_slice(&signature[..])
                     .map_err(|_| anyhow!("failed to convert ed25519_signature"))?;
 
-                if sig.verify(msg.as_bytes(), &ed_receiver_public) {
+                if sig.verify(msg.as_slice(), &ed_receiver_public) {
                     Ok::<(), anyhow::Error>(())?
                 } else {
                     Err(anyhow!(
@@ -160,7 +178,6 @@ impl TxProcessingWorker {
         }
         Ok(())
     }
-
 
     pub fn validate_multi_id(&self, txn: &TxStateMachine) -> bool {
         let post_multi_id = {
@@ -180,8 +197,9 @@ impl TxProcessingWorker {
     /// create the tx to be signed by externally owned account
     pub async fn create_tx(
         &mut self,
-        mut tx: TxStateMachine,
-    ) -> Result<TxStateMachine, anyhow::Error> {
+        tx: &mut TxStateMachine,
+    ) -> Result<(), anyhow::Error> {
+
         let network = tx.network;
         let to_signed_bytes = match network {
             ChainSupported::Polkadot => {
@@ -208,25 +226,31 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Ethereum => {
-                let to_address = Address::from_slice(&tx.receiver_address.as_bytes());
+                let from_address:Address = tx.sender_address.parse().expect("Invalid address");
+                let to_address:Address = tx.receiver_address.parse().expect("Invalid address");;
                 let value = U256::from(tx.amount);
 
-                let tx_builder = alloy::rpc::types::TransactionRequest::default()
+                // TODO upgrade to EIP7702
+                let tx_builder = TransactionRequest::default()
+                    .with_from(from_address)
                     .with_to(to_address)
                     .with_value(value)
+                    .with_nonce(0)
+                    .with_chain_id(56)
+                    .with_gas_limit(21_000)
+                    .with_max_priority_fee_per_gas(1_000_000_000)
+                    .with_max_fee_per_gas(20_000_000_000)
                     .build_unsigned()
                     .map_err(|err| {
                         anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
                     })?;
 
-                let mut encoded_tx = Vec::<u8>::new();
-                tx_builder
-                    .eip7702()
+                let signing_hash = tx_builder
+                    .eip1559()
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
-                    .encode(&mut encoded_tx);
+                    .signature_hash();
 
-                tx.call_payload = Some(encoded_tx);
-                tx
+                tx.call_payload = Some(<[u8; 32]>::from(signing_hash));
             }
 
             ChainSupported::Bnb => {
@@ -242,21 +266,19 @@ impl TxProcessingWorker {
                         anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
                     })?;
 
-                let mut encoded_tx = Vec::<u8>::new();
-                tx_builder
+                let signing_hash = tx_builder
                     .eip7702()
                     .ok_or(anyhow!("failed to convert to EIP 7702"))?
-                    .encode(&mut encoded_tx);
+                    .signature_hash();
 
-                tx.call_payload = Some(encoded_tx);
-                tx
+                tx.call_payload = Some(<[u8; 32]>::from(signing_hash));
             }
 
             ChainSupported::Solana => {
                 todo!()
             }
         };
-        Ok(to_signed_bytes)
+        Ok(())
     }
 
     /// submit the externally signed tx, returns tx hash
@@ -310,30 +332,31 @@ impl TxProcessingWorker {
                 todo!()
             }
             ChainSupported::Ethereum => {
+
                 let signature = tx
                     .signed_call_payload
                     .ok_or(anyhow!("sender did not signed the tx payload"))?;
-                let tx_payload = tx.call_payload.ok_or(anyhow!("call payload not found"))?;
-                let decoded_tx = TxEip7702::decode(&mut &tx_payload[..]).map_err(|err| {
-                    anyhow!("failed to decode eth EIP7702 tx payload; caused by: {err:?}")
-                })?;
+               let signature = Signature::try_from(signature.as_slice()).map_err(|err|anyhow!("failed to parse signature: {err}"))?;
 
-                let signed_tx = decoded_tx.into_signed(
-                    signature
-                        .as_slice()
-                        .try_into()
-                        .map_err(|err| anyhow!("failed to decode tx siganture :{err}"))?,
-                );
-                let mut encoded_signed_tx = vec![];
-                signed_tx.tx().encode_with_signature(
-                    signed_tx.signature(),
-                    &mut encoded_signed_tx,
-                    false,
-                );
+                let to_address: Address = tx.receiver_address.parse()
+                    .expect("Invalid address");
+                let value = U256::from(tx.amount);
 
+                let tx_builder = TransactionRequest::default()
+                    .with_to(to_address)
+                    .with_value(value)
+                    .with_chain_id(56)
+                    .build_unsigned()
+                    .map_err(|err| {
+                        anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
+                    })?.eip7702().ok_or(anyhow!("failed to convert txn to eip7702"))?.clone();
+
+                let signed_tx = tx_builder.into_signed(signature);
+
+                let to_submit_tx:TransactionRequest = signed_tx.tx().clone().into();
                 let receipt = self
                     .eth_client
-                    .send_raw_transaction(&encoded_signed_tx)
+                    .send_transaction(to_submit_tx)
                     .await
                     .map_err(|err| anyhow!("failed to submit eth raw tx; caused by :{err}"))?
                     .tx_hash()
@@ -344,6 +367,7 @@ impl TxProcessingWorker {
                 })?
             }
             ChainSupported::Bnb => {
+                todo!();
                 let signature = tx
                     .signed_call_payload
                     .ok_or(anyhow!("sender did not signed the tx payload"))?;
@@ -356,6 +380,7 @@ impl TxProcessingWorker {
                     decoded_tx.into_signed(signature.as_slice().try_into().map_err(|err| {
                         anyhow!("failed to decode tx siganture; caused by: {err}")
                     })?);
+
                 let mut encoded_signed_tx = vec![];
                 signed_tx.tx().encode_with_signature(
                     signed_tx.signature(),

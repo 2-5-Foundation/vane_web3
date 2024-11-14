@@ -4,9 +4,11 @@ use alloc::vec::Vec;
 use anyhow::Error;
 use codec::{Decode, Encode};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
+use alloy::primitives::{Address,B256};
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sp_core::H256;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::str::FromStr;
 use tokio::sync::MutexGuard;
 
@@ -44,7 +46,7 @@ pub struct TxStateMachine {
     pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
     pub multi_id: sp_core::H256,
-    /// signature of the receiver id
+    /// signature of the receiver id (Signature)
     pub recv_signature: Option<Vec<u8>>,
     /// chain network
     pub network: ChainSupported,
@@ -52,10 +54,10 @@ pub struct TxStateMachine {
     pub status: TxStatus,
     /// amount to be sent
     pub amount: u128,
-    /// signed call payload
+    /// signed call payload (signed hash of the transaction)
     pub signed_call_payload: Option<Vec<u8>>,
-    /// call payload
-    pub call_payload: Option<Vec<u8>>,
+    /// call payload (hash of transaction)
+    pub call_payload: Option<[u8;32]>,
     // /// used for simplifying tx identification
     // pub code_word: String,
     // pub sender_name: String,
@@ -67,7 +69,7 @@ pub struct TxStateMachine {
 
 impl TxStateMachine {
     pub fn recv_confirmation_passed(&mut self) {
-        self.status = TxStatus::RecvAddrConfirmed
+        self.status = TxStatus::RecvAddrConfirmationPassed
     }
     pub fn recv_confirmation_failed(&mut self) {
         self.status = TxStatus::RecvAddrFailed
@@ -78,7 +80,7 @@ impl TxStateMachine {
     pub fn sender_confirmation(&mut self) {
         self.status = TxStatus::SenderConfirmed
     }
-    pub fn sender_confirmation_failed(&mut self){
+    pub fn sender_confirmation_failed(&mut self) {
         self.status = TxStatus::SenderConfirmationfailed
     }
     pub fn tx_submission_failed(&mut self, reason: String) {
@@ -109,6 +111,20 @@ pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine
         outbound_req_id: tx.outbound_req_id,
     }
 }
+
+// helper for hashing p2p swarm request ids
+pub trait HashId: Hash {
+    fn get_hash_id(&self) -> u64 {
+        let mut req_id_hash = DefaultHasher::default();
+        self.hash(&mut req_id_hash);
+        req_id_hash.finish()
+    }
+}
+
+impl HashId for OutboundRequestId {}
+impl HashId for InboundRequestId {}
+
+// ================================================================================= //
 
 #[derive(Debug)]
 pub enum NetworkCommand {

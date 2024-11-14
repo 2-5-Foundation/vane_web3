@@ -19,7 +19,7 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
 use local_ip_address::local_ip;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, AirtableRequestBody, Fields, PeerRecord,
+    new_tx_state_from_mutex, AirtableRequestBody, Fields, HashId, PeerRecord,
 };
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
 use sp_core::H256;
@@ -349,13 +349,18 @@ impl P2pWorker {
                     peer,
                     request_id,
                 } => {
-                    error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {request_id}")
+                    let req_id_hash = request_id.get_hash_id();
+                    error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
                 }
-                Event::InboundFailure { error, .. } => {
-                    error!("inbound error: {error}")
+                Event::InboundFailure {
+                    error, request_id, ..
+                } => {
+                    let req_id_hash = request_id.get_hash_id();
+                    error!("inbound error: {error} on req_id: {req_id_hash}")
                 }
-                Event::ResponseSent { .. } => {
-                    info!(target: "p2p","response sent")
+                Event::ResponseSent { peer, request_id } => {
+                    let req_id_hash = request_id.get_hash_id();
+                    info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
                 }
             },
             SwarmEvent::ConnectionEstablished {
@@ -534,7 +539,7 @@ impl P2pNetworkService {
             .send(req_command)
             .await
             .map_err(|err| anyhow!("failed to send req command; {err}"))?;
-        info!(target: "p2p","sending request command to the swarm thread ");
+        trace!(target: "p2p","\nsending request command to the swarm thread ");
         Ok(())
     }
 
@@ -546,6 +551,7 @@ impl P2pNetworkService {
         let txn = response.lock().await;
         let txn_state = new_tx_state_from_mutex(txn);
         let encoded_resp = txn_state.encode();
+
         let channel = self
             .clone()
             .p2p_worker
@@ -560,7 +566,7 @@ impl P2pNetworkService {
             channel,
         };
         self.p2p_command_tx.send(resp_command).await?;
-        info!(target: "p2p","sending response command");
+        trace!(target: "p2p","sending response command");
 
         Ok(())
     }

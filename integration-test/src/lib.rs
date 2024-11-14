@@ -1,3 +1,4 @@
+use alloy::signers::SignerSync;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{keccak256, B256};
 use codec::{Decode, Encode};
@@ -12,8 +13,6 @@ use simplelog::*;
 use std::fs::File;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use alloy::signers::SignerSync;
-
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
@@ -409,9 +408,9 @@ mod e2e_tests {
                                 let msg = tx_state.clone().receiver_address;
                                 let pre_hash = keccak256(&msg.as_bytes()[..]);
                                 let sig = cloned_wallet_2
-                                    .sign_hash_sync(&pre_hash).expect("recv failed to sign msg");
+                                    .sign_hash_sync(&pre_hash)
+                                    .expect("recv failed to sign msg");
 
-                                tx_state.recv_confirmed();
                                 tx_state.recv_signature = Some(Vec::from(sig));
                                 // receiver confirm
                                 ws_client_2
@@ -419,7 +418,7 @@ mod e2e_tests {
                                     .await
                                     .expect("failed to confirm recv");
                             }
-                            _ => {}
+                            _ => panic!("in receiver's Tx State is invalid")
                         }
                     }
                     Err(e) => {
@@ -430,14 +429,32 @@ mod e2e_tests {
             }
         });
 
+        let cloned_wallet_1 = wallet_1.clone();
         let sub_handle_1 = tokio::spawn(async move {
             println!("inside sub handle 1 \n");
             while let Some(tx_update) = subscription_1.next().await {
                 match tx_update {
-
-                    Ok(tx_state) => {
+                    Ok(mut tx_state) => {
                         println!("\n in sub_handle 1 watching tx: {tx_state:?} \n");
                         // Handle your TxStateMachine update here
+                        match tx_state.status {
+                            TxStatus::RecvAddrConfirmationPassed => {
+
+                                let call_payload_pre_hash = B256::new(tx_state.call_payload.unwrap());
+                                let sig = cloned_wallet_1
+                                    .sign_hash_sync(&call_payload_pre_hash)
+                                    .expect("recv failed to sign msg");
+
+                                tx_state.signed_call_payload = Some(Vec::from(sig));
+
+                                // receiver confirm
+                                ws_client_1
+                                    .request::<(), _>("senderConfirm", rpc_params!(tx_state.clone()))
+                                    .await
+                                    .expect("failed to confirm sender");
+                            },
+                            _ => panic!("in sender's side txStatus is invalid")
+                        }
                     }
                     Err(e) => {
                         error!("Subscription error: {}", e);
