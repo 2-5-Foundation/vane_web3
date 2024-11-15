@@ -1,46 +1,9 @@
-23:48:09 [INFO] Starting a sqlite pool with 25 connections.
-23:48:09 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2459/p2p/12D3KooWGnuxkGbGT9cRHriwimob1qBwFaBm3T2Vh49KcG7chHoj
-23:48:12 [INFO] succesfully created peer in airtable
-23:48:12 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/3459/p2p/12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf
-23:48:14 [INFO] succesfully created peer in airtable
-23:48:14 [INFO] listening to rpc url: 192.168.1.153:2710
-23:48:14 [INFO] listening to rpc url: 192.168.1.153:3710
-23:48:14 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2459"
-23:48:14 [INFO] new listener address: "/ip4/192.168.1.153/tcp/3459"
-23:48:15 [INFO] ws client 1 connected
-23:48:15 [INFO] ws client 2 connected
-23:48:15 [INFO] updated user peer record to be stored in local db
-23:48:15 [INFO] succesfully updated peer in airtable
-23:48:15 [INFO] updated airtable db with user peer id
-23:48:15 [INFO] updated user peer record to be stored in local db
-23:48:16 [INFO] succesfully updated peer in airtable
-23:48:16 [INFO] updated airtable db with user peer id
-23:48:18 [INFO] ws client 1 and 2 connected
-23:48:20 [INFO] initiated sending transaction
-23:48:20 [INFO] successfully initially verified sender and receiver and related network bytes
-23:48:20 [INFO] propagated initiated transaction to tx handling layer
-23:48:20 [INFO] handling incoming genesis tx updates: TxStateMachine { sender_address: "0x775B5c3f48054E6EFB205ECD0Ef25367F7850831", receiver_address: "0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0", multi_id: 0x63dbd44616d9d1712b4e71f2cfecdfb53e1da2ad5f6a9debcec24d823364aa08, recv_signature: None, network: Ethereum, status: Genesis, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: None, outbound_req_id: None } 
-
-23:48:20 [INFO] target peer not found in local db, fetching from remote db
-23:48:20 [INFO] target peer found in remote db: Some((Some("12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf"), Some("/ip4/192.168.1.153/tcp/3459/p2p/12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf"), PeerRecord { record_id: "reco2EI4bZXhdXWf9", peer_id: Some("12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf"), account_id1: Some("0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0"), account_id2: None, account_id3: None, account_id4: None, multi_addr: Some("/ip4/192.168.1.153/tcp/3459/p2p/12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf"), keypair: None })) 
-
-23:48:20 [INFO] recording target peer id to local db
-23:48:20 [INFO] dialing peer: 12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf 
-23:48:20 [INFO] incoming connection: local_addr:"/ip4/192.168.1.153/tcp/3459" send_back_addr:"/ip4/192.168.1.153/tcp/62645"
-23:48:20 [INFO] connection established: peer_id:PeerId("12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf") endpoint:Dialer { address: "/ip4/192.168.1.153/tcp/3459/p2p/12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf", role_override: Dialer } num_established:1
-23:48:20 [INFO] connection established: peer_id:PeerId("12D3KooWGnuxkGbGT9cRHriwimob1qBwFaBm3T2Vh49KcG7chHoj") endpoint:Listener { local_addr: "/ip4/192.168.1.153/tcp/3459", send_back_addr: "/ip4/192.168.1.153/tcp/62645" } num_established:1
-23:48:23 [INFO] request sent to peer: PeerId("12D3KooWB62qEGizejKuB2r5mCURgYA4TsvRgDo3qYpzDVGDMwDf")
-23:48:23 [INFO] received message: Request { request_id: InboundRequestId(1), request: [168, 48, 120, 55, 55, 53, 66, 53, 99, 51, 102, 52, 56, 48, 53, 52, 69, 54, 69, 70, 66, 50, 48, 53, 69, 67, 68, 48, 69, 102, 50, 53, 51, 54, 55, 70, 55, 56, 53, 48, 56, 51, 49, 168, 48, 120, 48, 54, 70, 57, 52, 52, 56, 69, 99, 65, 57, 65, 68, 51, 69, 55, 55, 69, 57, 50, 54, 53, 55, 57, 55, 53, 97, 69, 99, 49, 49, 99, 53, 53, 53, 49, 99, 98, 66, 48, 99, 219, 212, 70, 22, 217, 209, 113, 43, 78, 113, 242, 207, 236, 223, 181, 62, 29, 162, 173, 95, 106, 157, 235, 206, 194, 77, 130, 51, 100, 170, 8, 0, 1, 0, 160, 134, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], channel: ResponseChannel { sender: Sender { complete: false } } }
-23:48:23 [INFO] propagating txn request msg to main service worker
-23:48:23 [INFO] propagating txn msg as a request to rpc layer for user interaction: TxStateMachine { sender_address: "0x775B5c3f48054E6EFB205ECD0Ef25367F7850831", receiver_address: "0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0", multi_id: 0x63dbd44616d9d1712b4e71f2cfecdfb53e1da2ad5f6a9debcec24d823364aa08, recv_signature: None, network: Ethereum, status: Genesis, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: Some(2206609067086327257), outbound_req_id: None }
-23:48:23 [INFO] handling incoming receiver addr-confirmation tx updates: TxStateMachine { sender_address: "0x775B5c3f48054E6EFB205ECD0Ef25367F7850831", receiver_address: "0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0", multi_id: 0x63dbd44616d9d1712b4e71f2cfecdfb53e1da2ad5f6a9debcec24d823364aa08, recv_signature: Some([98, 253, 165, 29, 88, 230, 68, 207, 164, 190, 6, 62, 22, 0, 163, 253, 202, 130, 46, 181, 242, 85, 165, 37, 212, 182, 202, 4, 204, 118, 97, 142, 91, 122, 116, 97, 189, 136, 153, 218, 255, 42, 204, 35, 175, 180, 143, 215, 23, 138, 61, 229, 116, 235, 36, 164, 60, 44, 224, 206, 73, 135, 147, 98, 27]), network: Ethereum, status: RecvAddrConfirmed, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: Some(2206609067086327257), outbound_req_id: None } 
-
-23:48:23 [INFO] received message: Response { request_id: OutboundRequestId(1), response: Ok([168, 48, 120, 55, 55, 53, 66, 53, 99, 51, 102, 52, 56, 48, 53, 52, 69, 54, 69, 70, 66, 50, 48, 53, 69, 67, 68, 48, 69, 102, 50, 53, 51, 54, 55, 70, 55, 56, 53, 48, 56, 51, 49, 168, 48, 120, 48, 54, 70, 57, 52, 52, 56, 69, 99, 65, 57, 65, 68, 51, 69, 55, 55, 69, 57, 50, 54, 53, 55, 57, 55, 53, 97, 69, 99, 49, 49, 99, 53, 53, 53, 49, 99, 98, 66, 48, 99, 219, 212, 70, 22, 217, 209, 113, 43, 78, 113, 242, 207, 236, 223, 181, 62, 29, 162, 173, 95, 106, 157, 235, 206, 194, 77, 130, 51, 100, 170, 8, 1, 5, 1, 98, 253, 165, 29, 88, 230, 68, 207, 164, 190, 6, 62, 22, 0, 163, 253, 202, 130, 46, 181, 242, 85, 165, 37, 212, 182, 202, 4, 204, 118, 97, 142, 91, 122, 116, 97, 189, 136, 153, 218, 255, 42, 204, 35, 175, 180, 143, 215, 23, 138, 61, 229, 116, 235, 36, 164, 60, 44, 224, 206, 73, 135, 147, 98, 27, 1, 1, 160, 134, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 217, 45, 214, 97, 65, 115, 159, 30, 0]) }
-23:48:23 [INFO] propagating txn response msg to main service worker
-23:48:23 [INFO] receiver confirmation passed
-23:48:23 [INFO] created a signable transaction
-23:48:23 [INFO] propagating txn msg as a response to rpc layer for user interaction: TxStateMachine { sender_address: "0x775B5c3f48054E6EFB205ECD0Ef25367F7850831", receiver_address: "0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0", multi_id: 0x63dbd44616d9d1712b4e71f2cfecdfb53e1da2ad5f6a9debcec24d823364aa08, recv_signature: Some([98, 253, 165, 29, 88, 230, 68, 207, 164, 190, 6, 62, 22, 0, 163, 253, 202, 130, 46, 181, 242, 85, 165, 37, 212, 182, 202, 4, 204, 118, 97, 142, 91, 122, 116, 97, 189, 136, 153, 218, 255, 42, 204, 35, 175, 180, 143, 215, 23, 138, 61, 229, 116, 235, 36, 164, 60, 44, 224, 206, 73, 135, 147, 98, 27]), network: Ethereum, status: RecvAddrConfirmationPassed, amount: 100000, signed_call_payload: None, call_payload: Some([27, 239, 238, 42, 231, 193, 25, 224, 192, 217, 141, 184, 124, 227, 1, 127, 38, 40, 60, 136, 14, 187, 129, 113, 41, 191, 246, 128, 120, 161, 33, 237]), inbound_req_id: Some(2206609067086327257), outbound_req_id: Some(2206609067086327257) }
-23:48:23 [INFO] response sent to: PeerId("12D3KooWGnuxkGbGT9cRHriwimob1qBwFaBm3T2Vh49KcG7chHoj"): req_id: 2206609067086327257
-23:48:23 [INFO] handling incoming sender addr-confirmed tx updates: TxStateMachine { sender_address: "0x775B5c3f48054E6EFB205ECD0Ef25367F7850831", receiver_address: "0x06F9448EcA9AD3E77E92657975aEc11c5551cbB0", multi_id: 0x63dbd44616d9d1712b4e71f2cfecdfb53e1da2ad5f6a9debcec24d823364aa08, recv_signature: Some([98, 253, 165, 29, 88, 230, 68, 207, 164, 190, 6, 62, 22, 0, 163, 253, 202, 130, 46, 181, 242, 85, 165, 37, 212, 182, 202, 4, 204, 118, 97, 142, 91, 122, 116, 97, 189, 136, 153, 218, 255, 42, 204, 35, 175, 180, 143, 215, 23, 138, 61, 229, 116, 235, 36, 164, 60, 44, 224, 206, 73, 135, 147, 98, 27]), network: Ethereum, status: SenderConfirmed, amount: 100000, signed_call_payload: Some([171, 63, 111, 35, 251, 223, 45, 81, 163, 181, 116, 231, 65, 115, 92, 179, 207, 233, 69, 54, 72, 10, 15, 250, 240, 24, 255, 205, 111, 85, 30, 40, 45, 153, 105, 159, 113, 28, 115, 145, 183, 213, 214, 151, 95, 207, 139, 140, 199, 191, 230, 78, 64, 7, 5, 201, 86, 79, 69, 248, 146, 25, 88, 115, 28]), call_payload: Some([27, 239, 238, 42, 231, 193, 25, 224, 192, 217, 141, 184, 124, 227, 1, 127, 38, 40, 60, 136, 14, 187, 129, 113, 41, 191, 246, 128, 120, 161, 33, 237]), inbound_req_id: Some(2206609067086327257), outbound_req_id: Some(2206609067086327257) } 
-
-23:48:31 [INFO] succesfully deleted records in airtable
+00:02:01 [INFO] Starting a sqlite pool with 25 connections.
+00:02:01 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2459/p2p/12D3KooWRY1Z7iuSvWU944GsLL5HDT97niiJ5uY5H8hX6Drfuvbd
+00:02:03 [INFO] succesfully created peer in airtable
+00:02:03 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/3459/p2p/12D3KooWFwFRXszCDPMLsLLuxjFsmZrFhsJEt9TqG6kUJqTQyNVo
+00:02:04 [INFO] succesfully created peer in airtable
+00:02:05 [INFO] listening to rpc url: 192.168.1.153:2710
+00:02:05 [INFO] listening to rpc url: 192.168.1.153:3710
+00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2459"
+00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/3459"

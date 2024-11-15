@@ -58,190 +58,153 @@ mod e2e_tests {
     // having 2 peers; peer 1 sends a tx-state-machine message to peer 2
     // and peer2 respond a modified version of tx-state-machine.
     // and the vice-versa
-    // #[tokio::test]
-    // async fn p2p_test() -> Result<(), anyhow::Error> {
-    //     log_setup();
-    //
-    //     // ========================================================================//
-    //     // Test state structure
-    //     struct TestState {
-    //         sent_msg: TxStateMachine,
-    //         response_msg: TxStateMachine,
-    //     }
-    //
-    //     // Create shared state using Arc
-    //     let test_state = Arc::new(TestState {
-    //         sent_msg: TxStateMachine::default(),
-    //         response_msg: TxStateMachine {
-    //             amount: 1000,
-    //             ..Default::default()
-    //         },
-    //     });
-    //     // ========================================================================//
-    //
-    //     let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test1.db").await?;
-    //     let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test2.db").await?;
-    //
-    //     let _worker_handle_1 = tokio::spawn(main_worker_1.clone().e2e_run());
-    //     let _worker_handle_2 = tokio::spawn(main_worker_2.clone().e2e_run());
-    //
-    //     // wait for proper initialization
-    //     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-    //
-    //     // ========================================================================//
-    //     let worker_1 = main_worker_1.clone();
-    //     let p2p_worker_1 = Arc::clone(&worker_1.p2p_worker);
-    //
-    //     // Clone worker_2 for the spawned task
-    //     let worker_2_for_task = main_worker_2.clone();
-    //     let p2p_worker_2 = Arc::clone(&worker_2_for_task.p2p_worker);
-    //     // Keep a separate clone for later use
-    //     let worker_2_for_later = main_worker_2.clone();
-    //
-    //     let state_1 = test_state.clone();
-    //     let state_2 = test_state.clone();
-    //
-    //     // ========================= listening to swarm ===========================//
-    //     let (sender_channel_1, mut recv_channel_1) = tokio::sync::mpsc::channel(256);
-    //     let (sender_channel_2, mut recv_channel_2) = tokio::sync::mpsc::channel(256);
-    //
-    //     let _swarm_task_1 = tokio::spawn(async move {
-    //         p2p_worker_1
-    //             .lock()
-    //             .await
-    //             .start_swarm(sender_channel_1)
-    //             .await
-    //     });
-    //
-    //     let _swarm_task_2 = tokio::spawn(async move {
-    //         p2p_worker_2
-    //             .lock()
-    //             .await
-    //             .start_swarm(sender_channel_2)
-    //             .await
-    //     });
-    //
-    //     // ========================================================================//
-    //
-    //     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-    //
-    //     let swarm_1 = tokio::spawn(async move {
-    //         println!("swarm 1 here ");
-    //         while let Some(event) = recv_channel_1.recv().await {
-    //             println!("swarm 1 here inner ");
-    //             match event {
-    //                 Ok(SwarmMessage::Request { .. }) => {
-    //                     info!("Worker 1 received request");
-    //                 }
-    //                 Ok(SwarmMessage::Response { data, outbound_id }) => {
-    //                     let received_response: TxStateMachine =
-    //                         Decode::decode(&mut &data[..]).unwrap();
-    //                     assert_eq!(received_response, state_1.response_msg);
-    //                     assert_eq!(1, 2);
-    //                 }
-    //                 Err(e) => error!("Worker 1 error: {}", e),
-    //             }
-    //         }
-    //         Ok::<(), Error>(())
-    //     });
-    //
-    //     let swarm_2 = tokio::spawn(async move {
-    //         println!("swarm 2 here ");
-    //         while let Some(event) = recv_channel_2.recv().await {
-    //             match event {
-    //                 Ok(SwarmMessage::Request { data, inbound_id }) => {
-    //                     println!("received a req: {data:?}");
-    //                     let mut req_id_hash = DefaultHasher::default();
-    //                     inbound_id.hash(&mut req_id_hash);
-    //                     let req_id_hash = req_id_hash.finish();
-    //
-    //                     worker_2_for_task
-    //                         .p2p_worker
-    //                         .lock()
-    //                         .await
-    //                         .send_response(
-    //                             req_id_hash,
-    //                             Arc::new(Mutex::new(state_2.response_msg.clone())),
-    //                         )
-    //                         .await?;
-    //                 }
-    //                 Ok(SwarmMessage::Response { data, outbound_id }) => {
-    //                     // nothing for now
-    //                 }
-    //                 Err(e) => error!("Worker 1 error: {}", e),
-    //             }
-    //         }
-    //         Ok::<(), Error>(())
-    //     });
-    //
-    //     // ========================================================================//
-    //     // Now use the separate clone for later operations
-    //     let peer_id_2 = worker_2_for_later.p2p_worker.lock().await.node_id;
-    //     let multi_addr_2 = worker_2_for_later.p2p_worker.lock().await.url.clone();
-    //
-    //     main_worker_1
-    //         .p2p_worker
-    //         .lock()
-    //         .await
-    //         .dial_to_peer_id(multi_addr_2, peer_id_2)
-    //         .await?;
-    //
-    //     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-    //
-    //     main_worker_1
-    //         .p2p_worker
-    //         .lock()
-    //         .await
-    //         .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2)
-    //         .await?;
-    //
-    //     println!(
-    //         "current_req swarm 2: {:?}",
-    //         worker_2_for_later.p2p_worker.lock().await.current_req
-    //     );
-    //     println!(
-    //         "current_req swarm 1: {:?}",
-    //         worker_1.p2p_worker.lock().await.current_req
-    //     );
-    //     // ========================================================================//
-    //
-    //     swarm_1.await?;
-    //     swarm_2.await?;
-    //     Ok(())
-    // }
+    #[tokio::test]
+    #[ignore]
+    async fn p2p_test() -> Result<(), anyhow::Error> {
+        log_setup();
 
-    // #[tokio::test]
-    // async fn rpc_test() -> Result<(), anyhow::Error> {
-    //     log_setup();
-    //
-    //     let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test3.db").await?;
-    //     let _worker_handle = tokio::spawn(main_worker_1.clone().e2e_run());
-    //
-    //     let rpc_url = main_worker_1.tx_rpc_worker.lock().await.rpc_url.clone();
-    //     let full_url = format!("http://{rpc_url}");
-    //     println!("full url: {full_url}");
-    //
-    //     // Create RPC client and wait for it to be ready
-    //     let rpc_client = HttpClientBuilder::default()
-    //         .build(full_url.as_str())
-    //         .expect("failed to initialize rpc http client");
-    //
-    //     let acc_id = alloy::primitives::Address::default().to_string();
-    //     let network_id: String = ChainSupported::Ethereum.into();
-    //     let mut params = ArrayParams::new();
-    //     params.insert("Luka").expect("TODO: panic message");
-    //     params.insert(acc_id).expect("TODO: panic message");
-    //     params.insert(network_id).expect("ll");
-    //
-    //     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-    //
-    //     // Now proceed with your actual test
-    //     let _res = rpc_client
-    //         .request::<(), _>("register", params.clone())
-    //         .await?;
-    //
-    //     Ok(())
-    // }
+        // ========================================================================//
+        // Test state structure
+        struct TestState {
+            sent_msg: TxStateMachine,
+            response_msg: TxStateMachine,
+        }
+
+        // Create shared state using Arc
+        let test_state = Arc::new(TestState {
+            sent_msg: TxStateMachine::default(),
+            response_msg: TxStateMachine {
+                amount: 1000,
+                ..Default::default()
+            },
+        });
+        // ========================================================================//
+
+        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test1.db").await?;
+        let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test2.db").await?;
+
+        let cloned_main_worker_1 = main_worker_1.clone();
+        let cloned_main_worker_2 = main_worker_2.clone();
+
+        let _worker_handle_1 = tokio::spawn(MainServiceWorker::e2e_run(cloned_main_worker_1));
+        let _worker_handle_2 = tokio::spawn(MainServiceWorker::e2e_run(cloned_main_worker_2));
+
+        // wait for proper initialization
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        // ========================================================================//
+        let worker_1 = main_worker_1.clone();
+        let p2p_worker_1 = Arc::clone(&worker_1.p2p_worker);
+
+        // Clone worker_2 for the spawned task
+        let worker_2_for_task = main_worker_2.clone();
+        let p2p_worker_2 = Arc::clone(&worker_2_for_task.p2p_worker);
+        // Keep a separate clone for later use
+        let worker_2_for_later = main_worker_2.clone();
+
+        let state_1 = test_state.clone();
+        let state_2 = test_state.clone();
+
+        // ========================= listening to swarm ===========================//
+        let (sender_channel_1, mut recv_channel_1) = tokio::sync::mpsc::channel(256);
+        let (sender_channel_2, mut recv_channel_2) = tokio::sync::mpsc::channel(256);
+
+        let _swarm_task_1 = tokio::spawn(async move {
+            p2p_worker_1
+                .lock()
+                .await
+                .start_swarm(sender_channel_1)
+                .await
+        });
+
+        let _swarm_task_2 = tokio::spawn(async move {
+            p2p_worker_2
+                .lock()
+                .await
+                .start_swarm(sender_channel_2)
+                .await
+        });
+
+        // ========================================================================//
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        let swarm_1 = tokio::spawn(async move {
+            println!("swarm 1 here ");
+            while let Some(event) = recv_channel_1.recv().await {
+                println!("swarm 1 here inner ");
+                match event {
+                    Ok(SwarmMessage::Request { .. }) => {
+                        info!("Worker 1 received request");
+                    }
+                    Ok(SwarmMessage::Response { data, outbound_id }) => {
+                        let received_response: TxStateMachine =
+                            Decode::decode(&mut &data[..]).unwrap();
+                        assert_eq!(received_response, state_1.response_msg);
+                        assert_eq!(1, 2);
+                    }
+                    Err(e) => error!("Worker 1 error: {}", e),
+                }
+            }
+            Ok::<(), Error>(())
+        });
+
+        let swarm_2 = tokio::spawn(async move {
+            println!("swarm 2 here ");
+            while let Some(event) = recv_channel_2.recv().await {
+                println!("jello");
+                match event {
+                    Ok(SwarmMessage::Request { data, inbound_id }) => {
+                        println!("received a req: {data:?}");
+                        let mut req_id_hash = DefaultHasher::default();
+                        inbound_id.hash(&mut req_id_hash);
+                        let req_id_hash = req_id_hash.finish();
+
+                        worker_2_for_task
+                            .p2p_network_service
+                            .lock()
+                            .await
+                            .send_response(
+                                req_id_hash,
+                                Arc::new(Mutex::new(state_2.response_msg.clone())),
+                            )
+                            .await?;
+                    }
+                    Ok(SwarmMessage::Response { data, outbound_id }) => {
+                        // nothing for now
+                    }
+                    Err(e) => error!("Worker 1 error: {}", e),
+                }
+            }
+            Ok::<(), Error>(())
+        });
+
+        // ========================================================================//
+        // Now use the separate clone for later operations
+        let peer_id_2 = worker_2_for_later.p2p_worker.lock().await.node_id;
+        let multi_addr_2 = worker_2_for_later.p2p_worker.lock().await.url.clone();
+
+        main_worker_1
+            .p2p_network_service
+            .lock()
+            .await
+            .dial_to_peer_id(multi_addr_2.clone(), &peer_id_2)
+            .await?;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        main_worker_1
+            .p2p_network_service
+            .lock()
+            .await
+            .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2,multi_addr_2)
+            .await?;
+
+        // ========================================================================//
+
+        Ok(())
+    }
+
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
