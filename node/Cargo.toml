@@ -8,15 +8,15 @@ edition = "2021"
 [dependencies]
 db                                          = { workspace = true}
 log                                         = { workspace = true}
-primitives                                  = { workspace = true}
+primitives                                  = { workspace = true, features = ["e2e"]}
 libp2p                                      = { workspace = true}
-sc-network                                  = "0.44.0"
+sc-network                                  = "0.45.1"
+sc-service                                  = { workspace = true}
 async-trait                                 = "0.1.81"
 unsigned-varint                             = { workspace = true}
 anyhow                                      = { workspace = true}
 codec                                       = { workspace = true}
 tokio                                       = { workspace = true}
-#libp2p-request-response = { workspace = true}
 tokio-stream                                = "0.1.15"
 sp-core                                     = { workspace = true}
 subxt                                       = { workspace = true}
@@ -30,4 +30,9 @@ tinyrand                                    = "0.5.0"
 serde_json                                  = { workspace = true}
 base58                                      = { workspace = true}
 curve25519-dalek                            = { workspace = true}
+local-ip-address                            = { workspace = true}
+rand                                        = { workspace = true}
 #solana-client-wasm                          = { workspace = true}
+
+[features]
+e2e = []

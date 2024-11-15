@@ -1,61 +1,97 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
-use alloc::{sync::Arc, vec::Vec};
-use codec::{Decode, Encode, Output};
-use libp2p::request_response::{InboundRequestId, OutboundRequestId};
+use alloc::vec::Vec;
+use anyhow::Error;
+use codec::{Decode, Encode};
+use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
+use alloy::primitives::{Address,B256};
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
+use sp_core::H256;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::str::FromStr;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, MutexGuard};
-
-// /// The idea is similar to how future executor tasks are able to progress and have channels to send
-// /// themselves
-// pub struct TxStateMachine {
-//     /// Sender channel to propagate itself
-//     pub sender_channel: Mutex<Sender<Arc<Mutex<TxStateMachine>>>>,
-//     pub data: RpcTxStateMachine,
-// }
+use tokio::sync::MutexGuard;
 
 /// tx state
-#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
-    genesis,
-    /// if receiver address has been confirmed
-    addrConfirmed,
+    Genesis,
+    /// if receiver just confirmed
+    RecvAddrConfirmed,
+    /// if receiver address confirmation has passed
+    RecvAddrConfirmationPassed,
     /// if receiver chain network has been confirmed , used in tx simulation
-    netConfirmed,
+    NetConfirmed,
     /// if the sender has confirmed, last stage and the txn is being submitted
-    senderConfirmed,
+    SenderConfirmed,
+    /// if non-original sender tries to sign
+    SenderConfirmationfailed,
+    /// if receiver failed to verify
+    RecvAddrFailed,
+    /// if transaction failed to be submitted due to some reasons
+    FailedToSubmitTxn(String),
+    /// if submission passed (tx-hash)
+    TxSubmissionPassed([u8; 32]),
 }
 impl Default for TxStatus {
     fn default() -> Self {
-        Self::genesis
+        Self::Genesis
     }
 }
 /// Transaction data structure state machine, passed in rpc and p2p swarm
-#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
-    pub sender_address: Vec<u8>,
-    pub receiver_address: Vec<u8>,
+    pub sender_address: String,
+    pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
     pub multi_id: sp_core::H256,
-    /// signature of the receiver id
-    pub signature: Option<Vec<u8>>,
+    /// signature of the receiver id (Signature)
+    pub recv_signature: Option<Vec<u8>>,
     /// chain network
     pub network: ChainSupported,
-    /// State Machine main params
+    /// State Machine status
     pub status: TxStatus,
     /// amount to be sent
     pub amount: u128,
-    /// signed call payload
+    /// signed call payload (signed hash of the transaction)
     pub signed_call_payload: Option<Vec<u8>>,
-    /// call payload
-    pub call_payload: Option<Vec<u8>>,
+    /// call payload (hash of transaction)
+    pub call_payload: Option<[u8;32]>,
+    // /// used for simplifying tx identification
+    // pub code_word: String,
+    // pub sender_name: String,
     /// Inbound Request id for p2p
-    pub indbound_req_id: Option<u64>,
+    pub inbound_req_id: Option<u64>,
     /// Outbound Request id for p2p
     pub outbound_req_id: Option<u64>,
+}
+
+impl TxStateMachine {
+    pub fn recv_confirmation_passed(&mut self) {
+        self.status = TxStatus::RecvAddrConfirmationPassed
+    }
+    pub fn recv_confirmation_failed(&mut self) {
+        self.status = TxStatus::RecvAddrFailed
+    }
+    pub fn recv_confirmed(&mut self) {
+        self.status = TxStatus::RecvAddrConfirmed
+    }
+    pub fn sender_confirmation(&mut self) {
+        self.status = TxStatus::SenderConfirmed
+    }
+    pub fn sender_confirmation_failed(&mut self) {
+        self.status = TxStatus::SenderConfirmationfailed
+    }
+    pub fn tx_submission_failed(&mut self, reason: String) {
+        self.status = TxStatus::FailedToSubmitTxn(reason)
+    }
+    pub fn tx_submission_passed(&mut self, tx_hash: [u8; 32]) {
+        self.status = TxStatus::TxSubmissionPassed(tx_hash)
+    }
+    pub fn net_confirmed(&mut self) {
+        self.status = TxStatus::NetConfirmed
+    }
 }
 
 /// helper for solving passing `MutexGuard<TxStateMachine>`
@@ -65,15 +101,58 @@ pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine
         sender_address: tx.sender_address.clone(),
         receiver_address: tx.receiver_address.clone(),
         multi_id: tx.multi_id,
-        signature: tx.signature.clone(),
+        recv_signature: tx.recv_signature.clone(),
         network: tx.network,
         status: tx.status.clone(),
         amount: tx.amount.clone(),
         signed_call_payload: tx.signed_call_payload.clone(),
         call_payload: tx.call_payload.clone(),
-        indbound_req_id: tx.indbound_req_id,
+        inbound_req_id: tx.inbound_req_id,
         outbound_req_id: tx.outbound_req_id,
     }
+}
+
+// helper for hashing p2p swarm request ids
+pub trait HashId: Hash {
+    fn get_hash_id(&self) -> u64 {
+        let mut req_id_hash = DefaultHasher::default();
+        self.hash(&mut req_id_hash);
+        req_id_hash.finish()
+    }
+}
+
+impl HashId for OutboundRequestId {}
+impl HashId for InboundRequestId {}
+
+// ================================================================================= //
+
+#[derive(Debug)]
+pub enum NetworkCommand {
+    SendRequest {
+        request: Vec<u8>,
+        peer_id: PeerId,
+        target_multi_addr: Multiaddr,
+    },
+    SendResponse {
+        response: Vec<u8>,
+        channel: ResponseChannel<Result<Vec<u8>, Error>>,
+    },
+    Dial {
+        target_multi_addr: Multiaddr,
+        target_peer_id: PeerId,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SwarmMessage {
+    Request {
+        data: Vec<u8>,
+        inbound_id: InboundRequestId,
+    },
+    Response {
+        data: Vec<u8>,
+        outbound_id: OutboundRequestId,
+    },
 }
 
 /// Transaction data structure to store in the db
@@ -103,6 +182,39 @@ pub enum Token {
     UsdtDot,
 }
 
+impl From<Token> for String {
+    fn from(value: Token) -> Self {
+        match value {
+            Token::Dot => "Dot".to_string(),
+            Token::Bnb => "Bnb".to_string(),
+            Token::Sol => "Sol".to_string(),
+            Token::Eth => "Eth".to_string(),
+            Token::UsdtSol => "UsdtSol".to_string(),
+            Token::UsdcSol => "UsdcSol".to_string(),
+            Token::UsdtEth => "UsdtEth".to_string(),
+            Token::UsdcEth => "UsdcEth".to_string(),
+            Token::UsdtDot => "UsdtDot".to_string(),
+        }
+    }
+}
+
+impl From<&str> for Token {
+    fn from(value: &str) -> Self {
+        match value {
+            "Dot" => Token::Dot,
+            "Bnb" => Token::Bnb,
+            "Sol" => Token::Sol,
+            "Eth" => Token::Eth,
+            "UsdtSol" => Token::UsdtSol,
+            "UsdcSol" => Token::UsdcSol,
+            "UsdtEth" => Token::UsdtEth,
+            "UsdcEth" => Token::UsdcEth,
+            "UsdtDot" => Token::UsdtDot,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl From<Token> for ChainSupported {
     fn from(value: Token) -> Self {
         match value {
@@ -123,13 +235,33 @@ pub enum ChainSupported {
     Solana,
 }
 
-impl From<ChainSupported> for &'static str {
+impl Default for ChainSupported {
+    fn default() -> Self {
+        ChainSupported::Polkadot
+    }
+}
+
+impl From<ChainSupported> for String {
     fn from(value: ChainSupported) -> Self {
         match value {
-            ChainSupported::Polkadot => "Polkadot",
-            ChainSupported::Ethereum => "Ethereum",
-            ChainSupported::Bnb => "Bnb",
-            ChainSupported::Solana => "Solana",
+            ChainSupported::Polkadot => "Polkadot".to_string(),
+            ChainSupported::Ethereum => "Ethereum".to_string(),
+            ChainSupported::Bnb => "Bnb".to_string(),
+            ChainSupported::Solana => "Solana".to_string(),
+        }
+    }
+}
+
+impl From<&str> for ChainSupported {
+    fn from(value: &str) -> Self {
+        match value {
+            "Polkadot" => ChainSupported::Polkadot,
+            "Ethereum" => ChainSupported::Ethereum,
+            "Bnb" => ChainSupported::Bnb,
+            "Solana" => ChainSupported::Solana,
+            _ => {
+                unreachable!()
+            }
         }
     }
 }
@@ -155,25 +287,26 @@ impl ChainSupported {
 /// User account
 #[derive(Clone, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct UserAccount {
-    pub user_name: Vec<u8>,
-    pub account_id: Vec<u8>,
+    pub user_name: String,
+    pub account_id: String,
     pub network: ChainSupported,
 }
 
 /// Vane peer record
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
-    pub peer_address: Vec<u8>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub accountId1: Option<Vec<u8>>,
-    pub accountId2: Option<Vec<u8>>,
-    pub accountId3: Option<Vec<u8>>,
-    pub accountId4: Option<Vec<u8>>,
-    pub multi_addr: Vec<u8>,
+    pub record_id: String,       // for airtable
+    pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
+    pub account_id1: Option<String>,
+    pub account_id2: Option<String>,
+    pub account_id3: Option<String>,
+    pub account_id4: Option<String>,
+    pub multi_addr: Option<String>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
 
 /// p2p config
-pub struct p2pConfig {}
+pub struct P2pConfig {}
 
 // Tx processing section
 
@@ -200,8 +333,9 @@ pub const BEP20: [u8; 20] = [
 // airtable db or peer discovery
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Discovery {
-    pub peer_id: String,
-    pub multi_addr: String,
+    pub id: String,
+    pub peer_id: Option<String>,
+    pub multi_addr: Option<String>,
     pub account_ids: Vec<String>,
 }
 
@@ -209,29 +343,30 @@ impl From<Discovery> for PeerRecord {
     fn from(value: Discovery) -> Self {
         let mut acc = vec![];
         if let Some(addr) = value.account_ids.get(0) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(1) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(2) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
         if let Some(addr) = value.account_ids.get(3) {
-            let acc_to_vec_id = addr.as_bytes().to_vec();
+            let acc_to_vec_id = addr.to_owned();
             acc.push(acc_to_vec_id)
         }
 
         Self {
-            peer_address: Vec::from(value.peer_id),
-            accountId1: acc.get(0).map(|x| x.clone()),
-            accountId2: acc.get(1).map(|x| x.clone()),
-            accountId3: acc.get(2).map(|x| x.clone()),
-            accountId4: acc.get(3).map(|x| x.clone()),
-            multi_addr: Vec::from(value.multi_addr),
+            record_id: value.id,
+            peer_id: value.peer_id,
+            account_id1: acc.get(0).map(|x| x.clone()),
+            account_id2: acc.get(1).map(|x| x.clone()),
+            account_id3: acc.get(2).map(|x| x.clone()),
+            account_id4: acc.get(3).map(|x| x.clone()),
+            multi_addr: value.multi_addr,
             keypair: None,
         }
     }
@@ -251,9 +386,35 @@ pub struct Record {
     pub fields: Fields,
 }
 
+// airtable request body
 #[derive(Debug, Serialize, Clone, Deserialize)]
+pub struct AirtableRequestBody {
+    pub records: Vec<PostRecord>,
+}
+
+#[derive(Debug, Serialize, Clone, Deserialize)]
+pub struct PostRecord {
+    pub fields: Fields,
+}
+
+impl PostRecord {
+    pub fn new(fields: Fields) -> Self {
+        Self { fields }
+    }
+}
+
+impl AirtableRequestBody {
+    pub fn new(fields: Fields) -> Self {
+        let record = PostRecord { fields };
+        AirtableRequestBody {
+            records: vec![record],
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Deserialize)]
 pub struct Fields {
-    #[serde(rename = "portId", default)]
+    #[serde(rename = "multiAddr", default)]
     pub multi_addr: Option<String>,
     #[serde(rename = "peerId", default)]
     pub peer_id: Option<String>,
@@ -267,26 +428,39 @@ pub struct Fields {
     pub account_id4: Option<String>,
 }
 
+#[cfg(feature = "e2e")]
+impl Default for Fields {
+    fn default() -> Self {
+        Fields {
+            multi_addr: Some("ip4/127.0.0.1/tcp/3000".to_string()),
+            peer_id: Some("0x378z9".to_string()),
+            account_id1: Some("1".to_string()),
+            account_id2: Some("2".to_string()),
+            account_id3: Some("3".to_string()),
+            account_id4: Some("4".to_string()),
+        }
+    }
+}
+
 impl From<PeerRecord> for Fields {
     fn from(value: PeerRecord) -> Self {
-        let multi_addr = String::from_utf8(value.multi_addr).expect("failed to convert multi addr");
-        let peer_id = libp2p::PeerId::from_str(
-            String::from_utf8(value.peer_address)
-                .expect("failed to convert peer address")
-                .as_str(),
-        )
-        .unwrap()
-        .to_base58();
-        Self {
-            multi_addr: Some(multi_addr),
-            peer_id: Some(peer_id),
-            account_id1: Some(
-                String::from_utf8(value.accountId1.expect("no account id 1 from peer record"))
-                    .unwrap(),
-            ),
+        let multi_addr = value.multi_addr;
+        let peer_id = value.peer_id;
+
+        let mut fields = Fields {
+            multi_addr,
+            peer_id,
+            account_id1: None,
             account_id2: None,
             account_id3: None,
             account_id4: None,
+        };
+
+        if let Some(acc_1) = value.account_id1 {
+            fields.account_id1 = Some(acc_1)
         }
+        // TODO convert all accounts
+
+        fields
     }
 }

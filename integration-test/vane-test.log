@@ -1,0 +1,9 @@
+00:02:01 [INFO] Starting a sqlite pool with 25 connections.
+00:02:01 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2459/p2p/12D3KooWRY1Z7iuSvWU944GsLL5HDT97niiJ5uY5H8hX6Drfuvbd
+00:02:03 [INFO] succesfully created peer in airtable
+00:02:03 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/3459/p2p/12D3KooWFwFRXszCDPMLsLLuxjFsmZrFhsJEt9TqG6kUJqTQyNVo
+00:02:04 [INFO] succesfully created peer in airtable
+00:02:05 [INFO] listening to rpc url: 192.168.1.153:2710
+00:02:05 [INFO] listening to rpc url: 192.168.1.153:3710
+00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2459"
+00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/3459"
