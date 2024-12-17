@@ -57,6 +57,10 @@ In itself is not a wallet, but can work with any type of wallet as it acts as an
 
 2. Batching transactions, reducing fees drastically.
 3. Turn any wallet into a smart account abstraction wallet
+   
+---
+
+![SCR-20241217-pikb](https://github.com/user-attachments/assets/f8c82fa4-2d2b-46d8-87bf-7c1a7f18cae1)
 
 
 ## HOW TO RUN & TEST
