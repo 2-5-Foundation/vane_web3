@@ -81,3 +81,9 @@ or
 ```
 cargo test --package integration-test --lib e2e_tests::transaction_processing_test -- --exact
 ```
+
+## CONTRIBUTE & GET PAID
+
+1. tip issue  - 15 - 20 usd
+2. medium issue - 30 - 60 usd
+3. hard issue - 70 - 150 usd
