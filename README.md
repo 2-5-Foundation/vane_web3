@@ -57,3 +57,27 @@ In itself is not a wallet, but can work with any type of wallet as it acts as an
 
 2. Batching transactions, reducing fees drastically.
 3. Turn any wallet into a smart account abstraction wallet
+
+
+## HOW TO RUN & TEST
+1. Install Rust
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+2. Compile & Run
+```
+cargo build --release
+```
+
+```
+./target/release -p app
+or 
+./target/release -p app --db-url "url"
+```
+
+3. Test
+
+```
+cargo test --package integration-test --lib e2e_tests::transaction_processing_test -- --exact
+```
