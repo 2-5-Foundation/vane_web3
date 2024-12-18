@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/3d21feb9-757f-4c62-b804-b4b6a819f18f" alt="Vane Logo" width="100" height="auto">
+</p>
+
 # vane_web3
 
 A full sovereign custodian implementation of risk-free transaction sending for web3 users.
