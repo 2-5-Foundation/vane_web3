@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/3d21feb9-757f-4c62-b804-b4b6a819f18f" alt="Vane Logo" width="100" height="auto">
+  <img src="https://github.com/user-attachments/assets/997cc05e-b56c-45e5-8d5c-42cdaec4a9c4" alt="Vane Logo" width="100" height="auto">
 </p>
+
 
 # vane_web3
 
@@ -25,6 +26,13 @@ vane act as a safety net for web3 users.
 As this is crucial to make sure that you control account provided ( receiver ) in X network/blockchain.
 
 After all confirmation, vane will route and submit the transaction to X address to the Y network/blokchain.
+
+----
+DEMO POST
+
+https://x.com/MrishoLukamba/status/1866162459800707165
+
+----
 
 ## Technical design
 
