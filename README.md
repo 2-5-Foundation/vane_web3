@@ -98,8 +98,35 @@ or
 cargo test --package integration-test --lib e2e_tests::transaction_processing_test -- --exact
 ```
 
+----
+
 ## CONTRIBUTE & GET PAID
 
 1. tip issue  - 15 - 20 usd
 2. medium issue - 30 - 60 usd
 3. hard issue - 70 - 150 usd
+
+----
+
+🛣️ Roadmap
+Our development roadmap for the vane_web3 project:
+
+1. Build vane_web3 core features and node ✅
+
+   - Completed the initial implementation of the core transaction processing, peer-to-peer communication, and database management features.
+
+
+2. Build for WASM target 🚧
+
+   - Currently in progress, focusing on making the codebase compatible with WebAssembly for browser and WASI environments.
+
+3. Web application 🚧
+
+   - Developing the web-based user interface and integration with the WASM-compiled core library.
+
+4. Mobile client ⏱️
+
+   - Planned for the next phase, to provide a native mobile experience for users.
+
+
+The team is actively working on the WASM compilation and web application development. We expect to have the browser-based version ready for initial testing and feedback in January 2025. The mobile client is on the roadmap for early February, as we aim to provide a comprehensive cross-platform solution.
