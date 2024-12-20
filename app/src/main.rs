@@ -20,9 +20,21 @@ fn log_setup() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Database URL to use
+    #[arg(short, long)]
+    pub db_url: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
-    node::MainServiceWorker::run().await?;
+    let args = Args::parse();
+
+    node::MainServiceWorker::run(args.db_url).await?;
     Ok(())
 }

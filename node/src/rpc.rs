@@ -26,12 +26,14 @@ use libp2p::PeerId;
 use local_ip_address;
 use local_ip_address::local_ip;
 use log::{info, trace};
+use moka::future::Cache as AsyncCache;
 use primitives::data_structure::{
     AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord,
     PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount,
 };
 use reqwest::{ClientBuilder, Url};
 use sp_core::{Blake2Hasher, Hasher};
+use sp_runtime::traits::Zero;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -256,7 +258,7 @@ pub trait TransactionRpc {
     /// - `receiver_address`,
     /// - `amount`,
     /// - `networkId`
-    #[method(name = "sendTransaction")]
+    #[method(name = "initiateTransaction")]
     async fn initiate_transaction(
         &self,
         sender: String,
@@ -272,10 +274,14 @@ pub trait TransactionRpc {
 
     /// watch tx update stream
     #[subscription(name ="subscribeTxUpdates",item = TxStateMachine )]
-    async fn watch_tx_update(&self) -> SubscriptionResult;
+    async fn watch_tx_updates(&self) -> SubscriptionResult;
+
+    /// fetch upstream pending tx-state-machine, works as an alternative to `subscribeTxUpdates`
+    #[method(name = "fetchPendingTxUpdates")]
+    async fn fetch_pending_tx_updates(&self) -> RpcResult<Vec<TxStateMachine>>;
 
     /// receiver confirmation on address and ownership of account ( network ) signifying correct token to the network choice
-    #[method(name = "recvConfirm")]
+    #[method(name = "receiverConfirm")]
     async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()>;
 }
 
@@ -297,6 +303,8 @@ pub struct TransactionRpcWorker {
     pub peer_id: PeerId,
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
+    /// tx pending store
+    pub moka_cache: AsyncCache<u64, TxStateMachine>, // initial fees, after dry running tx initialy without optimization
 }
 
 impl TransactionRpcWorker {
@@ -307,6 +315,7 @@ impl TransactionRpcWorker {
         user_rpc_update_sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
         port: u16,
         peer_id: PeerId,
+        moka_cache: AsyncCache<u64, TxStateMachine>,
     ) -> Result<Self, anyhow::Error> {
         let local_ip = local_ip()
             .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
@@ -314,9 +323,9 @@ impl TransactionRpcWorker {
         let mut rpc_url = String::new();
 
         if local_ip.is_ipv4() {
-            rpc_url = format!("{}:{}", local_ip.to_string(), port - 290);
+            rpc_url = format!("{}:{}", local_ip.to_string(), port);
         } else {
-            rpc_url = format!("{}:{}", local_ip.to_string(), port - 290);
+            rpc_url = format!("{}:{}", local_ip.to_string(), port);
         }
         Ok(Self {
             db_worker,
@@ -325,6 +334,7 @@ impl TransactionRpcWorker {
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
+            moka_cache,
         })
     }
 
@@ -355,7 +365,6 @@ impl TransactionRpcServer for TransactionRpcWorker {
         network: String,
     ) -> RpcResult<()> {
         // TODO verify the account id as it belongs to the registerer
-
         let network = network.as_str().into();
         let user_account = UserAccount {
             user_name: name,
@@ -447,6 +456,11 @@ impl TransactionRpcServer for TransactionRpcWorker {
             sender_recv.extend_from_slice(receiver.as_bytes());
             let multi_addr = Blake2Hasher::hash(&sender_recv[..]);
 
+            let mut nonce = 0;
+            nonce = self.db_worker.lock().await.get_nonce().await? + 1;
+            // update the db on nonce
+            self.db_worker.lock().await.increment_nonce().await?;
+
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
                 receiver_address: receiver,
@@ -459,6 +473,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 call_payload: None,
                 inbound_req_id: None,
                 outbound_req_id: None,
+                tx_nonce: nonce,
             };
 
             // dry run the tx
@@ -487,12 +502,14 @@ impl TransactionRpcServer for TransactionRpcWorker {
     /// sender cannot confirm if TxStatus is RecvAddrFailed
     async fn sender_confirm(&self, mut tx: TxStateMachine) -> RpcResult<()> {
         let sender_channel = self.user_rpc_update_sender_channel.lock().await;
-        if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed{
+        if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(Error::Custom(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))?
         } else {
+            // remove from cache
+            self.moka_cache.remove(&tx.tx_nonce.into()).await;
             // verify the tx-state-machine integrity
             // TODO
             // update the TxStatus to TxStatus::SenderConfirmed
@@ -512,6 +529,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(Error::Custom("Receiver did not confirm".to_string()))?
         } else {
+            // remove from cache
+            self.moka_cache.remove(&tx.tx_nonce.into()).await;
             // verify the tx-state-machine integrity
             // TODO
             // tx status to TxStatus::RecvAddrConfirmed
@@ -524,7 +543,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         }
     }
 
-    async fn watch_tx_update(
+    async fn watch_tx_updates(
         &self,
         subscription_sink: PendingSubscriptionSink,
     ) -> SubscriptionResult {
@@ -543,4 +562,16 @@ impl TransactionRpcServer for TransactionRpcWorker {
         }
         Ok(())
     }
+
+    async fn fetch_pending_tx_updates(&self) -> RpcResult<Vec<TxStateMachine>> {
+        let tx_updates = self
+            .moka_cache
+            .iter()
+            .map(|(_k, v)| v)
+            .collect::<Vec<TxStateMachine>>();
+        println!("moka: {tx_updates:?}");
+        Ok(tx_updates)
+    }
 }
+
+// -------------------------------------- WASM BINDGEN ----------------------------------------- //

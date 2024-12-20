@@ -10,7 +10,7 @@ mod db_tests;
 use crate::db::read_filters::{BoolFilter, StringFilter};
 use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
 use crate::db::{
-    new_client_with_url,
+    new_client_with_url, nonce, port,
     read_filters::{BigIntFilter, BytesFilter, IntFilter},
     saved_peers, transaction, transactions_data, user_account, user_peer, PrismaClient,
     PrismaClientBuilder, UserPeerScalarFieldEnum,
@@ -81,6 +81,32 @@ impl DbWorker {
             .exec()
             .await?;
         Ok(())
+    }
+
+    pub async fn increment_nonce(&self) -> Result<(), anyhow::Error> {
+        self.db
+            .nonce()
+            .update(nonce::id::equals(1), vec![nonce::nonce::increment(1)])
+            .exec()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_nonce(&self) -> Result<u32, anyhow::Error> {
+        let mut nonce = 0;
+        let nonce_data = self
+            .db
+            .nonce()
+            .find_unique(nonce::UniqueWhereParam::IdEquals(1))
+            .exec()
+            .await?;
+        if nonce_data.is_none() {
+            // create the entity
+            self.db.nonce().create(0, vec![]).exec().await?;
+        } else {
+            nonce = nonce_data.unwrap().nonce
+        }
+        Ok(nonce as u32)
     }
 
     // get all related network id accounts
@@ -289,6 +315,28 @@ impl DbWorker {
             .exec()
             .await?
             .ok_or_else(|| anyhow!("Peer not found in DB"))
+    }
+
+    // set port ids {
+    pub async fn set_ports(&self, rpc: u16, p2p: u16) -> Result<(), anyhow::Error> {
+        self.db
+            .port()
+            .create(rpc as i64, p2p as i64, Default::default())
+            .exec()
+            .await?;
+
+        Ok(())
+    }
+
+    // get port ids
+    pub async fn get_ports(&self) -> Result<Option<port::Data>, anyhow::Error> {
+        let ports = self
+            .db
+            .port()
+            .find_unique(port::UniqueWhereParam::IdEquals(1))
+            .exec()
+            .await?;
+        Ok(ports)
     }
 
     // saved peers interacted with

@@ -1,16 +1,21 @@
 //! All data structure related to transaction processing and updating
 extern crate alloc;
+use alloc::string::String;
 use alloc::vec::Vec;
 use anyhow::Error;
 use codec::{Decode, Encode};
+use core::hash::{Hash, Hasher};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
-use alloy::primitives::{Address,B256};
 use libp2p::{Multiaddr, PeerId};
-use serde::{Deserialize, Serialize};
+use serde::de::Error as SerdeError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 use sp_core::H256;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::str::FromStr;
-use tokio::sync::MutexGuard;
+use twox_hash::XxHash64;
+
+// Ethereum signature preimage prefix according to EIP-191
+// keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
+pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
 
 /// tx state
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
@@ -33,20 +38,69 @@ pub enum TxStatus {
     FailedToSubmitTxn(String),
     /// if submission passed (tx-hash)
     TxSubmissionPassed([u8; 32]),
+    /// if the receiver has not registered to vane yet
+    ReceiverNotRegistered,
 }
 impl Default for TxStatus {
     fn default() -> Self {
         Self::Genesis
     }
 }
+
+fn serialize_u64_as_string<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(v) => serializer.serialize_str(&v.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
+fn deserialize_u64_flexible<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // First try as string
+    let value = Value::deserialize(deserializer)?;
+
+    match value {
+        // Handle direct number
+        Value::Number(n) => {
+            if let Some(num) = n.as_u64() {
+                Ok(Some(num))
+            } else {
+                Err(D::Error::custom("Invalid number format for u64"))
+            }
+        }
+        // Handle string (both normal and hex)
+        Value::String(s) => {
+            if let Some(stripped) = s.strip_prefix("0x") {
+                // Handle hex string
+                u64::from_str_radix(stripped, 16)
+                    .map(Some)
+                    .map_err(D::Error::custom)
+            } else {
+                // Handle decimal string
+                s.parse::<u64>().map(Some).map_err(D::Error::custom)
+            }
+        }
+        Value::Null => Ok(None),
+        _ => Err(D::Error::custom("Expected string, number, or null")),
+    }
+}
+
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
+    #[serde(rename = "senderAddress")]
     pub sender_address: String,
+    #[serde(rename = "receiverAddress")]
     pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
-    pub multi_id: sp_core::H256,
+    #[serde(rename = "multiId")]
+    pub multi_id: H256,
     /// signature of the receiver id (Signature)
+    #[serde(rename = "recvSignature")]
     pub recv_signature: Option<Vec<u8>>,
     /// chain network
     pub network: ChainSupported,
@@ -55,16 +109,27 @@ pub struct TxStateMachine {
     /// amount to be sent
     pub amount: u128,
     /// signed call payload (signed hash of the transaction)
+    #[serde(rename = "signedCallPayload")]
     pub signed_call_payload: Option<Vec<u8>>,
     /// call payload (hash of transaction)
-    pub call_payload: Option<[u8;32]>,
+    #[serde(rename = "callPayload")]
+    pub call_payload: Option<[u8; 32]>,
     // /// used for simplifying tx identification
     // pub code_word: String,
     // pub sender_name: String,
     /// Inbound Request id for p2p
+    #[serde(rename = "inboundReqId")]
+    #[serde(serialize_with = "serialize_u64_as_string")]
+    #[serde(deserialize_with = "deserialize_u64_flexible")]
     pub inbound_req_id: Option<u64>,
     /// Outbound Request id for p2p
+    #[serde(rename = "outboundReqId")]
+    #[serde(serialize_with = "serialize_u64_as_string")]
+    #[serde(deserialize_with = "deserialize_u64_flexible")]
     pub outbound_req_id: Option<u64>,
+    /// stores the current nonce of the transaction per vane not the nonce for the blockchain network
+    #[serde(rename = "txNonce")]
+    pub tx_nonce: u32,
 }
 
 impl TxStateMachine {
@@ -92,30 +157,18 @@ impl TxStateMachine {
     pub fn net_confirmed(&mut self) {
         self.status = TxStatus::NetConfirmed
     }
-}
-
-/// helper for solving passing `MutexGuard<TxStateMachine>`
-/// as encoding that type doesnt work
-pub fn new_tx_state_from_mutex(tx: MutexGuard<TxStateMachine>) -> TxStateMachine {
-    TxStateMachine {
-        sender_address: tx.sender_address.clone(),
-        receiver_address: tx.receiver_address.clone(),
-        multi_id: tx.multi_id,
-        recv_signature: tx.recv_signature.clone(),
-        network: tx.network,
-        status: tx.status.clone(),
-        amount: tx.amount.clone(),
-        signed_call_payload: tx.signed_call_payload.clone(),
-        call_payload: tx.call_payload.clone(),
-        inbound_req_id: tx.inbound_req_id,
-        outbound_req_id: tx.outbound_req_id,
+    pub fn recv_not_registered(&mut self) {
+        self.status = TxStatus::ReceiverNotRegistered
+    }
+    pub fn increment_nonce(&mut self) {
+        self.tx_nonce += 1
     }
 }
 
 // helper for hashing p2p swarm request ids
 pub trait HashId: Hash {
     fn get_hash_id(&self) -> u64 {
-        let mut req_id_hash = DefaultHasher::default();
+        let mut req_id_hash = XxHash64::default();
         self.hash(&mut req_id_hash);
         req_id_hash.finish()
     }

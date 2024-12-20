@@ -6,14 +6,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio                                       = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
-serde                                       = { version = "1.0.204", features = ["derive"] }
+serde                                       = { version = "1.0.204", features = ["derive","alloc"] }
 codec                                       = { workspace = true}
 anyhow                                      = "1.0.86"
 log                                         = { workspace = true}
-libp2p                                      = { workspace = true }
-sp-core                                     = { workspace = true}
-alloy                                       = { workspace = true}
+libp2p                                      = { workspace = true, default-features = false }
+sp-core                                     = { workspace = true,features = ["serde"]}
+serde_json                                  = { workspace = true}
+twox-hash                                   = { version = "2.1.0", features = ["alloc"]}
 
 [features]
+default = ["wasm"]
 e2e = []
+std = [
+    "sp-core/std",
+    "codec/std",
+    "sp-core/secp256k1"
+]
+wasm = [
+    "libp2p/wasm-bindgen"
+]

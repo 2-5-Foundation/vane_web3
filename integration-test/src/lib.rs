@@ -8,7 +8,7 @@ use jsonrpsee::http_client::HttpClient;
 use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
 use node::MainServiceWorker;
-use primitives::data_structure::{ChainSupported, PeerRecord};
+use primitives::data_structure::{ChainSupported, PeerRecord, ETH_SIG_MSG_PREFIX};
 use simplelog::*;
 use std::fs::File;
 use std::sync::Arc;
@@ -36,7 +36,9 @@ mod e2e_tests {
     use super::*;
     use crate::log_setup;
     use alloy::signers::k256::ecdsa::SigningKey;
-    use alloy_primitives::Keccak256;
+    use alloy::signers::k256::FieldBytes;
+    use alloy::signers::local::LocalSigner;
+    use alloy_primitives::{hex, Keccak256};
     use anyhow::{anyhow, Error};
     use db::db::new_client_with_url;
     use jsonrpsee::core::client::{Client, Subscription, SubscriptionClientT};
@@ -52,6 +54,7 @@ mod e2e_tests {
     use primitives::data_structure::{
         AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine, TxStatus,
     };
+    use rand::Rng;
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::Arc;
 
@@ -197,14 +200,17 @@ mod e2e_tests {
             .p2p_network_service
             .lock()
             .await
-            .send_request(Arc::new(Mutex::new(test_state.sent_msg.clone())), peer_id_2,multi_addr_2)
+            .send_request(
+                Arc::new(Mutex::new(test_state.sent_msg.clone())),
+                peer_id_2,
+                multi_addr_2,
+            )
             .await?;
 
         // ========================================================================//
 
         Ok(())
     }
-
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
@@ -250,13 +256,34 @@ mod e2e_tests {
 
         // ============================================================================
         // Wallets
-        let wallet_1 = PrivateKeySigner::random();
-        let wallet_2 = PrivateKeySigner::random();
+        // --------------------------------- Wallet 1 ------------------------------------------- //
+        // testing 2 phantom wallet
+        //0xb82e9d2e1d6fe235859ae5ea619486d084d87ad8d48fb96f0923cd93ae39b4ac
+        let testing2_priv_key =
+            hex::decode(&"b82e9d2e1d6fe235859ae5ea619486d084d87ad8d48fb96f0923cd93ae39b4ac")
+                .unwrap();
+        let signing_key_1 =
+            SigningKey::from_bytes(<&FieldBytes>::from(&testing2_priv_key[..])).unwrap();
+        let wallet_1 = LocalSigner::from_signing_key(signing_key_1);
+
+        // --------------------------------- Wallet 2 ------------------------------------------- //
+        // meme coin phantom wallet
+        //0x30ec8bace0712e3f653bf986cbceae3fd017ceccd7636097687d12143b298f01
+        let meme_priv_key =
+            hex::decode(&"30ec8bace0712e3f653bf986cbceae3fd017ceccd7636097687d12143b298f01")
+                .unwrap();
+        let signing_key_2 =
+            SigningKey::from_bytes(<&FieldBytes>::from(&meme_priv_key[..])).unwrap();
+        let wallet_2 = LocalSigner::from_signing_key(signing_key_2);
+
         let network_id: String = ChainSupported::Ethereum.into();
 
+        let port = rand::thread_rng().gen_range(0..=u16::MAX);
+
+        // ----------------------------------------------------------------------------------------//
         // ============================================================================
-        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test2.db").await?;
-        let main_worker_2 = MainServiceWorker::e2e_new(4000, "../db/test3.db").await?;
+        let main_worker_1 = MainServiceWorker::e2e_new(port, "../db/test2.db").await?;
+        let main_worker_2 = MainServiceWorker::e2e_new(port + 890, "../db/test3.db").await?;
         let airtable_client = main_worker_1
             .tx_rpc_worker
             .lock()
@@ -369,19 +396,28 @@ mod e2e_tests {
                         match tx_state.status {
                             TxStatus::Genesis => {
                                 let msg = tx_state.clone().receiver_address;
-                                let pre_hash = keccak256(&msg.as_bytes()[..]);
+                                let msg_len = msg.len().to_string();
+                                let signable_msg = format!("{ETH_SIG_MSG_PREFIX}{msg_len}{msg}");
+                                let pre_hash = keccak256(&signable_msg.as_bytes()[..]);
+
                                 let sig = cloned_wallet_2
                                     .sign_hash_sync(&pre_hash)
                                     .expect("recv failed to sign msg");
 
+                                let vec_sig = hex::encode(Vec::<u8>::from(sig));
+                                println!("recv signature \n {} \n end ----", vec_sig);
+
                                 tx_state.recv_signature = Some(Vec::from(sig));
                                 // receiver confirm
                                 ws_client_2
-                                    .request::<(), _>("recvConfirm", rpc_params!(tx_state.clone()))
+                                    .request::<(), _>(
+                                        "receiverConfirm",
+                                        rpc_params!(tx_state.clone()),
+                                    )
                                     .await
                                     .expect("failed to confirm recv");
                             }
-                            _ => panic!("in receiver's Tx State is invalid")
+                            _ => panic!("in receiver's Tx State is invalid"),
                         }
                     }
                     Err(e) => {
@@ -402,8 +438,8 @@ mod e2e_tests {
                         // Handle your TxStateMachine update here
                         match tx_state.status {
                             TxStatus::RecvAddrConfirmationPassed => {
-
-                                let call_payload_pre_hash = B256::new(tx_state.call_payload.unwrap());
+                                let call_payload_pre_hash =
+                                    B256::new(tx_state.call_payload.unwrap());
                                 let sig = cloned_wallet_1
                                     .sign_hash_sync(&call_payload_pre_hash)
                                     .expect("recv failed to sign msg");
@@ -412,11 +448,14 @@ mod e2e_tests {
 
                                 // receiver confirm
                                 ws_client_1
-                                    .request::<(), _>("senderConfirm", rpc_params!(tx_state.clone()))
+                                    .request::<(), _>(
+                                        "senderConfirm",
+                                        rpc_params!(tx_state.clone()),
+                                    )
                                     .await
                                     .expect("failed to confirm sender");
-                            },
-                            _ => panic!("in sender's side txStatus is invalid")
+                            }
+                            _ => panic!("in sender's side txStatus is invalid"),
                         }
                     }
                     Err(e) => {
@@ -440,7 +479,150 @@ mod e2e_tests {
         tx_params.insert("Ethereum".to_string()).unwrap();
 
         let _res_txn = rpc_client_1
-            .request::<(), _>("sendTransaction", tx_params)
+            .request::<(), _>("initiateTransaction", tx_params)
+            .await?;
+
+        // put timeout for the test
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        // clean up
+        airtable_client.delete_all().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recv_not_registered_error_works() -> Result<(), anyhow::Error> {
+        log_setup();
+
+        // ============================================================================
+        // Wallets
+        let wallet_1 = PrivateKeySigner::random();
+        let wallet_2 = PrivateKeySigner::random();
+
+        let network_id: String = ChainSupported::Ethereum.into();
+
+        // ============================================================================
+        let main_worker_1 = MainServiceWorker::e2e_new(3000, "../db/test2.db").await?;
+        let airtable_client = main_worker_1
+            .tx_rpc_worker
+            .lock()
+            .await
+            .clone()
+            .airtable_client
+            .lock()
+            .await
+            .clone();
+
+        let cloned_worker_1 = main_worker_1.clone();
+        let worker_handle_1 =
+            tokio::spawn(async move { MainServiceWorker::e2e_run(cloned_worker_1).await });
+
+        // ============================================================================
+
+        // rpc 1 (register)
+        let rpc_url_1 = main_worker_1.tx_rpc_worker.lock().await.rpc_url.clone();
+        let full_url_1 = format!("ws://{rpc_url_1}");
+
+        // ============================================================================
+        // Create RPC client and wait for it to be ready for 1
+        let rpc_client_1 = connect_with_retry(full_url_1.as_str(), 2).await?;
+
+        // ============================================================================
+
+        if rpc_client_1.is_connected() {
+            info!("ws client 1 connected")
+        }
+
+        let mut register_params_1 = ArrayParams::new();
+        register_params_1.insert("Lukamba").unwrap();
+        register_params_1
+            .insert(wallet_1.address().to_string())
+            .unwrap();
+        register_params_1.insert(network_id.clone()).unwrap();
+
+        // ============================================================================
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        let _res_register_1 = rpc_client_1
+            .request::<(), _>("register", register_params_1.clone())
+            .await
+            .expect("failed to call rpc register_1");
+
+        // ============================================================================
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // subscribe to watch transactions
+        let ws_client_1 = connect_with_retry(full_url_1.as_str(), 2).await?;
+
+        if !ws_client_1.is_connected() {
+            error!("ws client 1 not connected yet");
+        } else {
+            info!("ws client 1 connected");
+        }
+
+        let mut subscription_1: Subscription<TxStateMachine> = ws_client_1
+            .subscribe::<TxStateMachine, _>(
+                "subscribeTxUpdates",   // Must match the name in #[subscription(name = "...")]
+                rpc_params!(),          // No params needed
+                "unsubscribeTxUpdates", // Unsubscribe method is auto-generated as "unsubscribe" + method name
+            )
+            .await?;
+
+        let cloned_wallet_1 = wallet_1.clone();
+        let sub_handle_1 = tokio::spawn(async move {
+            println!("inside sub handle 1 \n");
+            while let Some(tx_update) = subscription_1.next().await {
+                match tx_update {
+                    Ok(mut tx_state) => {
+                        println!("\n in sub_handle 1 watching tx: {tx_state:?} \n");
+                        // Handle your TxStateMachine update here
+                        match tx_state.status {
+                            TxStatus::RecvAddrConfirmationPassed => {
+                                let call_payload_pre_hash =
+                                    B256::new(tx_state.call_payload.unwrap());
+                                let sig = cloned_wallet_1
+                                    .sign_hash_sync(&call_payload_pre_hash)
+                                    .expect("recv failed to sign msg");
+
+                                tx_state.signed_call_payload = Some(Vec::from(sig));
+
+                                // receiver confirm
+                                ws_client_1
+                                    .request::<(), _>(
+                                        "senderConfirm",
+                                        rpc_params!(tx_state.clone()),
+                                    )
+                                    .await
+                                    .expect("failed to confirm sender");
+                            }
+                            TxStatus::ReceiverNotRegistered => {
+                                println!(" Recv not registered: {tx_state:?}")
+                            }
+                            _ => panic!("in sender's side txStatus is invalid"),
+                        }
+                    }
+                    Err(e) => {
+                        error!("Subscription error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+
+        // ============================================================================
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        println!("\n before initiating transactions \n");
+
+        // rpc_1 (initiate transaction)
+        let mut tx_params = ArrayParams::new();
+        tx_params.insert(wallet_1.address().to_string()).unwrap();
+        tx_params.insert(wallet_2.address().to_string()).unwrap();
+        tx_params.insert(100_000).unwrap();
+        tx_params.insert("Eth".to_string()).unwrap();
+        tx_params.insert("Ethereum".to_string()).unwrap();
+
+        let _res_txn = rpc_client_1
+            .request::<(), _>("initiateTransaction", tx_params)
             .await?;
 
         // put timeout for the test

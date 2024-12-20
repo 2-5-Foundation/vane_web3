@@ -13,3 +13,4 @@ anyhow                                      = { workspace = true}
 log                                         = { workspace = true}
 simple_logger                               = { workspace = true}
 simplelog                                   = "^0.12.0"
+clap                                        = { version = "4.5.21", features = ["derive"] }

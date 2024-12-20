@@ -20,6 +20,7 @@ codec                                       = { workspace = true}
 jsonrpsee                                   = { workspace = true}
 alloy                                       = { workspace = true, features = ["full"]}
 alloy-primitives                            = { workspace = true}
+rand = "0.8.5"
 
 [features]
 e2e = []
