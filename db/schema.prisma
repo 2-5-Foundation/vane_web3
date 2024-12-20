@@ -18,6 +18,12 @@ model UserAccount {
     networkId         String             // string or enum encoded
 }
 
+model Port {
+    id                Int               @id @default(autoincrement())
+    rpcPort           BigInt
+    p2pPort           BigInt
+}
+
 // ===========================================Tx=======================================
 model TransactionsData {
     id                Int               @id @default(autoincrement())
@@ -33,6 +39,11 @@ model Transaction {
     status            Boolean
 }
 
+// store the current nonce/ transaction count
+model Nonce {
+    id                Int               @id @default(autoincrement())
+    nonce             Int
+}
 
 // =========================================User Peer Ids=======================================
 

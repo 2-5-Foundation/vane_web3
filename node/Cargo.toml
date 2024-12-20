@@ -32,6 +32,8 @@ base58                                      = { workspace = true}
 curve25519-dalek                            = { workspace = true}
 local-ip-address                            = { workspace = true}
 rand                                        = { workspace = true}
+moka                                        = { workspace = true}
+rcgen                                       = { workspace = true}
 #solana-client-wasm                          = { workspace = true}
 
 [features]

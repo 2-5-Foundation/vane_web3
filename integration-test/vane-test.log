@@ -1,9 +1,18 @@
-00:02:01 [INFO] Starting a sqlite pool with 25 connections.
-00:02:01 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2459/p2p/12D3KooWRY1Z7iuSvWU944GsLL5HDT97niiJ5uY5H8hX6Drfuvbd
-00:02:03 [INFO] succesfully created peer in airtable
-00:02:03 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/3459/p2p/12D3KooWFwFRXszCDPMLsLLuxjFsmZrFhsJEt9TqG6kUJqTQyNVo
-00:02:04 [INFO] succesfully created peer in airtable
-00:02:05 [INFO] listening to rpc url: 192.168.1.153:2710
-00:02:05 [INFO] listening to rpc url: 192.168.1.153:3710
-00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2459"
-00:02:05 [INFO] new listener address: "/ip4/192.168.1.153/tcp/3459"
+09:29:44 [INFO] Starting a sqlite pool with 25 connections.
+09:29:44 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2411/p2p/12D3KooWKPmMG6nrbVZZA1GDTz5w3mE79F8t5y8BHm9xRHXw6rgN
+09:29:47 [INFO] succesfully created peer in airtable
+09:29:47 [INFO] listening to rpc url: 192.168.1.153:2900
+09:29:47 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2411"
+09:29:48 [INFO] ws client 1 connected
+09:29:48 [INFO] updated user peer record to be stored in local db
+09:29:49 [INFO] succesfully updated peer in airtable
+09:29:49 [INFO] updated airtable db with user peer id
+09:29:51 [INFO] ws client 1 connected
+09:29:53 [INFO] initiated sending transaction
+09:29:53 [INFO] successfully initially verified sender and receiver and related network bytes
+09:29:53 [INFO] propagated initiated transaction to tx handling layer
+09:29:53 [INFO] handling incoming genesis tx updates: TxStateMachine { sender_address: "0x978d6Aa31E6A4b8Bb58828469392B5874c5ecEEe", receiver_address: "0x5f655a9567054A1d61dA08371d72d6106Ecacf36", multi_id: 0x0bf1e2f0a8e38e40ca5788a3dc85005a9a998ffee3f3c32ccce7a031accb1c50, recv_signature: None, network: Ethereum, status: Genesis, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: None, outbound_req_id: None, tx_nonce: 3 } 
+
+09:29:53 [INFO] target peer not found in local db, fetching from remote db
+09:29:53 [ERROR] target peer not found in remote db,tell the user is missing out on safety transaction
+09:30:04 [INFO] succesfully deleted records in airtable

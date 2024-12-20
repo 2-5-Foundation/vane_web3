@@ -18,9 +18,7 @@ use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder};
 use local_ip_address::local_ip;
-use primitives::data_structure::{
-    new_tx_state_from_mutex, AirtableRequestBody, Fields, HashId, PeerRecord,
-};
+use primitives::data_structure::{AirtableRequestBody, Fields, HashId, PeerRecord};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
 use sp_core::H256;
 use tokio::select;
@@ -208,19 +206,9 @@ impl P2pWorker {
             .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
 
         if local_ip.is_ipv4() {
-            p2p_url = format!(
-                "/ip4/{}/tcp/{}/p2p/{}",
-                local_ip.to_string(),
-                port - 541,
-                peer_id
-            );
+            p2p_url = format!("/ip4/{}/tcp/{}/p2p/{}", local_ip.to_string(), port, peer_id);
         } else {
-            p2p_url = format!(
-                "/ip6/{}/tcp/{}/p2p/{}",
-                local_ip.to_string(),
-                port - 541,
-                peer_id
-            );
+            p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", local_ip.to_string(), port, peer_id);
         }
 
         info!("listening to p2p url: {p2p_url}");
@@ -270,17 +258,18 @@ impl P2pWorker {
             vec![("/vane-web3/1.0.0", ProtocolSupport::Full)].into_iter(),
             request_response_config,
         );
+        let transport_tcp = libp2p::tcp::Config::new().nodelay(true).port_reuse(true);
 
         let swarm = SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
-                libp2p::tcp::Config::default(),
+                transport_tcp,
                 libp2p::tls::Config::new,
                 libp2p::yamux::Config::default,
             )?
             .with_behaviour(|_| behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(6000))
+                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
             })
             .build();
 
@@ -316,10 +305,8 @@ impl P2pWorker {
                                 inbound_id: request_id,
                             };
 
-                            let mut req_id_hash = DefaultHasher::default();
-                            request_id.hash(&mut req_id_hash);
-                            let req_id_hash = req_id_hash.finish();
-
+                            let req_id_hash = request_id.get_hash_id();
+                            info!(target: "p2p","stored response channel, with key: {req_id_hash}");
                             pending_request.lock().await.insert(req_id_hash, channel);
 
                             if let Err(e) = sender.send(Ok(req_msg)).await {
@@ -466,8 +453,8 @@ impl P2pWorker {
                             if swarm.is_connected(&target_peer_id){
                                 info!("peer already connected: {target_peer_id}")
                             }else{
+                                info!("dialing peer: {target_peer_id} ");
                                 swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
-                                info!("dialing peer: {target_peer_id} ")
                             }
                         },
                         None => {
@@ -548,8 +535,7 @@ impl P2pNetworkService {
         outbound_id: u64,
         response: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
-        let txn = response.lock().await;
-        let txn_state = new_tx_state_from_mutex(txn);
+        let txn_state = response.lock().await.clone();
         let encoded_resp = txn_state.encode();
 
         let channel = self

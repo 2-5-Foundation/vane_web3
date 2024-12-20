@@ -23,10 +23,11 @@ use libp2p::request_response::{InboundRequestId, Message, ResponseChannel};
 use libp2p::{Multiaddr, PeerId};
 use local_ip_address::local_ip;
 use log::{error, info, warn};
+use moka::future::Cache as AsyncCache;
 use p2p::P2pWorker;
 use primitives::data_structure::{
-    new_tx_state_from_mutex, ChainSupported, DbTxStateMachine, HashId, NetworkCommand, PeerRecord,
-    SwarmMessage, TxStateMachine, TxStatus,
+    ChainSupported, DbTxStateMachine, HashId, NetworkCommand, PeerRecord, SwarmMessage,
+    TxStateMachine, TxStatus,
 };
 use rand::Rng;
 use rpc::TransactionRpcWorker;
@@ -35,6 +36,8 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tx_processing::TxProcessingWorker;
+extern crate rcgen;
+use rcgen::{generate_simple_self_signed, CertifiedKey};
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
@@ -49,13 +52,16 @@ pub struct MainServiceWorker {
     pub p2p_network_service: Arc<Mutex<P2pNetworkService>>,
     // channels for layers communication
     /// sender channel to propagate transaction state to rpc layer
+    /// this serve as an update channel to the user
     pub rpc_sender_channel: Arc<Mutex<Sender<TxStateMachine>>>,
     /// receiver channel to handle the updates made by user from rpc
     pub user_rpc_update_recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
+    // moka cache
+    pub moka_cache: AsyncCache<u64, TxStateMachine>,
 }
 
 impl MainServiceWorker {
-    pub(crate) async fn new() -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(db_url_path: Option<String>) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -66,18 +72,47 @@ impl MainServiceWorker {
         // for p2p network commands
         let (p2p_command_tx, p2p_command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(10);
 
-        let port = rand::thread_rng().gen_range(0..=u16::MAX);
-
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
-        let db_worker = Arc::new(Mutex::new(
-            DbWorker::initialize_db_client("db/dev.db").await?,
-        ));
+        let mut db_url = String::new();
+        if let Some(url) = db_url_path {
+            db_url = url
+        } else {
+            db_url = String::from("db/dev.db")
+        }
+        let db = DbWorker::initialize_db_client(db_url.as_str()).await?;
+
+        let mut rpc_port: u16 = 0;
+        let mut p2p_port: u16 = 0;
+
+        let returned_pots = db.get_ports().await?;
+        if let Some(ports) = returned_pots {
+            rpc_port = ports.rpc_port as u16;
+            p2p_port = ports.p_2_p_port as u16;
+        } else {
+            let (rp_port, p2_port) = {
+                let port = rand::thread_rng().gen_range(0..=u16::MAX);
+                (port, port - 541)
+            };
+            {
+                db.set_ports(rp_port, p2_port).await?
+            }
+            rpc_port = rp_port;
+            p2p_port = p2_port
+        }
+
+        let db_worker = Arc::new(Mutex::new(db));
 
         // fetch to the db, if not then set one
         let airtable_client = Airtable::new()
             .await
             .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
+
+        let moka_cache = AsyncCache::builder()
+            .max_capacity(10)
+            .name("TxStateMachine rpc tracker")
+            .time_to_live(tokio::time::Duration::from_secs(600))
+            .build();
 
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
@@ -85,7 +120,7 @@ impl MainServiceWorker {
         let p2p_worker = P2pWorker::new(
             Arc::new(Mutex::new(airtable_client.clone())),
             db_worker.clone(),
-            port,
+            p2p_port,
             p2p_command_recv,
         )
         .await?;
@@ -101,8 +136,9 @@ impl MainServiceWorker {
             db_worker.clone(),
             Arc::new(Mutex::new(rpc_recv_channel)),
             Arc::new(Mutex::new(user_rpc_update_sender_channel)),
-            port,
+            rpc_port,
             p2p_worker.node_id,
+            moka_cache.clone(),
         )
         .await?;
 
@@ -126,6 +162,7 @@ impl MainServiceWorker {
             p2p_network_service: Arc::new(Mutex::new(p2p_network_service)),
             rpc_sender_channel: Arc::new(Mutex::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Arc::new(Mutex::new(user_rpc_update_recv_channel)),
+            moka_cache,
         })
     }
 
@@ -157,6 +194,7 @@ impl MainServiceWorker {
                                 .expect("failed to decode request body");
 
                             let inbound_req_id = inbound_id.get_hash_id();
+                            println!("inbound req id: {inbound_req_id}");
                             decoded_req.inbound_req_id = Some(inbound_req_id);
                             // ===================================================================== //
                             // propagate transaction state to rpc layer for user updating (receiver updating)
@@ -165,6 +203,10 @@ impl MainServiceWorker {
                                 .await
                                 .send(decoded_req.clone())
                                 .await?;
+                            self.moka_cache
+                                .insert(decoded_req.tx_nonce.into(), decoded_req.clone())
+                                .await;
+
                             info!(target: "MainServiceWorker","propagating txn msg as a request to rpc layer for user interaction: {decoded_req:?}");
                         }
                         SwarmMessage::Response { data, outbound_id } => {
@@ -182,7 +224,8 @@ impl MainServiceWorker {
                                     decoded_resp.recv_confirmation_passed();
                                     info!(target:"MainServiceWorker","receiver confirmation passed");
                                     // create a signable tx for sender to sign upon confirmation
-                                    let mut tx_processing = self.tx_processing_worker.lock().await.clone();
+                                    let mut tx_processing =
+                                        self.tx_processing_worker.lock().await.clone();
                                     tx_processing.create_tx(&mut decoded_resp).await?;
 
                                     info!(target:"MainServiceWorker","created a signable transaction");
@@ -208,6 +251,10 @@ impl MainServiceWorker {
                                 .send(decoded_resp.clone())
                                 .await?;
 
+                            self.moka_cache
+                                .insert(decoded_resp.tx_nonce.into(), decoded_resp.clone())
+                                .await;
+
                             info!(target: "MainServiceWorker","propagating txn msg as a response to rpc layer for user interaction: {decoded_resp:?}");
                         }
                     },
@@ -228,7 +275,7 @@ impl MainServiceWorker {
     pub(crate) async fn handle_genesis_tx_state(
         &self,
         txn: Arc<Mutex<TxStateMachine>>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), Error> {
         // dial to target peer id from tx receiver
         let target_id = {
             let tx = txn.lock().await;
@@ -252,18 +299,20 @@ impl MainServiceWorker {
                 let multi_addr = acc.multi_addr.parse::<Multiaddr>()?;
                 let peer_id = PeerId::from_str(&acc.node_id)?;
 
+                // ========================================================================= //
+                let mut p2p_network_service = self.p2p_network_service.lock().await;
+
                 {
-                    self.p2p_network_service
-                        .lock()
-                        .await
+                    p2p_network_service
                         .dial_to_peer_id(multi_addr.clone(), &peer_id)
                         .await?;
                 }
-                // send the tx-state-machine to target peerId
+
+                // wait for dialing to complete
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
                 {
-                    self.p2p_network_service
-                        .lock()
-                        .await
+                    p2p_network_service
                         .send_request(txn.clone(), peer_id, multi_addr)
                         .await?;
                 }
@@ -346,6 +395,16 @@ impl MainServiceWorker {
                                 .await?;
                         }
                     } else {
+                        // return tx state as error on sender rpc
+                        let mut txn = txn.lock().await.clone();
+                        txn.recv_not_registered();
+                        self.rpc_sender_channel
+                            .lock()
+                            .await
+                            .send(txn.clone())
+                            .await?;
+                        self.moka_cache.insert(txn.tx_nonce.into(), txn).await;
+
                         error!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
                     }
                 }
@@ -360,7 +419,7 @@ impl MainServiceWorker {
         &self,
         id: u64,
         txn: Arc<Mutex<TxStateMachine>>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), Error> {
         self.p2p_network_service
             .lock()
             .await
@@ -375,12 +434,10 @@ impl MainServiceWorker {
         &self,
         txn: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), Error> {
-        let txn_guard = txn.lock().await;
-        let mut txn_inner = new_tx_state_from_mutex(txn_guard);
+        let mut txn_inner = txn.lock().await.clone();
 
         // verify sender
-        self
-            .tx_processing_worker
+        self.tx_processing_worker
             .lock()
             .await
             .validate_receiver_sender_address(&txn_inner, "Sender")?;
@@ -424,8 +481,7 @@ impl MainServiceWorker {
                     self.rpc_sender_channel.lock().await.send(txn_inner).await?;
                 }
             }
-
-        }else{
+        } else {
             // non original sender confirmed, return error, send to rpc
             txn_inner.sender_confirmation_failed();
             error!(target: "MainServiceWorker","Non original sender signed");
@@ -486,6 +542,11 @@ impl MainServiceWorker {
     pub(crate) async fn start_rpc_server(&self) -> Result<SocketAddr, anyhow::Error> {
         let server_builder = ServerBuilder::new();
 
+        // --------------------------- TLS CERT---------------------------------- //
+        let url_names = vec!["197.168.1.177".to_string(), "localhost".to_string()];
+        let CertifiedKey { cert, key_pair } = generate_simple_self_signed(url_names)
+            .map_err(|err| anyhow!("failed to generate tsl cert; {err:?}"))?;
+
         let url = self.tx_rpc_worker.lock().await.rpc_url.clone();
         let rpc_handler = self.tx_rpc_worker.clone().lock().await.clone();
 
@@ -502,7 +563,7 @@ impl MainServiceWorker {
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
-    pub async fn run() -> Result<(), anyhow::Error> {
+    pub async fn run(db_url: Option<String>) -> Result<(), anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -511,7 +572,7 @@ impl MainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new().await?;
+        let main_worker = Self::new(db_url).await?;
         // start rpc server
         let rpc_address = main_worker
             .start_rpc_server()
@@ -522,7 +583,12 @@ impl MainServiceWorker {
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
-        let txn_processing_worker = main_worker.tx_processing_worker.clone().lock().await.clone();
+        let txn_processing_worker = main_worker
+            .tx_processing_worker
+            .clone()
+            .lock()
+            .await
+            .clone();
 
         // ====================================================================================== //
 
@@ -593,13 +659,19 @@ impl MainServiceWorker {
             .await
             .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
 
+        let moka_cache = AsyncCache::builder()
+            .max_capacity(10)
+            .name("TxStateMachine rpc tracker")
+            .time_to_live(tokio::time::Duration::from_secs(600))
+            .build();
+
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
-
+        let (rpc_port, p2p_port) = (port - 100, port - 589);
         let p2p_worker = P2pWorker::new(
             Arc::new(Mutex::new(airtable_client.clone())),
             db_worker.clone(),
-            port,
+            p2p_port,
             p2p_command_recv,
         )
         .await?;
@@ -615,8 +687,9 @@ impl MainServiceWorker {
             db_worker.clone(),
             Arc::new(Mutex::new(rpc_recv_channel)),
             Arc::new(Mutex::new(user_rpc_update_sender_channel)),
-            port,
+            rpc_port,
             p2p_worker.node_id,
+            moka_cache.clone(),
         )
         .await?;
 
@@ -640,6 +713,7 @@ impl MainServiceWorker {
             p2p_network_service: Arc::new(Mutex::new(p2p_network_service)),
             rpc_sender_channel: Arc::new(Mutex::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Arc::new(Mutex::new(user_rpc_update_recv_channel)),
+            moka_cache,
         })
     }
 
@@ -656,7 +730,12 @@ impl MainServiceWorker {
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
-        let txn_processing_worker = main_worker.tx_processing_worker.clone().lock().await.clone();
+        let txn_processing_worker = main_worker
+            .tx_processing_worker
+            .clone()
+            .lock()
+            .await
+            .clone();
 
         // ====================================================================================== //
 
