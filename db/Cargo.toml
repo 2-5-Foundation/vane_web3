@@ -7,17 +7,38 @@ edition = "2021"
 
 [dependencies]
 serde                       = { workspace = true }
-prisma-client-rust          = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", features = ["sqlite", "migrations"], default-features = false }
-anyhow                      = { workspace = true}
-primitives                  = { workspace = true}
-log                         = { workspace = true}
+anyhow                      = { workspace = true }
+primitives                  = { workspace = true }
+log                         = { workspace = true }
 hex                         = { workspace = true }
-tokio                       = { workspace = true}
-codec                       = { workspace = true}
-sp-core                     = { workspace = true, default-features = false}
-aead                        = { workspace = true}
+codec                       = { workspace = true }
+sp-core                     = { workspace = true, default-features = false, features = ["full_crypto"] }
+aead                        = { workspace = true }
+aes-gcm                     = { workspace = true }
+
+# Native-only dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+prisma-client-rust          = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", features = ["sqlite", "migrations"], default-features = false }
+tokio                       = { workspace = true }
 libp2p                      = { workspace = true }
-aes-gcm                     = {workspace = true}
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+redb                        = "2.3.0"
+web-sys = { version = "0.3.76", features = [
+    "StorageManager",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemWritableFileStream",
+    "Window",
+    "Navigator"
+]}
 
 [features]
 e2e = []
+default = []
+std = [
+    "sp-core/std",
+    "codec/std",
+    "sp-core/secp256k1"
+]

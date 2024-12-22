@@ -209,7 +209,7 @@ pub enum SwarmMessage {
 }
 
 /// Transaction data structure to store in the db
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct DbTxStateMachine {
     // Tx hash based on the chain hashing algorithm
     pub tx_hash: Vec<u8>,

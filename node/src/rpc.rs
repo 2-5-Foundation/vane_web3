@@ -36,6 +36,7 @@ use sp_core::{Blake2Hasher, Hasher};
 use sp_runtime::traits::Zero;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
+use db::DbWorkerInterface;
 
 const AIRTABLE_SECRET: &'static str =
     "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";

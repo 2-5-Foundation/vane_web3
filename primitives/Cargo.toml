@@ -6,23 +6,27 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde                                       = { version = "1.0.204", features = ["derive","alloc"] }
-codec                                       = { workspace = true}
-anyhow                                      = "1.0.86"
-log                                         = { workspace = true}
-libp2p                                      = { workspace = true, default-features = false }
-sp-core                                     = { workspace = true,features = ["serde"]}
-serde_json                                  = { workspace = true}
-twox-hash                                   = { version = "2.1.0", features = ["alloc"]}
+serde        = { version = "1.0.204", features = ["derive", "alloc"] }
+codec        = { workspace = true }
+anyhow       = "1.0.86"
+log          = { workspace = true }
+sp-core      = { workspace = true, features = ["serde"] }
+serde_json   = { workspace = true }
+twox-hash    = { version = "2.1.0", features = ["alloc"] }
+
+# Native dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libp2p       = { workspace = true }
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+libp2p       = { workspace = true, features = ["wasm-bindgen"] }
 
 [features]
-default = ["wasm"]
+default = []
 e2e = []
 std = [
     "sp-core/std",
     "codec/std",
     "sp-core/secp256k1"
-]
-wasm = [
-    "libp2p/wasm-bindgen"
 ]

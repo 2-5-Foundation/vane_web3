@@ -64,7 +64,7 @@ mod e2e_tests {
     #[tokio::test]
     #[ignore]
     async fn p2p_test() -> Result<(), anyhow::Error> {
-        log_setup();
+        let _ = log_setup();
 
         // ========================================================================//
         // Test state structure
@@ -214,7 +214,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
-        log_setup();
+        let _ =log_setup();
 
         let client = Airtable::new().await?;
         let mut peer = Fields::default();
@@ -252,7 +252,7 @@ mod e2e_tests {
     }
     #[tokio::test]
     async fn transaction_full_cycle_test() -> Result<(), anyhow::Error> {
-        log_setup();
+        let _ = log_setup();
 
         // ============================================================================
         // Wallets
@@ -491,7 +491,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn recv_not_registered_error_works() -> Result<(), anyhow::Error> {
-        log_setup();
+       let _ = log_setup();
 
         // ============================================================================
         // Wallets
