@@ -26,6 +26,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use db::DbWorkerInterface;
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 

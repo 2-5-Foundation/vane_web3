@@ -36,6 +36,7 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tx_processing::TxProcessingWorker;
+use db::DbWorkerInterface;
 extern crate rcgen;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 
