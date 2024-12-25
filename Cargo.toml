@@ -49,7 +49,6 @@ db                                      = { path = "db" }
 integration-test                        = { path = "integration-test" }
 node                                    = { path = "node" }
 primitives                              = { path = "primitives" }
-getrandom                               = { version = "0.2.15", features = ["js"]}
 tokio_with_wasm                         = { version = "0.7.4",features = ["full"]}
 # ========================================== Patch =======================================
 #[replace]

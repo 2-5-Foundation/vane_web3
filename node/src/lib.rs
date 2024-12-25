@@ -17,6 +17,7 @@ use codec::Decode;
 use core::str::FromStr;
 use db::db::saved_peers::Data;
 use db::DbWorker;
+use db::DbWorkerInterface;
 use jsonrpsee::server::ServerBuilder;
 use libp2p::futures::{FutureExt, StreamExt};
 use libp2p::request_response::{InboundRequestId, Message, ResponseChannel};
@@ -36,7 +37,6 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tx_processing::TxProcessingWorker;
-use db::DbWorkerInterface;
 extern crate rcgen;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 

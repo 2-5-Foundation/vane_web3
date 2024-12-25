@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::rpc::Airtable;
 use codec::Encode;
 use db::DbWorker;
+use db::DbWorkerInterface;
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
 use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
 use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
@@ -26,7 +27,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use db::DbWorkerInterface;
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 

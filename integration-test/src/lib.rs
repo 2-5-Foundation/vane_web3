@@ -214,7 +214,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
-        let _ =log_setup();
+        let _ = log_setup();
 
         let client = Airtable::new().await?;
         let mut peer = Fields::default();
@@ -491,7 +491,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn recv_not_registered_error_works() -> Result<(), anyhow::Error> {
-       let _ = log_setup();
+        let _ = log_setup();
 
         // ============================================================================
         // Wallets
