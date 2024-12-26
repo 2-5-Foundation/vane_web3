@@ -194,6 +194,15 @@ pub enum NetworkCommand {
         target_multi_addr: Multiaddr,
         target_peer_id: PeerId,
     },
+    WasmSendRequest {
+        request: TxStateMachine,
+        peer_id: PeerId,
+        target_multi_addr: Multiaddr,
+    },
+    WasmSendResponse {
+        response: TxStateMachine,
+        channel: ResponseChannel<Result<TxStateMachine, Error>>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -206,6 +215,14 @@ pub enum SwarmMessage {
         data: Vec<u8>,
         outbound_id: OutboundRequestId,
     },
+    WasmRequest {
+        data: TxStateMachine,
+        inbound_id: InboundRequestId,
+    },
+    WasmResponse{
+        data: TxStateMachine,
+        outbound_id: OutboundRequestId,
+    }
 }
 
 /// Transaction data structure to store in the db

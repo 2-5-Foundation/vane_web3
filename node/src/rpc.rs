@@ -50,10 +50,10 @@ mod std_imports {
 
 // -------------------- WASM CRATES IMPORT ------------------ //
 #[cfg(target_arch = "wasm32")]
-use wasm_imports::*;
+use rpc_wasm_imports::*;
 
 #[cfg(target_arch = "wasm32")]
-mod wasm_imports {
+mod rpc_wasm_imports {
     pub use alloc::rc::Rc;
     pub use async_stream::stream;
     pub use core::cell::RefCell;

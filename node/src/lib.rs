@@ -7,6 +7,7 @@ pub mod p2p;
 pub mod rpc;
 pub mod telemetry;
 pub mod tx_processing;
+mod p2p_behaviour;
 
 use crate::p2p::P2pNetworkService;
 use crate::rpc::{Airtable, TransactionRpcServer};

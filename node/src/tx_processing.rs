@@ -21,7 +21,7 @@ use log::error;
 use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256, Blake2Hasher, Hasher,
+    keccak_256, Blake2Hasher, Hasher,ecdsa as EthSignature
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
@@ -31,11 +31,23 @@ use tokio::sync::Mutex;
 
 // use solana_client::rpc_client::RpcClient;
 
+// ------------------------------------- WASM ------------------------------------- //
+#[cfg(target_arch = "wasm32")]
+use tx_wasm_imports::*;
+
+#[cfg(target_arch = "wasm32")]
+mod tx_wasm_imports {
+    pub use web3::Web3;
+    pub use web3::transports;
+    pub use core::cell::RefCell;
+    pub use alloc::rc::Rc;
+}
+
 /// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
 /// & tx submission to specified and confirmed chain
 #[derive(Clone)]
 pub struct TxProcessingWorker {
-    /// In-memory Db for tx processing at any stage
+    /// In-memory Db for tx processing at any stage 
     tx_staging: Arc<Mutex<BTreeMap<H256, TxStateMachine>>>,
     /// In-memory Db for to be confirmed tx on sender
     pub sender_tx_pending: Arc<Mutex<Vec<TxStateMachine>>>,
@@ -47,6 +59,126 @@ pub struct TxProcessingWorker {
     eth_client: ReqwestProvider,
     bnb_client: ReqwestProvider,
     // solana_client: RpcClient
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub struct WasmTxProcessingWorker {
+   /// In-memory Db for tx processing at any stage
+   tx_staging: Rc<RefCell<BTreeMap<H256, TxStateMachine>>>,
+   /// In-memory Db for to be confirmed tx on sender
+   pub sender_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
+   /// In-memory Db for to be confirmed tx on receiver
+   pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
+   // /// substrate client
+   // sub_client: OnlineClient<PolkadotConfig>,
+   /// ethereum & bnb client
+   eth_client: Web3<web3::transports::Http>,
+   bnb_client: Web3<web3::transports::Http>,
+   // solana_client: RpcClient 
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmTxProcessingWorker{
+    pub fn new(
+        chain_networks: (ChainSupported, ChainSupported, ChainSupported),
+    ) -> Result<Self, anyhow::Error> {
+        let (_solana, eth, bnb) = chain_networks;
+        let eth_url = eth.url();
+        let bnb_url = bnb.url().to_string();
+
+        let eth_transport = web3::transports::Http::new(&eth_url)
+            .map_err(|err| anyhow!("eth transport error: {err}"))?;
+        let eth_web3 = web3::Web3::new(eth_transport);
+
+        let bnb_transport = web3::transports::Http::new(&bnb_url)
+            .map_err(|err| anyhow!("bnb transport error: {err}"))?;
+        let bnb_web3 = web3::Web3::new(bnb_transport);
+
+        Ok(Self {
+            tx_staging: Rc::new(RefCell::new(Default::default())),
+            sender_tx_pending: Rc::new(RefCell::new(Default::default())),
+            receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
+            eth_client: eth_web3,
+            bnb_client: bnb_web3,
+        })
+    }
+
+    pub fn validate_receiver_sender_address(
+        &self,
+        tx: &TxStateMachine,
+        who: &str
+    ) -> Result<(),anyhow::Error>{
+        let (network, signature, msg, address) = if who == "Receiver" {
+            println!("\n receiver address verification \n");
+
+            let network = tx.network;
+            let signature = tx
+                .clone()
+                .recv_signature
+                .ok_or(anyhow!("receiver didnt signed"))?;
+
+            let recv_address = tx.receiver_address.clone();
+            let msg = tx.receiver_address.as_bytes().to_vec();
+
+            (network, signature, msg, recv_address)
+        } else {
+            println!("\n sender address verification \n");
+            // who == Sender
+            let network = tx.network;
+            let signature = tx
+                .clone()
+                .signed_call_payload
+                .ok_or(anyhow!("original sender didnt signed"))?;
+
+            let msg = tx
+                .call_payload
+                .expect("unexpected error, call payload should be available");
+            let sender_address = tx.sender_address.clone();
+
+            (network, signature, msg.to_vec(), sender_address)
+        };
+        match network {
+            ChainSupported::Ethereum => {
+                let address: Address = address.parse().expect("Invalid address");
+
+                let hashed_msg = {
+                    if who == "Receiver" {
+                        let mut signable_msg = Vec::<u8>::new();
+                        signable_msg.extend_from_slice(ETH_SIG_MSG_PREFIX.as_bytes());
+                        signable_msg.extend_from_slice(msg.len().to_string().as_bytes());
+                        signable_msg.extend_from_slice(msg.as_slice());
+
+                        keccak_256(signable_msg.as_slice())
+                    } else {
+                        msg.try_into().unwrap()
+                    }
+                };
+                let signature = EcdsaSignature::try_from(signature.as_slice())
+                    .map_err(|err| anyhow!("failed to convert ecdsa signature"))?;
+
+                match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
+                    Ok(recovered_addr) => {
+                        println!(
+                            "recovered addr: {recovered_addr:?} == address: {address:?} ==== {:?}",
+                            tx.status
+                        );
+                        if recovered_addr == address {
+                            Ok::<(), anyhow::Error>(())?
+                        } else {
+                            Err(anyhow!(
+                                "addr recovery equality failed hence account invalid"
+                            ))?
+                        }
+                    }
+                    Err(err) => Err(anyhow!("ec signature verification failed: {err}"))?,
+                } 
+            },
+            _ => unreachable!()
+        }
+        Ok(())
+    }
+
 }
 
 impl TxProcessingWorker {
