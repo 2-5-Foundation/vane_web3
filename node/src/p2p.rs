@@ -37,8 +37,8 @@ use alloy::signers::k256::elliptic_curve::pkcs8::der::Encode;
 
 
 // ------------------
-use libp2p::request_response::json::Behaviour as JsonBehaviour;
-use libp2p_webrtc_websys as webrtc_websys;
+
+
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -58,6 +58,10 @@ use p2p_wasm_imports::*;
 mod p2p_wasm_imports {
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
+    pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
+    pub use libp2p_webrtc_websys as webrtc_websys;
+    pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
+    pub use web_sys::wasm_bindgen::JsCast;
 }
 
 
@@ -227,6 +231,7 @@ pub struct WasmP2pWorker{
     pub current_req: VecDeque<SwarmMessage>,
 }
 
+#[cfg(target_arch = "wasm32")]
 impl WasmP2pWorker {
     pub async fn new(
         airtable_client: Rc<AirtableWasm>,
@@ -442,65 +447,64 @@ impl WasmP2pWorker {
         trace!(target:"p2p","listening to: {:?}",multi_addr);
 
         let sender = sender_channel;
-        let mut swarm = self.wasm_swarm.borrow();
-        let mut p2p_command_recv = self.wasm_p2p_command_recv.lock().await;
+        let mut swarm = self.wasm_swarm.borrow_mut();
+        let mut p2p_command_recv = self.wasm_p2p_command_recv.borrow_mut();
 
-        loop {
-            // Create futures before select to ensure they're polled fairly
-            let next_event = swarm.next();
-            let next_command = self.wasm_p2p_command_recv.borrow_mut().recv();
-
-            select! {
-                event = next_event => {
-
-                    if let Some(event) = event {
-                        Self::handle_swarm_events(self.clone().wasm_pending_request, event, sender.clone()).await
-                    } else {
-                        info!("no current swarm event")
-                    }
-
-                },
-                cmd = next_command => {
-
-                    match cmd {
-                        Some(NetworkCommand::WasmSendResponse {response,channel}) => {
-                            if channel.is_open() {
-                                swarm.behaviour_mut().send_response(channel,Ok(response))
-                                    .map_err(|err|anyhow!("failed to send response; {err:?}"))?;
-                            } else {
-                                error!("response channel is closed");
+        let callback = Closure::wrap(Box::new(move||{
+            wasm_bindgen_futures::spawn_local(async move ||{
+                select! {
+                    event = swarm.next() => {
+                        if let Some(event) = event {
+                            Self::handle_swarm_events(self.clone().wasm_pending_request, event, sender.clone()).await
+                        } else {
+                            info!("no current swarm event")
+                        }
+                    },
+                    cmd = p2p_command_recv.recv() => {
+                        match cmd {
+                            Some(NetworkCommand::WasmSendResponse {response,channel}) => {
+                                if channel.is_open() {
+                                    swarm.behaviour_mut().send_response(channel,Ok(response))
+                                        .map_err(|err|anyhow!("failed to send response; {err:?}"))?;
+                                } else {
+                                    error!("response channel is closed");
+                                }
+                            },
+                            Some(NetworkCommand::WasmSendRequest {request,peer_id,target_multi_addr}) => {
+                                if swarm.is_connected(&peer_id) {
+                                    swarm.behaviour_mut().send_request(&peer_id,request);
+                                    info!("request sent to peer: {peer_id:?}");
+                                } else {
+                                    info!("re dialing");
+                                    swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to re dial: {err}"))?;
+                                    swarm.behaviour_mut().send_request(&peer_id,request);
+                                    info!("request sent to peer: {peer_id:?}");
+                                }
+                            },
+                            Some(NetworkCommand::Dial {target_multi_addr,target_peer_id}) => {
+                                // check first if the peer communication is already connected
+                                if swarm.is_connected(&target_peer_id){
+                                    info!("peer already connected: {target_peer_id}")
+                                }else{
+                                    info!("dialing peer: {target_peer_id} ");
+                                    swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
+                                }
+                            },
+                            None => {
+                                info!("command channel closed");
                             }
-                        },
-                        Some(NetworkCommand::WasmSendRequest {request,peer_id,target_multi_addr}) => {
-                            if swarm.is_connected(&peer_id) {
-                                swarm.behaviour_mut().send_request(&peer_id,request);
-                                info!("request sent to peer: {peer_id:?}");
-                            } else {
-                                info!("re dialing");
-                                swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to re dial: {err}"))?;
-                                swarm.behaviour_mut().send_request(&peer_id,request);
-                                info!("request sent to peer: {peer_id:?}");
-                            }
-                        },
-                        Some(NetworkCommand::Dial {target_multi_addr,target_peer_id}) => {
-                            // check first if the peer communication is already connected
-                            if swarm.is_connected(&target_peer_id){
-                                info!("peer already connected: {target_peer_id}")
-                            }else{
-                                info!("dialing peer: {target_peer_id} ");
-                                swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
-                            }
-                        },
-                        None => {
-                            info!("command channel closed");
                         }
                     }
                 }
-            }
+            })
+        }) as Box<dyn FnMut()>);
 
-            // Optional: Add a small delay to prevent tight loop
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        web_sys::window().expect("windows not found").set_interval_with_callback_and_timeout_and_arguments_0(
+            callback.as_ref().unchecked_ref(),
+            100 // 100 ms interval
+        )?;
+
+        callback.forget()
     }
 }
 

@@ -148,7 +148,6 @@ struct TransactionsData {
 #[cfg(target_arch = "wasm32")]
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Ports {
-    pub rpc_port: u16,
     pub p_2_p_port: u16,
 }
 
@@ -392,12 +391,11 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Err(anyhow!("Peer not found"))
     }
 
-    async fn set_ports(&self, rpc: u16, p2p: u16) -> Result<(), anyhow::Error> {
+    async fn set_ports(&self, _rpc: u16, p2p: u16) -> Result<(), anyhow::Error> {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(PORT_TABLE)?;
             let ports = Ports {
-                rpc_port: rpc,
                 p_2_p_port: p2p,
             };
             let port_data = ports.encode();

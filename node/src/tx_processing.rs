@@ -179,6 +179,26 @@ impl WasmTxProcessingWorker{
         Ok(())
     }
 
+    pub fn validate_multi_id(&self, txn: &TxStateMachine) -> bool {
+        let post_multi_id = {
+            let mut sender_recv = txn.sender_address.as_bytes().to_vec();
+            sender_recv.extend_from_slice(txn.receiver_address.as_bytes());
+            Blake2Hasher::hash(&sender_recv[..])
+        };
+
+        post_multi_id == txn.multi_id
+    }
+
+    pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
+        // TODO
+        Ok([0u8;32])
+    }
+
+    pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
+        // TODO
+        Ok(())
+    }
+
 }
 
 impl TxProcessingWorker {

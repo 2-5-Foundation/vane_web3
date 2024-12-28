@@ -46,6 +46,8 @@ lru                                         = "0.12.5"
 alloy                                       = { workspace = true, features = ["wasm-bindgen"]}
 web3                                        = { version = "0.19.0", default-features = false, features = ["wasm","http","signing"]}
 libp2p-webrtc-websys                        = "0.4.0-alpha"
+wasm-bindgen-futures                        = "0.4.49"
+web-sys                                     = "0.3.76"
 
 [features]
 e2e = []
