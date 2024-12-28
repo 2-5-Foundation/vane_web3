@@ -145,9 +145,9 @@ struct TransactionsData {
     failed_value: i64,
 }
 
-#[cfg(target_arch = "wasm32")]
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Ports {
+    pub rpc: u16,
     pub p_2_p_port: u16,
 }
 
@@ -395,9 +395,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(PORT_TABLE)?;
-            let ports = Ports {
-                p_2_p_port: p2p,
-            };
+            let ports = Ports { p_2_p_port: p2p };
             let port_data = ports.encode();
             table.insert(PORTS_KEY, &port_data)?;
         }
@@ -634,7 +632,7 @@ impl DbWorkerInterface for LocalDbWorker {
     async fn get_user_accounts(
         &self,
         network: ChainSupported,
-    ) -> Result<Vec<user_account::Data>, anyhow::Error> {
+    ) -> Result<Vec<UserAccount>, anyhow::Error> {
         let accounts = self
             .db
             .user_account()
@@ -643,6 +641,9 @@ impl DbWorkerInterface for LocalDbWorker {
             )])
             .exec()
             .await?;
+        let accounts = accounts.into_iter().map(|acc|{
+            acc.into()
+        }).collect::<Vec<UserAccount>>();
         Ok(accounts)
     }
 
@@ -702,7 +703,7 @@ impl DbWorkerInterface for LocalDbWorker {
         Ok(())
     }
 
-    async fn get_failed_txs(&self) -> Result<Vec<transaction::Data>, anyhow::Error> {
+    async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
         let failed_txs = self
             .db
             .transaction()
@@ -711,10 +712,13 @@ impl DbWorkerInterface for LocalDbWorker {
             ))])
             .exec()
             .await?;
+        let failed_txs = failed_txs.into_iter().map(|txn|{
+            txn.into()
+        }).collect::<Vec<DbTxStateMachine>>();
         Ok(failed_txs)
     }
 
-    async fn get_success_txs(&self) -> Result<Vec<transaction::Data>, anyhow::Error> {
+    async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
         let success_txs = self
             .db
             .transaction()
@@ -723,6 +727,9 @@ impl DbWorkerInterface for LocalDbWorker {
             ))])
             .exec()
             .await?;
+        let success_txs = success_txs.into_iter().map(|txn|{
+            txn.into()
+        }).collect::<Vec<DbTxStateMachine>>();
         Ok(success_txs)
     }
 
@@ -823,19 +830,20 @@ impl DbWorkerInterface for LocalDbWorker {
         &self,
         account_id: Option<String>,
         peer_id: Option<String>,
-    ) -> Result<user_peer::Data, anyhow::Error> {
+    ) -> Result<PeerRecord, anyhow::Error> {
         let where_param = match (account_id, peer_id) {
             (Some(acc_id), _) => user_peer::WhereParam::AccountId1(StringFilter::Equals(acc_id)),
             (_, Some(pid)) => user_peer::WhereParam::PeerId(StringFilter::Equals(pid)),
             (None, None) => return Err(anyhow!("Please provide either account ID or peer ID")),
         };
 
-        self.db
+        let peer = self.db
             .user_peer()
             .find_first(vec![where_param])
             .exec()
             .await?
-            .ok_or_else(|| anyhow!("Peer not found in DB"))
+            .ok_or_else(|| anyhow!("Peer not found in DB"))?;
+        Ok(peer.into())
     }
 
     // set port ids {
@@ -850,13 +858,18 @@ impl DbWorkerInterface for LocalDbWorker {
     }
 
     // get port ids
-    async fn get_ports(&self) -> Result<Option<port::Data>, anyhow::Error> {
+    async fn get_ports(&self) -> Result<Option<Ports>, anyhow::Error> {
         let ports = self
             .db
             .port()
             .find_unique(port::UniqueWhereParam::IdEquals(1))
             .exec()
             .await?;
+        let ports = if let Some(port) = ports {
+            Some(port.into())
+        }else{
+            None
+        };
         Ok(ports)
     }
 
@@ -882,7 +895,7 @@ impl DbWorkerInterface for LocalDbWorker {
     async fn get_saved_user_peers(
         &self,
         account_id: String,
-    ) -> Result<saved_peers::Data, anyhow::Error> {
+    ) -> Result<PeerRecord, anyhow::Error> {
         let peer_data = self
             .db
             .saved_peers()
@@ -892,7 +905,7 @@ impl DbWorkerInterface for LocalDbWorker {
             .exec()
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
-        Ok(peer_data)
+        Ok(peer_data.into())
     }
 }
 
@@ -951,6 +964,16 @@ impl From<transaction::Data> for DbTxStateMachine {
                 .expect("failed to convert u128 to u64"),
             network: ChainSupported::from(value.network.as_str()),
             success: value.status,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<port::Data> for Ports {
+    fn from(value: db::port::Data) -> Self {
+        Self {
+            rpc: value.rpc_port as u16,
+            p_2_p_port: value.p_2_p_port as u16,
         }
     }
 }

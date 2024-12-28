@@ -14,14 +14,14 @@ use alloy::primitives::{keccak256, U256};
 use alloy::primitives::{Address, Signature as EcdsaSignature, Signature, SignatureError, B256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
 use alloy::rpc::types::TransactionRequest;
-use alloy::signers::k256::sha2::digest::Mac;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
 use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
+    ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256, Blake2Hasher, Hasher,ecdsa as EthSignature
+    keccak_256, Blake2Hasher, Hasher,
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
@@ -37,17 +37,17 @@ use tx_wasm_imports::*;
 
 #[cfg(target_arch = "wasm32")]
 mod tx_wasm_imports {
-    pub use web3::Web3;
-    pub use web3::transports;
-    pub use core::cell::RefCell;
     pub use alloc::rc::Rc;
+    pub use core::cell::RefCell;
+    pub use web3::transports;
+    pub use web3::Web3;
 }
 
 /// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
 /// & tx submission to specified and confirmed chain
 #[derive(Clone)]
 pub struct TxProcessingWorker {
-    /// In-memory Db for tx processing at any stage 
+    /// In-memory Db for tx processing at any stage
     tx_staging: Arc<Mutex<BTreeMap<H256, TxStateMachine>>>,
     /// In-memory Db for to be confirmed tx on sender
     pub sender_tx_pending: Arc<Mutex<Vec<TxStateMachine>>>,
@@ -64,22 +64,22 @@ pub struct TxProcessingWorker {
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
 pub struct WasmTxProcessingWorker {
-   /// In-memory Db for tx processing at any stage
-   tx_staging: Rc<RefCell<BTreeMap<H256, TxStateMachine>>>,
-   /// In-memory Db for to be confirmed tx on sender
-   pub sender_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
-   /// In-memory Db for to be confirmed tx on receiver
-   pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
-   // /// substrate client
-   // sub_client: OnlineClient<PolkadotConfig>,
-   /// ethereum & bnb client
-   eth_client: Web3<web3::transports::Http>,
-   bnb_client: Web3<web3::transports::Http>,
-   // solana_client: RpcClient 
+    /// In-memory Db for tx processing at any stage
+    tx_staging: Rc<RefCell<BTreeMap<H256, TxStateMachine>>>,
+    /// In-memory Db for to be confirmed tx on sender
+    pub sender_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
+    /// In-memory Db for to be confirmed tx on receiver
+    pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
+    // /// substrate client
+    // sub_client: OnlineClient<PolkadotConfig>,
+    /// ethereum & bnb client
+    eth_client: Web3<web3::transports::Http>,
+    bnb_client: Web3<web3::transports::Http>,
+    // solana_client: RpcClient
 }
 
 #[cfg(target_arch = "wasm32")]
-impl WasmTxProcessingWorker{
+impl WasmTxProcessingWorker {
     pub fn new(
         chain_networks: (ChainSupported, ChainSupported, ChainSupported),
     ) -> Result<Self, anyhow::Error> {
@@ -107,8 +107,8 @@ impl WasmTxProcessingWorker{
     pub fn validate_receiver_sender_address(
         &self,
         tx: &TxStateMachine,
-        who: &str
-    ) -> Result<(),anyhow::Error>{
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
         let (network, signature, msg, address) = if who == "Receiver" {
             println!("\n receiver address verification \n");
 
@@ -172,9 +172,9 @@ impl WasmTxProcessingWorker{
                         }
                     }
                     Err(err) => Err(anyhow!("ec signature verification failed: {err}"))?,
-                } 
-            },
-            _ => unreachable!()
+                }
+            }
+            _ => unreachable!(),
         }
         Ok(())
     }
@@ -191,14 +191,13 @@ impl WasmTxProcessingWorker{
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
         // TODO
-        Ok([0u8;32])
+        Ok([0u8; 32])
     }
 
     pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
         // TODO
         Ok(())
     }
-
 }
 
 impl TxProcessingWorker {
@@ -299,7 +298,7 @@ impl TxProcessingWorker {
                     }
                 };
                 let signature = EcdsaSignature::try_from(signature.as_slice())
-                    .map_err(|err| anyhow!("failed to convert ecdsa signature"))?;
+                    .map_err(|err| anyhow!("failed to convert ecdsa signature; {err:?}"))?;
 
                 match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
                     Ok(recovered_addr) => {

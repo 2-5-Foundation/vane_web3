@@ -219,10 +219,10 @@ pub enum SwarmMessage {
         data: TxStateMachine,
         inbound_id: InboundRequestId,
     },
-    WasmResponse{
+    WasmResponse {
         data: TxStateMachine,
         outbound_id: OutboundRequestId,
-    }
+    },
 }
 
 /// Transaction data structure to store in the db

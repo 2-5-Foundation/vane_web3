@@ -1,18 +1,18 @@
-00:04:06 [INFO] Starting a sqlite pool with 25 connections.
-00:04:06 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2411/p2p/12D3KooWAZkoivvyRBLeSJy5MsWCu5CkG5skvvACRvaGaXuMMFJZ
-00:04:08 [INFO] succesfully created peer in airtable
-00:04:08 [INFO] listening to rpc url: 192.168.1.153:2900
-00:04:08 [INFO] new listener address: "/ip4/192.168.1.153/tcp/2411"
-00:04:09 [INFO] ws client 1 connected
-00:04:09 [INFO] updated user peer record to be stored in local db
-00:04:09 [INFO] succesfully updated peer in airtable
-00:04:09 [INFO] updated airtable db with user peer id
-00:04:11 [INFO] ws client 1 connected
-00:04:13 [INFO] initiated sending transaction
-00:04:13 [INFO] successfully initially verified sender and receiver and related network bytes
-00:04:13 [INFO] propagated initiated transaction to tx handling layer
-00:04:13 [INFO] handling incoming genesis tx updates: TxStateMachine { sender_address: "0xcF8984A1df40BC91AAEc01AC9a3f04D4b4FBB7E5", receiver_address: "0xf44E5694B262605571dA2A7590b6Be96d83a448E", multi_id: 0x142d24ce3bea038c4b9e87f009f5dc1b6d932d869a48184a9fb5d899771673fd, recv_signature: None, network: Ethereum, status: Genesis, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: None, outbound_req_id: None, tx_nonce: 2 } 
+15:44:07 [INFO] Starting a sqlite pool with 25 connections.
+15:44:08 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/2411/p2p/12D3KooWFQ6LEFxgCm7KkvbfcPmWgdf8k8Wyhq1YGiKmYjiKhwTr
+15:44:10 [INFO] succesfully created peer in airtable
+15:44:10 [INFO] listening to rpc url: 192.168.1.153:2900
+15:44:10 [INFO] new listener address: /ip4/192.168.1.153/tcp/2411
+15:44:11 [INFO] ws client 1 connected
+15:44:12 [INFO] updated user peer record to be stored in local db
+15:44:17 [INFO] succesfully updated peer in airtable
+15:44:17 [INFO] updated airtable db with user peer id
+15:44:19 [INFO] ws client 1 connected
+15:44:21 [INFO] initiated sending transaction
+15:44:21 [INFO] successfully initially verified sender and receiver and related network bytes
+15:44:21 [INFO] propagated initiated transaction to tx handling layer
+15:44:21 [INFO] handling incoming genesis tx updates: TxStateMachine { sender_address: "0x0173d0EB8C62bCb5E354e05A69985af5034B087F", receiver_address: "0xb6E11781DeeCAA8F2FbF6f3e24F9a54f6B114782", multi_id: 0xd1d6eb9e64113fd59922e66625eff2df49241d9b8113767494c81c28c95202eb, recv_signature: None, network: Ethereum, status: Genesis, amount: 100000, signed_call_payload: None, call_payload: None, inbound_req_id: None, outbound_req_id: None, tx_nonce: 1 } 
 
-00:04:13 [INFO] target peer not found in local db, fetching from remote db
-00:04:14 [ERROR] target peer not found in remote db,tell the user is missing out on safety transaction
-00:04:24 [INFO] succesfully deleted records in airtable
+15:44:21 [INFO] target peer not found in local db, fetching from remote db
+15:44:21 [ERROR] target peer not found in remote db,tell the user is missing out on safety transaction
+15:44:31 [INFO] succesfully deleted records in airtable

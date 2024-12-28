@@ -2,13 +2,12 @@ use anyhow::{anyhow, Error};
 use core::pin::Pin;
 use core::str::FromStr;
 use log::{debug, error, info, trace};
+pub use codec::Encode;
 
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
-// use codec::{Codec, Encode};
-// use futures::{AsyncRead, Stream};
 
-use db::{DbWorkerInterface, OpfsRedbWorker};
+use db::{DbWorkerInterface};
 
 use primitives::data_structure::{AirtableRequestBody, Fields, HashId, PeerRecord};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
@@ -16,38 +15,36 @@ use sp_core::H256;
 
 // ---------------------- libp2p common --------------------- //
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
-use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
-use tokio::select;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex, MutexGuard};
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
+use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
-use local_ip_address::local_ip;
 
-use crate::rpc::AirtableWasm;
+
 use std::collections::{HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io;
-use std::sync::Arc;
-use std::time::Duration;
-use alloy::signers::k256::elliptic_curve::pkcs8::der::Encode;
-
-
-// ------------------
 
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
+// ------------------
+
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use p2p_std_imports::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod p2p_std_imports {
-    use db::DbWorker;
-    use crate::rpc::Airtable;
+    pub use crate::rpc::Airtable;
+    pub use db::LocalDbWorker;
+    pub use local_ip_address::local_ip;
+    pub use tokio::select;
+    pub use tokio::sync::mpsc::{Receiver, Sender};
+    pub use tokio::sync::{Mutex, MutexGuard};
+    pub use tokio_stream::wrappers::ReceiverStream;
+    pub use tokio_stream::StreamExt;
+    pub use std::io;
+    pub use std::sync::Arc;
+    pub use std::time::Duration;
 }
 
 // -------------------- WASM CRATES IMPORT ------------------ //
@@ -62,9 +59,11 @@ mod p2p_wasm_imports {
     pub use libp2p_webrtc_websys as webrtc_websys;
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
+    pub use futures::StreamExt;
+    pub use db::OpfsRedbWorker;
+    pub use crate::rpc::AirtableWasm;
+
 }
-
-
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
@@ -83,7 +82,6 @@ impl Default for GenericCodec {
         }
     }
 }
-
 
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait::async_trait]
@@ -218,16 +216,16 @@ impl Codec for GenericCodec {
 type BlockStream<T> = Pin<Box<dyn Stream<Item = Result<T, anyhow::Error>> + Send>>;
 type BlockStreamRes<T> = Result<BlockStream<T>, anyhow::Error>;
 
-
 // --------------------------------- WASM -------------------------------- //
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
-pub struct WasmP2pWorker{
+pub struct WasmP2pWorker {
     pub node_id: PeerId,
-    pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine,TxStateMachine>>>>,
+    pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
     pub url: Multiaddr,
     pub wasm_p2p_command_recv: Rc<RefCell<Receiver<NetworkCommand>>>,
-    pub wasm_pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
+    pub wasm_pending_request:
+        Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -237,20 +235,12 @@ impl WasmP2pWorker {
         airtable_client: Rc<AirtableWasm>,
         db_worker: Rc<OpfsRedbWorker>,
         port: u16,
-        command_recv_channel: Receiver<NetworkCommand>,
-    ) -> Result<Self,anyhow::Error>{
+        command_recv_channel: tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>,
+    ) -> Result<Self, anyhow::Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
-        let mut p2p_url = String::new();
+        let p2p_url = String::new();
 
-        let local_ip = local_ip()
-            .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
-
-        if local_ip.is_ipv4() {
-            p2p_url = format!("/ip4/{}/tcp/{}/p2p/{}", local_ip.to_string(), port, peer_id);
-        } else {
-            p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", local_ip.to_string(), port, peer_id);
-        }
 
         info!("listening to p2p url: {p2p_url}");
         let mut user_peer_id = PeerRecord {
@@ -274,9 +264,7 @@ impl WasmP2pWorker {
 
         // store in the local db and airtable db
         user_peer_id.record_id = record_data.id;
-        db_worker
-            .record_user_peer_id(user_peer_id.clone())
-            .await?;
+        db_worker.record_user_peer_id(user_peer_id.clone()).await?;
 
         let url = user_peer_id.multi_addr.unwrap();
         let multi_addr: Multiaddr = url
@@ -294,39 +282,39 @@ impl WasmP2pWorker {
             .with_request_timeout(tokio::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
 
         let json_behaviour = JsonBehaviour::new(
-            [(StreamProtocol::new("/my-json-protocol"), ProtocolSupport::Full)],
-            request_response_config
+            [(
+                StreamProtocol::new("/my-json-protocol"),
+                ProtocolSupport::Full,
+            )],
+            request_response_config,
         );
 
-        let wasm_swarm =  SwarmBuilder::with_existing_identity(keypair)
+        let wasm_swarm = SwarmBuilder::with_existing_identity(keypair)
             .with_wasm_bindgen()
             .with_other_transport(|key| {
                 webrtc_websys::Transport::new(webrtc_websys::Config::new(&key))
             })?
-            .with_behaviour(|_|json_behaviour)?
+            .with_behaviour(|_| json_behaviour)?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
             })
             .build();
 
-        Ok(
-            Self{
-                node_id: peer_id,
-                wasm_p2p_command_recv: Rc::new(RefCell::new(command_recv_channel)),
-                current_req: Default::default(),
-                wasm_swarm: Rc::new(RefCell::new(wasm_swarm)),
-                wasm_pending_request: Rc::new(RefCell::new(Default::default())),
-                url: multi_addr,
-            }
-        )
-
+        Ok(Self {
+            node_id: peer_id,
+            wasm_p2p_command_recv: Rc::new(RefCell::new(command_recv_channel)),
+            current_req: Default::default(),
+            wasm_swarm: Rc::new(RefCell::new(wasm_swarm)),
+            wasm_pending_request: Rc::new(RefCell::new(Default::default())),
+            url: multi_addr,
+        })
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Arc<Mutex<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
+        pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
         events: SwarmEvent<Event<TxStateMachine, Result<TxStateMachine, Error>>>,
-        sender: Sender<Result<SwarmMessage, Error>>,
-    ){
+        sender: tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>,
+    ) {
         match events {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                 Event::Message { message, .. } => {
@@ -346,7 +334,7 @@ impl WasmP2pWorker {
 
                             let req_id_hash = request_id.get_hash_id();
                             info!(target: "p2p","stored response channel, with key: {req_id_hash}");
-                            pending_request.lock().await.insert(req_id_hash, channel);
+                            pending_request.borrow_mut().insert(req_id_hash, channel);
 
                             if let Err(e) = sender.send(Ok(req_msg)).await {
                                 error!("Failed to send message: {}", e);
@@ -440,7 +428,7 @@ impl WasmP2pWorker {
 
     pub async fn start_swarm(
         &mut self,
-        sender_channel: Sender<Result<SwarmMessage, Error>>,
+        sender_channel: tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>,
     ) -> Result<(), Error> {
         let multi_addr = &self.url;
         let _listening_id = self.wasm_swarm.borrow_mut().listen_on(multi_addr.clone())?;
@@ -450,9 +438,9 @@ impl WasmP2pWorker {
         let mut swarm = self.wasm_swarm.borrow_mut();
         let mut p2p_command_recv = self.wasm_p2p_command_recv.borrow_mut();
 
-        let callback = Closure::wrap(Box::new(move||{
-            wasm_bindgen_futures::spawn_local(async move ||{
-                select! {
+        let callback = Closure::wrap(Box::new(move || {
+            wasm_bindgen_futures::spawn_local(async move {
+                tokio_with_wasm::select! {
                     event = swarm.next() => {
                         if let Some(event) = event {
                             Self::handle_swarm_events(self.clone().wasm_pending_request, event, sender.clone()).await
@@ -499,17 +487,16 @@ impl WasmP2pWorker {
             })
         }) as Box<dyn FnMut()>);
 
-        web_sys::window().expect("windows not found").set_interval_with_callback_and_timeout_and_arguments_0(
-            callback.as_ref().unchecked_ref(),
-            100 // 100 ms interval
-        )?;
+        web_sys::window()
+            .expect("windows not found")
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                callback.as_ref().unchecked_ref(),
+                100, // 100 ms interval
+            )?;
 
         callback.forget()
     }
 }
-
-
-
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
@@ -530,7 +517,7 @@ impl P2pWorker {
     /// generate new ed25519 keypair for node identity and register the peer record in  the db
     pub async fn new(
         airtable_client: Arc<Mutex<Airtable>>,
-        db_worker: Arc<Mutex<DbWorker>>,
+        db_worker: Arc<Mutex<LocalDbWorker>>,
         port: u16,
         command_recv_channel: Receiver<NetworkCommand>,
     ) -> Result<Self, Error> {
@@ -573,7 +560,6 @@ impl P2pWorker {
             .lock()
             .await
             .record_user_peer_id(user_peer_id.clone())
-
             .await?;
 
         let url = user_peer_id.multi_addr.unwrap();
@@ -611,7 +597,6 @@ impl P2pWorker {
             })
             .build();
 
-
         Ok(Self {
             node_id: peer_id,
             swarm: Arc::new(Mutex::new(swarm)),
@@ -620,7 +605,6 @@ impl P2pWorker {
             pending_request: Arc::new(Mutex::new(Default::default())),
             current_req: Default::default(),
         })
-
     }
 
     pub async fn handle_swarm_events(
@@ -799,7 +783,8 @@ impl P2pWorker {
                         },
                         None => {
                             info!("command channel closed");
-                        }
+                        },
+                        _ => {}
                     }
                 }
             }
@@ -810,16 +795,18 @@ impl P2pWorker {
     }
 }
 
-
 #[derive(Clone)]
 pub struct P2pNetworkService {
     // for sending p2p network commands
+    #[cfg(not(target_arch = "wasm32"))]
     pub p2p_command_tx: Arc<Sender<NetworkCommand>>,
+    #[cfg(target_arch = "wasm32")]
+    pub p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
     // p2p worker instance
     #[cfg(not(target_arch = "wasm32"))]
     pub p2p_worker: P2pWorker,
     #[cfg(target_arch = "wasm32")]
-    pub wasm_p2p_worker: WasmP2pWorker
+    pub wasm_p2p_worker: WasmP2pWorker,
 }
 
 impl P2pNetworkService {
@@ -949,9 +936,7 @@ impl P2pNetworkService {
         trace!(target: "p2p","sending response command");
 
         Ok(())
-    }}
-
-
+    }
+}
 
 // -------------------------------------- BEHAVIOUR IMPLEMENTING PARITY CODEC -------------------- //
-

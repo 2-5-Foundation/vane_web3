@@ -2,7 +2,7 @@ use alloy::signers::SignerSync;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{keccak256, B256};
 use codec::{Decode, Encode};
-use db::DbWorker;
+use db::LocalDbWorker;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::HttpClient;
 use libp2p::{Multiaddr, PeerId};
@@ -147,6 +147,7 @@ mod e2e_tests {
                         assert_eq!(1, 2);
                     }
                     Err(e) => error!("Worker 1 error: {}", e),
+                    _ => {}
                 }
             }
             Ok::<(), Error>(())
@@ -177,6 +178,7 @@ mod e2e_tests {
                         // nothing for now
                     }
                     Err(e) => error!("Worker 1 error: {}", e),
+                    _ => {}
                 }
             }
             Ok::<(), Error>(())

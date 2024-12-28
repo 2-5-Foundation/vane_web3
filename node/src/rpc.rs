@@ -30,22 +30,22 @@ pub use std_imports::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod std_imports {
-    use crate::cryptography::verify_public_bytes;
-    use alloc::sync::Arc;
-    use db::DbWorker;
-    use jsonrpsee::core::Error;
-    use jsonrpsee::{
+    pub use crate::cryptography::verify_public_bytes;
+    pub use alloc::sync::Arc;
+    pub use db::LocalDbWorker;
+    pub use jsonrpsee::core::Error;
+    pub use jsonrpsee::{
         core::{async_trait, RpcResult, SubscriptionResult},
         proc_macros::rpc,
         PendingSubscriptionSink, SubscriptionMessage,
     };
-    use libp2p::PeerId;
-    use local_ip_address;
-    use local_ip_address::local_ip;
-    use moka::future::Cache as AsyncCache;
-    use reqwest::{ClientBuilder, Url};
-    use tokio::sync::mpsc::{Receiver, Sender};
-    use tokio::sync::{Mutex, MutexGuard};
+    pub use libp2p::PeerId;
+    pub use local_ip_address;
+    pub use local_ip_address::local_ip;
+    pub use moka::future::Cache as AsyncCache;
+    pub use reqwest::{ClientBuilder, Url};
+    pub use tokio::sync::mpsc::{Receiver, Sender};
+    pub use tokio::sync::{Mutex, MutexGuard};
 }
 
 // -------------------- WASM CRATES IMPORT ------------------ //
@@ -236,7 +236,6 @@ impl PublicInterfaceWorker {
         peer_id: PeerId,
         lru_cache: LruCache<u64, TxStateMachine>,
     ) -> Result<Self, anyhow::Error> {
-
         Ok(Self {
             db_worker,
             airtable_client: Rc::new(airtable_client),
@@ -674,7 +673,7 @@ pub trait TransactionRpc {
 #[derive(Clone)]
 pub struct TransactionRpcWorker {
     /// local database worker
-    pub db_worker: Arc<Mutex<DbWorker>>,
+    pub db_worker: Arc<Mutex<LocalDbWorker>>,
     /// central server to get peer data
     pub airtable_client: Arc<Mutex<Airtable>>,
     /// rpc server url
@@ -691,13 +690,11 @@ pub struct TransactionRpcWorker {
     pub moka_cache: AsyncCache<u64, TxStateMachine>, // initial fees, after dry running tx initialy without optimization
 }
 
-
-
 #[cfg(not(target_arch = "wasm32"))]
 impl TransactionRpcWorker {
     pub async fn new(
         airtable_client: Airtable,
-        db_worker: Arc<Mutex<DbWorker>>,
+        db_worker: Arc<Mutex<LocalDbWorker>>,
         rpc_recv_channel: Arc<Mutex<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
         port: u16,

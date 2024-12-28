@@ -25,7 +25,6 @@ sp-runtime                                  = { workspace = true}
 reconnecting-jsonrpsee-ws-client            = { workspace = true}
 jsonrpsee                                   = { workspace = true}
 reqwest                                     = { workspace = true, features = ["json"] }
-airtable-api                                = { workspace = true}
 tinyrand                                    = "0.5.0"
 serde_json                                  = { workspace = true}
 base58                                      = { workspace = true}
@@ -37,7 +36,7 @@ rcgen                                       = { workspace = true}
 #solana-client-wasm                          = { workspace = true}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwasm                                     = "0.5.0"
+reqwasm                                     = {version = "0.5.0", default-features = true}
 tokio_with_wasm                             = { version = "0.7.4", features = ["full"]}
 libp2p                                      = { workspace = true, features = ["wasm-bindgen","webtransport-websys","websocket-websys","json"]}
 async-stream                                = { version = "0.3.6"}
