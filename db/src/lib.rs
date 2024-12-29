@@ -395,7 +395,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(PORT_TABLE)?;
-            let ports = Ports { p_2_p_port: p2p };
+            let ports = Ports { rpc: p2p, p_2_p_port: p2p };
             let port_data = ports.encode();
             table.insert(PORTS_KEY, &port_data)?;
         }

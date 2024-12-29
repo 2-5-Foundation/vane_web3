@@ -56,7 +56,7 @@ mod p2p_wasm_imports {
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
     pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
-    pub use libp2p_webrtc_websys as webrtc_websys;
+    pub use libp2p::webtransport_websys as webrtc_websys;
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
     pub use futures::StreamExt;
@@ -223,9 +223,9 @@ pub struct WasmP2pWorker {
     pub node_id: PeerId,
     pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
     pub url: Multiaddr,
-    pub wasm_p2p_command_recv: Rc<RefCell<Receiver<NetworkCommand>>>,
+    pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>>>,
     pub wasm_pending_request:
-        Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
+        Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -279,7 +279,7 @@ impl WasmP2pWorker {
             .map_err(|_| anyhow!("failed to decode keypair ed25519"))?;
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(tokio::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
+            .with_request_timeout(std::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
 
         let json_behaviour = JsonBehaviour::new(
             [(
@@ -296,7 +296,7 @@ impl WasmP2pWorker {
             })?
             .with_behaviour(|_| json_behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
+                cfg.with_idle_connection_timeout(std::time::Duration::from_secs(300))
             })
             .build();
 
@@ -311,9 +311,9 @@ impl WasmP2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, Error>>>>>,
-        events: SwarmEvent<Event<TxStateMachine, Result<TxStateMachine, Error>>>,
-        sender: tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>,
+        pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
+        events: SwarmEvent<Event<TxStateMachine, TxStateMachine>>,
+        sender: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {
         match events {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -336,7 +336,7 @@ impl WasmP2pWorker {
                             info!(target: "p2p","stored response channel, with key: {req_id_hash}");
                             pending_request.borrow_mut().insert(req_id_hash, channel);
 
-                            if let Err(e) = sender.send(Ok(req_msg)).await {
+                            if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
                                 error!("Failed to send message: {}", e);
                             }
                             info!(target: "p2p","propagating txn request msg to main service worker");
@@ -345,16 +345,15 @@ impl WasmP2pWorker {
                             response,
                             request_id,
                         } => {
-                            if let Ok(data) = response {
-                                let resp_msg = SwarmMessage::WasmResponse {
-                                    data,
-                                    outbound_id: request_id,
-                                };
-                                if let Err(e) = sender.send(Ok(resp_msg)).await {
-                                    error!("Failed to send message: {}", e);
-                                }
-                                info!(target: "p2p","propagating txn response msg to main service worker");
+                            let data = response;
+                            let resp_msg = SwarmMessage::WasmResponse {
+                                data,
+                                outbound_id: request_id,
+                            };
+                            if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
+                                error!("Failed to send message: {}", e);
                             }
+                            info!(target: "p2p","propagating txn response msg to main service worker");
                         }
                     }
                 }
@@ -428,22 +427,32 @@ impl WasmP2pWorker {
 
     pub async fn start_swarm(
         &mut self,
-        sender_channel: tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>,
+        sender_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) -> Result<(), Error> {
         let multi_addr = &self.url;
         let _listening_id = self.wasm_swarm.borrow_mut().listen_on(multi_addr.clone())?;
         trace!(target:"p2p","listening to: {:?}",multi_addr);
 
-        let sender = sender_channel;
-        let mut swarm = self.wasm_swarm.borrow_mut();
-        let mut p2p_command_recv = self.wasm_p2p_command_recv.borrow_mut();
+        let sender = sender_channel.clone();
+        let swarm = self.wasm_swarm.clone();
+        let p2p_command_recv = self.wasm_p2p_command_recv.clone();
+        let pending_request = self.wasm_pending_request.clone();
 
         let callback = Closure::wrap(Box::new(move || {
+            let swarm = Rc::clone(&swarm);
+            let p2p_command_recv = Rc::clone(&p2p_command_recv);
+            let pending_request = Rc::clone(&pending_request);
+            let sender = Rc::clone(&sender);
+
+
             wasm_bindgen_futures::spawn_local(async move {
+                let mut swarm = swarm.borrow_mut();
+                let mut p2p_command_recv = p2p_command_recv.borrow_mut();
+
                 tokio_with_wasm::select! {
                     event = swarm.next() => {
                         if let Some(event) = event {
-                            Self::handle_swarm_events(self.clone().wasm_pending_request, event, sender.clone()).await
+                            Self::handle_swarm_events(pending_request, event, sender).await
                         } else {
                             info!("no current swarm event")
                         }
@@ -452,8 +461,8 @@ impl WasmP2pWorker {
                         match cmd {
                             Some(NetworkCommand::WasmSendResponse {response,channel}) => {
                                 if channel.is_open() {
-                                    swarm.behaviour_mut().send_response(channel,Ok(response))
-                                        .map_err(|err|anyhow!("failed to send response; {err:?}"))?;
+                                    swarm.behaviour_mut().send_response(channel,response)
+                                        .expect("failed to send response");
                                 } else {
                                     error!("response channel is closed");
                                 }
@@ -464,7 +473,7 @@ impl WasmP2pWorker {
                                     info!("request sent to peer: {peer_id:?}");
                                 } else {
                                     info!("re dialing");
-                                    swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to re dial: {err}"))?;
+                                    swarm.dial(target_multi_addr).expect("failed to re dial");
                                     swarm.behaviour_mut().send_request(&peer_id,request);
                                     info!("request sent to peer: {peer_id:?}");
                                 }
@@ -475,12 +484,13 @@ impl WasmP2pWorker {
                                     info!("peer already connected: {target_peer_id}")
                                 }else{
                                     info!("dialing peer: {target_peer_id} ");
-                                    swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
+                                    swarm.dial(target_multi_addr).expect("failed to dial");
                                 }
                             },
                             None => {
                                 info!("command channel closed");
-                            }
+                            },
+                            _ => {}
                         }
                     }
                 }
@@ -492,9 +502,10 @@ impl WasmP2pWorker {
             .set_interval_with_callback_and_timeout_and_arguments_0(
                 callback.as_ref().unchecked_ref(),
                 100, // 100 ms interval
-            )?;
+            ).map_err(|err|anyhow!("failed to set windows interval: {err:?}"))?;
 
-        callback.forget()
+        callback.forget();
+        Ok(())
     }
 }
 
@@ -820,6 +831,18 @@ impl P2pNetworkService {
             p2p_worker,
         })
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn new(
+        p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
+        p2p_worker: WasmP2pWorker,
+    ) -> Result<Self,Error>{
+        Ok(Self{
+            p2p_command_tx,
+            wasm_p2p_worker: p2p_worker
+        })
+    }
+
 
     // dialing the target peer_id
     pub async fn dial_to_peer_id(

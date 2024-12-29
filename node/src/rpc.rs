@@ -20,7 +20,7 @@ use primitives::data_structure::{
     AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord,
     PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount,
 };
-use sp_core::{Blake2Hasher, Hasher};
+use sp_core::{blake2_256, H256};
 use sp_runtime::traits::Zero;
 
 use db::DbWorkerInterface;
@@ -223,7 +223,7 @@ pub struct PublicInterfaceWorker {
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     //// tx pending store
-    pub lru_cache: LruCache<u64, TxStateMachine>, // initial fees, after dry running tx initialy without optimization
+    pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>, // initial fees, after dry running tx initialy without optimization
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -242,9 +242,13 @@ impl PublicInterfaceWorker {
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
-            lru_cache,
+            lru_cache: RefCell::new(lru_cache),
         })
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl PublicInterfaceWorker {
 
     pub async fn register_vane_web3(
         &self,
@@ -325,7 +329,7 @@ impl PublicInterfaceWorker {
             // construct the tx
             let mut sender_recv = sender.as_bytes().to_vec();
             sender_recv.extend_from_slice(receiver.as_bytes());
-            let multi_addr = Blake2Hasher::hash(&sender_recv[..]);
+            let multi_addr = blake2_256(&sender_recv[..]);
 
             let mut nonce = 0;
             nonce = self.db_worker.get_nonce().await? + 1;
@@ -335,7 +339,7 @@ impl PublicInterfaceWorker {
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
                 receiver_address: receiver,
-                multi_id: multi_addr,
+                multi_id: H256::from(multi_addr),
                 recv_signature: None,
                 network: net_sender,
                 status: TxStatus::default(),
@@ -367,7 +371,7 @@ impl PublicInterfaceWorker {
     }
 
     pub async fn sender_confirm(&self, mut tx: TxStateMachine) -> Result<(), anyhow::Error> {
-        let sender_channel = self.user_rpc_update_sender_channel.lock().await;
+        let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
@@ -375,7 +379,7 @@ impl PublicInterfaceWorker {
             ))?
         } else {
             // remove from cache
-            self.lru_cache.remove(&tx.tx_nonce.into()).await;
+            self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
             // verify the tx-state-machine integrity
             // TODO
             // update the TxStatus to TxStatus::SenderConfirmed
@@ -394,22 +398,22 @@ impl PublicInterfaceWorker {
 
     async fn fetch_pending_tx_updates(&self) -> Result<Vec<TxStateMachine>, anyhow::Error> {
         let tx_updates = self
-            .lru_cache
+            .lru_cache.borrow()
             .iter()
-            .map(|(_k, v)| v)
+            .map(|(_k, v)| v.clone())
             .collect::<Vec<TxStateMachine>>();
         println!("lru: {tx_updates:?}");
         Ok(tx_updates)
     }
 
     pub async fn receiver_confirm(&self, mut tx: TxStateMachine) -> Result<(), anyhow::Error> {
-        let sender_channel = self.user_rpc_update_sender_channel.lock().await;
+        let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))?
         } else {
             // remove from cache
-            self.lru_cache.remove(&tx.tx_nonce.into()).await;
+            self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
             // verify the tx-state-machine integrity
             // TODO
             // tx status to TxStatus::RecvAddrConfirmed

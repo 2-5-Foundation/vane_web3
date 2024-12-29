@@ -7,13 +7,6 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
-use alloy::network::TransactionBuilder;
-use alloy::primitives::private::alloy_rlp::{Decodable, Encodable};
-use alloy::primitives::{keccak256, U256};
-use alloy::primitives::{Address, Signature as EcdsaSignature, Signature, SignatureError, B256};
-use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
-use alloy::rpc::types::TransactionRequest;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
@@ -21,15 +14,29 @@ use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PRE
 use sp_core::{
     ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256, Blake2Hasher, Hasher,
+    keccak_256,blake2_256
 };
 use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
 use std::collections::BTreeMap;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::Mutex;
+
 
 // use solana_client::rpc_client::RpcClient;
+#[cfg(not(target_arch = "wasm32"))]
+pub use tx_std_imports::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod tx_std_imports {
+    pub use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
+    pub use alloy::network::TransactionBuilder;
+    pub use alloy::primitives::private::alloy_rlp::{Decodable, Encodable};
+    pub use alloy::primitives::{keccak256, U256};
+    pub use alloy::primitives::{Address, Signature as EcdsaSignature, Signature, SignatureError, B256};
+    pub use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
+    pub use alloy::rpc::types::TransactionRequest;
+    pub use tokio::sync::mpsc::Receiver;
+    pub use tokio::sync::Mutex;
+}
 
 // ------------------------------------- WASM ------------------------------------- //
 #[cfg(target_arch = "wasm32")]
@@ -41,8 +48,13 @@ mod tx_wasm_imports {
     pub use core::cell::RefCell;
     pub use web3::transports;
     pub use web3::Web3;
+    pub use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
+    pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
+
+
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
 /// & tx submission to specified and confirmed chain
 #[derive(Clone)]
@@ -73,8 +85,8 @@ pub struct WasmTxProcessingWorker {
     // /// substrate client
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
-    eth_client: Web3<web3::transports::Http>,
-    bnb_client: Web3<web3::transports::Http>,
+    eth_client: ReqwestProvider,
+    bnb_client: ReqwestProvider,
     // solana_client: RpcClient
 }
 
@@ -87,20 +99,23 @@ impl WasmTxProcessingWorker {
         let eth_url = eth.url();
         let bnb_url = bnb.url().to_string();
 
-        let eth_transport = web3::transports::Http::new(&eth_url)
-            .map_err(|err| anyhow!("eth transport error: {err}"))?;
-        let eth_web3 = web3::Web3::new(eth_transport);
+        let eth_rpc_url = eth_url
+            .parse()
+            .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
+        // Create a provider with the HTTP transport using the `reqwest` crate.
+        let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
 
-        let bnb_transport = web3::transports::Http::new(&bnb_url)
-            .map_err(|err| anyhow!("bnb transport error: {err}"))?;
-        let bnb_web3 = web3::Web3::new(bnb_transport);
+        let bnb_rpc_url = bnb_url
+            .parse()
+            .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
+        let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {
             tx_staging: Rc::new(RefCell::new(Default::default())),
             sender_tx_pending: Rc::new(RefCell::new(Default::default())),
             receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
-            eth_client: eth_web3,
-            bnb_client: bnb_web3,
+            eth_client: eth_provider,
+            bnb_client: bnb_provider,
         })
     }
 
@@ -140,7 +155,7 @@ impl WasmTxProcessingWorker {
         };
         match network {
             ChainSupported::Ethereum => {
-                let address: Address = address.parse().expect("Invalid address");
+                let address: alloy::primitives::Address = address.parse().expect("Invalid address");
 
                 let hashed_msg = {
                     if who == "Receiver" {
@@ -183,10 +198,10 @@ impl WasmTxProcessingWorker {
         let post_multi_id = {
             let mut sender_recv = txn.sender_address.as_bytes().to_vec();
             sender_recv.extend_from_slice(txn.receiver_address.as_bytes());
-            Blake2Hasher::hash(&sender_recv[..])
+            blake2_256(&sender_recv[..])
         };
 
-        post_multi_id == txn.multi_id
+        H256::from(post_multi_id) == txn.multi_id
     }
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
@@ -199,6 +214,8 @@ impl WasmTxProcessingWorker {
         Ok(())
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
 
 impl TxProcessingWorker {
     pub async fn new(

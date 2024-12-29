@@ -1,3 +1,6 @@
+#![cfg(not(target_arch = "wasm32"))]
+
+
 use alloy::signers::SignerSync;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{keccak256, B256};

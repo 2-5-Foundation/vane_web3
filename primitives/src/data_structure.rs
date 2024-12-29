@@ -201,7 +201,7 @@ pub enum NetworkCommand {
     },
     WasmSendResponse {
         response: TxStateMachine,
-        channel: ResponseChannel<Result<TxStateMachine, Error>>,
+        channel: ResponseChannel<TxStateMachine>,
     },
 }
 

@@ -11,7 +11,7 @@ pub mod tx_processing;
 use crate::p2p::P2pNetworkService;
 
 use alloc::sync::Arc;
-use alloy::hex;
+use hex_literal::hex;
 use anyhow::{anyhow, Error};
 use codec::Decode;
 use core::str::FromStr;
@@ -25,7 +25,6 @@ use primitives::data_structure::{
     TxStateMachine, TxStatus,
 };
 pub use rand::Rng;
-pub use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
@@ -50,6 +49,7 @@ mod lib_imports {
     pub use local_ip_address::local_ip;
     pub use moka::future::Cache as AsyncCache;
     pub use rcgen::{generate_simple_self_signed, CertifiedKey};
+    pub use tokio::sync::mpsc::{Receiver, Sender};
 }
 
 // -------------------------------- WASM ------------------------------ //
@@ -66,6 +66,7 @@ mod lib_wasm_imports {
     pub use core::cell::RefCell;
     pub use db::OpfsRedbWorker;
     pub use lru::LruCache;
+    pub use futures::FutureExt;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -82,11 +83,11 @@ pub struct WasmMainServiceWorker {
     // channels for layers communication
     /// sender channel to propagate transaction state to rpc layer
     /// this serve as an update channel to the user
-    pub rpc_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
+    pub rpc_sender_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<TxStateMachine>>>,
     /// receiver channel to handle the updates made by user from rpc
-    pub user_rpc_update_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
+    pub user_rpc_update_recv_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<TxStateMachine>>>,
     // moka cache
-    pub lru_cache: LruCache<u64, TxStateMachine>,
+    pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -95,12 +96,12 @@ impl WasmMainServiceWorker {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
-        let (rpc_sender_channel, rpc_recv_channel) = tokio::sync::mpsc::channel(10);
+        let (rpc_sender_channel, rpc_recv_channel) = tokio_with_wasm::sync::mpsc::channel(10);
         let (user_rpc_update_sender_channel, user_rpc_update_recv_channel) =
-            tokio::sync::mpsc::channel(10);
+            tokio_with_wasm::sync::mpsc::channel(10);
 
         // for p2p network commands
-        let (p2p_command_tx, p2p_command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(10);
+        let (p2p_command_tx, p2p_command_recv) = tokio_with_wasm::sync::mpsc::channel::<NetworkCommand>(10);
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
@@ -146,7 +147,7 @@ impl WasmMainServiceWorker {
         .await?;
 
         let p2p_network_service =
-            P2pNetworkService::new(Arc::new(p2p_command_tx), p2p_worker.clone())?;
+            P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
 
         // TRANSACTION RPC WORKER / PUBLIC INTERFACE
         // ===================================================================================== //
@@ -180,19 +181,19 @@ impl WasmMainServiceWorker {
             p2p_network_service: Rc::new(RefCell::new(p2p_network_service)),
             rpc_sender_channel: Rc::new(RefCell::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Rc::new(RefCell::new(user_rpc_update_recv_channel)),
-            lru_cache,
+            lru_cache: RefCell::new(lru_cache),
         })
     }
 
     pub fn start_swarm_handler(&self) -> Result<(), Error> {
-        let (sender_channel, mut recv_channel) = tokio::sync::mpsc::channel(256);
+        let (sender_channel, mut recv_channel) = tokio_with_wasm::sync::mpsc::channel(256);
 
         // Start swarm and get it ready to send messages
         let p2p_worker_clone = self.p2p_worker.clone();
         wasm_bindgen_futures::spawn_local(async move {
             if let Err(e) = p2p_worker_clone
                 .borrow_mut()
-                .start_swarm(sender_channel)
+                .start_swarm(Rc::new(RefCell::new(sender_channel)))
                 .await
             {
                 error!("start swarm failed: {}", e);
@@ -240,9 +241,9 @@ impl WasmMainServiceWorker {
                         return Err(e.into());
                     }
 
-                    self.lru_cache
-                        .insert(decoded_req.tx_nonce.into(), decoded_req.clone())
-                        .await;
+                    self.lru_cache.borrow_mut()
+                        .push(decoded_req.tx_nonce.into(), decoded_req.clone());
+
 
                     info!(target: "MainServiceWorker",
                           "propagating txn msg as request: {decoded_req:?}");
@@ -287,9 +288,8 @@ impl WasmMainServiceWorker {
                         return Err(e.into());
                     }
 
-                    self.lru_cache
-                        .insert(decoded_resp.tx_nonce.into(), decoded_resp.clone())
-                        .await;
+                    self.lru_cache.borrow_mut()
+                        .push(decoded_resp.tx_nonce.into(), decoded_resp.clone());
 
                     info!(target: "MainServiceWorker",
                           "propagating txn msg as response: {decoded_resp:?}");
@@ -406,7 +406,7 @@ impl WasmMainServiceWorker {
                             .borrow_mut()
                             .send(txn.clone())
                             .await?;
-                        self.lru_cache.insert(txn.tx_nonce.into(), txn).await;
+                        self.lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
 
                         error!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
                     }
@@ -485,10 +485,10 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn handle_incoming_rpc_tx_updates(&self) -> Result<(), anyhow::Error> {
+    pub async fn handle_public_interface_tx_updates(&self) -> Result<(), anyhow::Error> {
         while let Some(txn) = self.user_rpc_update_recv_channel.borrow_mut().recv().await {
             // handle the incoming transaction per its state
-            let status = txn.status;
+            let status = txn.status.clone();
             match status {
                 TxStatus::Genesis => {
                     info!(target:"MainServiceWorker","handling incoming genesis tx updates: {:?} \n",txn.clone());
@@ -544,14 +544,14 @@ impl WasmMainServiceWorker {
         // ====================================================================================== //
 
         futures::select! {
-            tx_watch_result = main_worker.handle_incoming_tx_updates().fuse() => {
+            tx_watch_result = main_worker.handle_public_interface_tx_updates().fuse() => {
                 if let Err(err) = tx_watch_result {
                     error!("tx watch handle error: {err}");
                 }
             },
-            swarm_result = main_worker
-                .handle_swarm_event_messages(p2p_worker.clone(), txn_processing_worker.clone())
-                .fuse() => {
+            swarm_result = async {
+                main_worker.start_swarm_handler()
+            }.fuse() => {
                 if let Err(err) = swarm_result {
                     error!("swarm handle error: {err}");
                 }
