@@ -1,3 +1,10 @@
+#![cfg(all(target_arch = "wasm32", not(feature = "std")))]
+pub const WASM_BINARY: &[u8] = include_bytes!(concat!(
+env!("CARGO_MANIFEST_DIR"), "/target/wasm32-unknown-unknown/release/node.wasm"));
+
+#[cfg(any(not(target_arch = "wasm32"), feature = "std"))]
+pub const WASM_BINARY: &[u8] = &[];
+
 extern crate alloc;
 extern crate core;
 
@@ -15,7 +22,7 @@ use hex_literal::hex;
 use anyhow::{anyhow, Error};
 use codec::Decode;
 use core::str::FromStr;
-use db::DbWorkerInterface;
+use primitives::data_structure::DbWorkerInterface;
 
 use libp2p::request_response::{InboundRequestId, Message, ResponseChannel};
 use libp2p::{Multiaddr, PeerId};
@@ -64,7 +71,7 @@ mod lib_wasm_imports {
     pub use crate::tx_processing::WasmTxProcessingWorker;
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
-    pub use db::OpfsRedbWorker;
+    pub use db_wasm::OpfsRedbWorker;
     pub use lru::LruCache;
     pub use futures::FutureExt;
 }

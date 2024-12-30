@@ -1,11 +1,19 @@
 [package]
-name = "db"
+name = "db-wasm"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+redb                        = "2.3.0"
+web-sys = { version = "0.3.76", features = [
+    "StorageManager",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemWritableFileStream",
+    "Window",
+    "Navigator"
+]}
+
 serde                       = { workspace = true }
 anyhow                      = { workspace = true }
 primitives                  = { workspace = true }
@@ -15,13 +23,3 @@ codec                       = { workspace = true }
 sp-core                     = { workspace = true, default-features = false}
 aead                        = { workspace = true }
 aes-gcm                     = { workspace = true }
-
-# Native-only dependencies
-prisma-client-rust          = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11", features = ["sqlite", "migrations"], default-features = false }
-tokio                       = { workspace = true }
-libp2p                      = { workspace = true }
-
-
-
-[features]
-e2e = []

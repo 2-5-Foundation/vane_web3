@@ -49,7 +49,7 @@ mod tx_wasm_imports {
     pub use web3::transports;
     pub use web3::Web3;
     pub use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
-    pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
+    //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
 
 
 }
@@ -84,9 +84,9 @@ pub struct WasmTxProcessingWorker {
     pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
     // /// substrate client
     // sub_client: OnlineClient<PolkadotConfig>,
-    /// ethereum & bnb client
-    eth_client: ReqwestProvider,
-    bnb_client: ReqwestProvider,
+    //// ethereum & bnb client
+    // eth_client: ReqwestProvider,
+    // bnb_client: ReqwestProvider,
     // solana_client: RpcClient
 }
 
@@ -99,23 +99,23 @@ impl WasmTxProcessingWorker {
         let eth_url = eth.url();
         let bnb_url = bnb.url().to_string();
 
-        let eth_rpc_url = eth_url
-            .parse()
-            .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
-        // Create a provider with the HTTP transport using the `reqwest` crate.
-        let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
-
-        let bnb_rpc_url = bnb_url
-            .parse()
-            .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
-        let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
+        // let eth_rpc_url = eth_url
+        //     .parse()
+        //     .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
+        // // Create a provider with the HTTP transport using the `reqwest` crate.
+        // let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
+        //
+        // let bnb_rpc_url = bnb_url
+        //     .parse()
+        //     .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
+        // let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
 
         Ok(Self {
             tx_staging: Rc::new(RefCell::new(Default::default())),
             sender_tx_pending: Rc::new(RefCell::new(Default::default())),
             receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
-            eth_client: eth_provider,
-            bnb_client: bnb_provider,
+            // eth_client: eth_provider,
+            // bnb_client: bnb_provider,
         })
     }
 
@@ -201,7 +201,7 @@ impl WasmTxProcessingWorker {
             blake2_256(&sender_recv[..])
         };
 
-        H256::from(post_multi_id) == txn.multi_id
+        post_multi_id == txn.multi_id
     }
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {

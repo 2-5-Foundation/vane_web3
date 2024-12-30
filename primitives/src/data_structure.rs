@@ -10,7 +10,6 @@ use libp2p::{Multiaddr, PeerId};
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
-use sp_core::H256;
 use twox_hash::XxHash64;
 
 // Ethereum signature preimage prefix according to EIP-191
@@ -98,7 +97,7 @@ pub struct TxStateMachine {
     pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
     #[serde(rename = "multiId")]
-    pub multi_id: H256,
+    pub multi_id: [u8;32],
     /// signature of the receiver id (Signature)
     #[serde(rename = "recvSignature")]
     pub recv_signature: Option<Vec<u8>>,
@@ -533,4 +532,64 @@ impl From<PeerRecord> for Fields {
 
         fields
     }
+}
+
+ // ----------------------- DB related ---------------------------------------------------------- //
+ #[derive(Serialize, Deserialize, Encode, Decode)]
+ pub struct Ports {
+     pub rpc: u16,
+     pub p_2_p_port: u16,
+ }
+
+
+/// db interface
+#[allow(async_fn_in_trait)]
+pub trait DbWorkerInterface: Sized {
+    async fn initialize_db_client(file_url: &str) -> Result<Self, anyhow::Error>;
+
+    async fn set_user_account(&self, user: UserAccount) -> Result<(), anyhow::Error>;
+
+    async fn get_nonce(&self) -> Result<u32, anyhow::Error>;
+
+    // get all related network id accounts
+    async fn get_user_accounts(
+        &self,
+        network: ChainSupported,
+    ) -> Result<Vec<UserAccount>, anyhow::Error>;
+
+    async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
+
+    async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
+    async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
+
+    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error>;
+    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error>;
+
+    async fn record_user_peer_id(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error>;
+
+    async fn update_user_peer_id_accounts(
+        &self,
+        peer_record: PeerRecord,
+    ) -> Result<(), anyhow::Error>;
+
+    async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
+
+    // get peer by account id by either account id or peerId
+    async fn get_user_peer_id(
+        &self,
+        account_id: Option<String>,
+        peer_id: Option<String>,
+    ) -> Result<PeerRecord, anyhow::Error>;
+
+    async fn increment_nonce(&self) -> Result<(), anyhow::Error>;
+    // set port ids {
+    async fn set_ports(&self, rpc: u16, p2p: u16) -> Result<(), anyhow::Error>;
+    // get port ids
+    async fn get_ports(&self) -> Result<Option<Ports>, anyhow::Error>;
+
+    // saved peers interacted with
+    async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error>;
+
+    // get saved peers
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, anyhow::Error>;
 }

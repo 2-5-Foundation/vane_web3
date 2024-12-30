@@ -7,7 +7,7 @@ pub use codec::Encode;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use db::{DbWorkerInterface};
+use primitives::data_structure::{DbWorkerInterface};
 
 use primitives::data_structure::{AirtableRequestBody, Fields, HashId, PeerRecord};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
@@ -60,7 +60,7 @@ mod p2p_wasm_imports {
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
     pub use futures::StreamExt;
-    pub use db::OpfsRedbWorker;
+    pub use db_wasm::OpfsRedbWorker;
     pub use crate::rpc::AirtableWasm;
 
 }

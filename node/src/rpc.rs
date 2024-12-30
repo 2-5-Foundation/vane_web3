@@ -23,7 +23,7 @@ use primitives::data_structure::{
 use sp_core::{blake2_256, H256};
 use sp_runtime::traits::Zero;
 
-use db::DbWorkerInterface;
+use primitives::data_structure::DbWorkerInterface;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use std_imports::*;
@@ -57,7 +57,7 @@ mod rpc_wasm_imports {
     pub use alloc::rc::Rc;
     pub use async_stream::stream;
     pub use core::cell::RefCell;
-    pub use db::OpfsRedbWorker;
+    pub use db_wasm::OpfsRedbWorker;
     pub use futures::StreamExt;
     pub use libp2p::PeerId;
     pub use lru::LruCache;
@@ -339,7 +339,7 @@ impl PublicInterfaceWorker {
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
                 receiver_address: receiver,
-                multi_id: H256::from(multi_addr),
+                multi_id: multi_addr,
                 recv_signature: None,
                 network: net_sender,
                 status: TxStatus::default(),
