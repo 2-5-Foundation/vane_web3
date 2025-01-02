@@ -1,3 +1,4 @@
+#![cfg(not(target_arch = "wasm32"))]
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
@@ -38,3 +39,5 @@ async fn main() -> Result<(), anyhow::Error> {
     node::MainServiceWorker::run(args.db_url).await?;
     Ok(())
 }
+
+

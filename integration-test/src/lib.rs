@@ -1,8 +1,11 @@
+#![cfg(not(target_arch = "wasm32"))]
+
+
 use alloy::signers::SignerSync;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{keccak256, B256};
 use codec::{Decode, Encode};
-use db::DbWorker;
+use db::LocalDbWorker;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::HttpClient;
 use libp2p::{Multiaddr, PeerId};
@@ -147,6 +150,7 @@ mod e2e_tests {
                         assert_eq!(1, 2);
                     }
                     Err(e) => error!("Worker 1 error: {}", e),
+                    _ => {}
                 }
             }
             Ok::<(), Error>(())
@@ -177,6 +181,7 @@ mod e2e_tests {
                         // nothing for now
                     }
                     Err(e) => error!("Worker 1 error: {}", e),
+                    _ => {}
                 }
             }
             Ok::<(), Error>(())
@@ -214,7 +219,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn airtable_test() -> Result<(), anyhow::Error> {
-        let _ =log_setup();
+        let _ = log_setup();
 
         let client = Airtable::new().await?;
         let mut peer = Fields::default();
@@ -491,7 +496,7 @@ mod e2e_tests {
 
     #[tokio::test]
     async fn recv_not_registered_error_works() -> Result<(), anyhow::Error> {
-       let _ = log_setup();
+        let _ = log_setup();
 
         // ============================================================================
         // Wallets

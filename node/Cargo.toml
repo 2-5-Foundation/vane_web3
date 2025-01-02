@@ -4,37 +4,65 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[build-dependencies]
+wasm-builder = "3.0.1"
+
 
 [dependencies]
-db                                          = { workspace = true}
 log                                         = { workspace = true}
 primitives                                  = { workspace = true, features = ["e2e"]}
-libp2p                                      = { workspace = true}
-sc-network                                  = "0.45.1"
-sc-service                                  = { workspace = true}
 async-trait                                 = "0.1.81"
 unsigned-varint                             = { workspace = true}
 anyhow                                      = { workspace = true}
 codec                                       = { workspace = true}
-tokio                                       = { workspace = true}
-tokio-stream                                = "0.1.15"
-sp-core                                     = { workspace = true}
-subxt                                       = { workspace = true}
-alloy                                       = { workspace = true}
+sp-core                                     = { workspace = true, default-features = false}
 sp-runtime                                  = { workspace = true}
+base58                                      = { workspace = true}
+hex-literal                                 = "0.4.1"
+serde_json                                  = { workspace = true}
+
+
+#solana-client-wasm                          = { workspace = true}
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+db                                          = { workspace = true}
+moka                                        = { workspace = true}
+rcgen                                       = { workspace = true}
 reconnecting-jsonrpsee-ws-client            = { workspace = true}
 jsonrpsee                                   = { workspace = true}
 reqwest                                     = { workspace = true, features = ["json"] }
-airtable-api                                = { workspace = true}
+tokio                                       = { workspace = true}
+tokio-stream                                = "0.1.15"
 tinyrand                                    = "0.5.0"
-serde_json                                  = { workspace = true}
-base58                                      = { workspace = true}
 curve25519-dalek                            = { workspace = true}
 local-ip-address                            = { workspace = true}
 rand                                        = { workspace = true}
-moka                                        = { workspace = true}
-rcgen                                       = { workspace = true}
-#solana-client-wasm                          = { workspace = true}
+alloy                                       = { workspace = true}
+libp2p                                      = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
+sc-network                                  = "0.45.1"
+sc-service                                  = { workspace = true}
+subxt                                       = { workspace = true}
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwasm                                     = {version = "0.5.0", default-features = true}
+tokio_with_wasm                             = { version = "0.7.4", features = ["full"]}
+libp2p                                      = { workspace = true, features = ["wasm-bindgen","webtransport-websys","websocket-websys","json"]}
+async-stream                                = { version = "0.3.6"}
+futures                                     = { version = "0.3.31", features = ["alloc","async-await"]}
+lru                                         = "0.12.5"
+alloy                                       = { workspace = true, default-features = false, features = ["wasm-bindgen","k256", "reqwest"]}
+web3                                        = { version = "0.19.0", default-features = false, features = ["wasm","eip-1193","http"]}
+wasm-bindgen-futures                        = "0.4.49"
+web-sys                                     = "0.3.76"
+#subxt                                       = { workspace = true, default-features = false, features = ["web"]}
+curve25519-dalek                            = { workspace = true, default-features = false, features = ["alloc"]}
+rand                                        = {version = "0.8.5", default-features = false, features = ["alloc"]}
+db-wasm                                     = { workspace = true}
 
 [features]
 e2e = []
+std = [
+    "sp-core/std",
+    "codec/std",
+    "sp-runtime/std"
+]
