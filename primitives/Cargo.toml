@@ -23,7 +23,6 @@ libp2p       = { workspace = true, features = ["tcp", "tls", "dns","request-resp
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 libp2p      = { workspace = true, default-features = false, features = ["wasm-bindgen", "websocket","request-response"] }
-wasm-bindgen                                = "0.2.99"
 
 [features]
 default = []

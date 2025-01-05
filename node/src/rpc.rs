@@ -49,6 +49,8 @@ mod std_imports {
     pub use reqwest::{ClientBuilder, Url};
     pub use tokio::sync::mpsc::{Receiver, Sender};
     pub use tokio::sync::{Mutex, MutexGuard};
+    pub use sp_core::Blake2Hasher;
+    pub use sp_core::Hasher;
 }
 
 // -------------------- WASM CRATES IMPORT ------------------ //
@@ -867,7 +869,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
                 receiver_address: receiver,
-                multi_id: multi_addr,
+                multi_id: multi_addr.into(),
                 recv_signature: None,
                 network: net_sender,
                 status: TxStatus::default(),

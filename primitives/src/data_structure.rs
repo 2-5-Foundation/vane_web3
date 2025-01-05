@@ -11,13 +11,11 @@ use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use twox_hash::XxHash64;
-use wasm_bindgen::prelude::wasm_bindgen;
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
 
 /// tx state
-#[wasm_bindgen]
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
@@ -92,7 +90,6 @@ where
 
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
-#[wasm_bindgen]
 pub struct TxStateMachine {
     #[serde(rename = "senderAddress")]
     pub sender_address: String,
@@ -300,7 +297,6 @@ impl From<Token> for ChainSupported {
 
 /// Supported blockchain networks along with rpc provider url
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode, Copy)]
-#[wasm_bindgen]
 pub enum ChainSupported {
     Polkadot,
     Ethereum,

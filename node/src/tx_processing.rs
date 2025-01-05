@@ -36,6 +36,8 @@ mod tx_std_imports {
     pub use alloy::rpc::types::TransactionRequest;
     pub use tokio::sync::mpsc::Receiver;
     pub use tokio::sync::Mutex;
+    pub use crate::rpc::Blake2Hasher;
+    pub use sp_core::Hasher;
 }
 
 // ------------------------------------- WASM ------------------------------------- //
@@ -362,7 +364,7 @@ impl TxProcessingWorker {
             Blake2Hasher::hash(&sender_recv[..])
         };
 
-        post_multi_id == txn.multi_id
+        post_multi_id == H256(txn.multi_id)
     }
 
     /// simulate the recipient blockchain network for mitigating errors resulting to wrong network selection

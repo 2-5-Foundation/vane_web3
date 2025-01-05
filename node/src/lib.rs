@@ -26,7 +26,6 @@ use primitives::data_structure::{
     TxStateMachine, TxStatus,
 };
 pub use rand::Rng;
-use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
@@ -69,6 +68,8 @@ mod lib_wasm_imports {
     pub use db_wasm::OpfsRedbWorker;
     pub use lru::LruCache;
     pub use futures::FutureExt;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
+
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -563,6 +564,7 @@ impl WasmMainServiceWorker {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub async fn start_vane_web3(db_url: Option<String>) -> Result<PublicInterfaceWorker, JsValue> {
     let worker = WasmMainServiceWorker::run(db_url)

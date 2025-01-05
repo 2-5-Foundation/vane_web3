@@ -1,11 +1,11 @@
 [workspace]
-#members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
+members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
 resolver = "2"
 
 # Members for wasm builds
 #[workspace.target.'cfg(target_arch = "wasm32")']
-members = ["db-wasm", "node", "primitives"]
-default-members = ["db-wasm", "node", "primitives"]
+#members = ["db-wasm", "node", "primitives"]
+#default-members = ["db-wasm", "node", "primitives"]
 
 
 [workspace.dependencies]
