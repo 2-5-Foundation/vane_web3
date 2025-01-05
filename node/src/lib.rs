@@ -1,9 +1,3 @@
-#![cfg(all(target_arch = "wasm32", not(feature = "std")))]
-pub const WASM_BINARY: &[u8] = include_bytes!(concat!(
-env!("CARGO_MANIFEST_DIR"), "/target/wasm32-unknown-unknown/release/node.wasm"));
-
-#[cfg(any(not(target_arch = "wasm32"), feature = "std"))]
-pub const WASM_BINARY: &[u8] = &[];
 
 extern crate alloc;
 extern crate core;
@@ -32,6 +26,7 @@ use primitives::data_structure::{
     TxStateMachine, TxStatus,
 };
 pub use rand::Rng;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
@@ -80,7 +75,7 @@ mod lib_wasm_imports {
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
     pub db_worker: Rc<OpfsRedbWorker>,
-    pub tx_rpc_worker: Rc<PublicInterfaceWorker>,
+    pub public_interface_worker: Rc<RefCell<PublicInterfaceWorker>>,
     pub wasm_tx_processing_worker: Rc<RefCell<WasmTxProcessingWorker>>,
     pub airtable_client: AirtableWasm,
     // for swarm events
@@ -159,7 +154,7 @@ impl WasmMainServiceWorker {
         // TRANSACTION RPC WORKER / PUBLIC INTERFACE
         // ===================================================================================== //
 
-        let txn_rpc_worker = PublicInterfaceWorker::new(
+        let public_interface_worker = PublicInterfaceWorker::new(
             airtable_client.clone(),
             db_worker.clone(),
             Rc::new(RefCell::new(rpc_recv_channel)),
@@ -181,7 +176,7 @@ impl WasmMainServiceWorker {
 
         Ok(Self {
             db_worker,
-            tx_rpc_worker: Rc::new(txn_rpc_worker),
+            public_interface_worker: Rc::new(RefCell::new(public_interface_worker)),
             wasm_tx_processing_worker: Rc::new(RefCell::new(wasm_tx_processing_worker)),
             airtable_client,
             p2p_worker: Rc::new(RefCell::new(p2p_worker)),
@@ -530,7 +525,7 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn run(db_url: Option<String>) -> Result<(), anyhow::Error> {
+    pub async fn run(db_url: Option<String>) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -539,14 +534,12 @@ impl WasmMainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url).await?;
+        let mut main_worker = Self::new(db_url).await?;
 
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
-
-        // ====================================================================================== //
 
         // ====================================================================================== //
 
@@ -565,10 +558,19 @@ impl WasmMainServiceWorker {
             }
         }
 
-        Ok(())
+        let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
+        Ok(public_interface_worker)
     }
 }
 
+#[wasm_bindgen]
+pub async fn start_vane_web3(db_url: Option<String>) -> Result<PublicInterfaceWorker, JsValue> {
+    let worker = WasmMainServiceWorker::run(db_url)
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    Ok(worker)
+}
 // -------------------------------------------------------------------- //
 
 #[cfg(not(target_arch = "wasm32"))]
