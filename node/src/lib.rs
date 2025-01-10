@@ -1,9 +1,3 @@
-#![cfg(all(target_arch = "wasm32", not(feature = "std")))]
-pub const WASM_BINARY: &[u8] = include_bytes!(concat!(
-env!("CARGO_MANIFEST_DIR"), "/target/wasm32-unknown-unknown/release/node.wasm"));
-
-#[cfg(any(not(target_arch = "wasm32"), feature = "std"))]
-pub const WASM_BINARY: &[u8] = &[];
 
 extern crate alloc;
 extern crate core;
@@ -74,13 +68,15 @@ mod lib_wasm_imports {
     pub use db_wasm::OpfsRedbWorker;
     pub use lru::LruCache;
     pub use futures::FutureExt;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
+
 }
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
     pub db_worker: Rc<OpfsRedbWorker>,
-    pub tx_rpc_worker: Rc<PublicInterfaceWorker>,
+    pub public_interface_worker: Rc<RefCell<PublicInterfaceWorker>>,
     pub wasm_tx_processing_worker: Rc<RefCell<WasmTxProcessingWorker>>,
     pub airtable_client: AirtableWasm,
     // for swarm events
@@ -159,7 +155,7 @@ impl WasmMainServiceWorker {
         // TRANSACTION RPC WORKER / PUBLIC INTERFACE
         // ===================================================================================== //
 
-        let txn_rpc_worker = PublicInterfaceWorker::new(
+        let public_interface_worker = PublicInterfaceWorker::new(
             airtable_client.clone(),
             db_worker.clone(),
             Rc::new(RefCell::new(rpc_recv_channel)),
@@ -181,7 +177,7 @@ impl WasmMainServiceWorker {
 
         Ok(Self {
             db_worker,
-            tx_rpc_worker: Rc::new(txn_rpc_worker),
+            public_interface_worker: Rc::new(RefCell::new(public_interface_worker)),
             wasm_tx_processing_worker: Rc::new(RefCell::new(wasm_tx_processing_worker)),
             airtable_client,
             p2p_worker: Rc::new(RefCell::new(p2p_worker)),
@@ -530,7 +526,7 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn run(db_url: Option<String>) -> Result<(), anyhow::Error> {
+    pub async fn run(db_url: Option<String>) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -539,14 +535,12 @@ impl WasmMainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url).await?;
+        let mut main_worker = Self::new(db_url).await?;
 
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
-
-        // ====================================================================================== //
 
         // ====================================================================================== //
 
@@ -565,10 +559,20 @@ impl WasmMainServiceWorker {
             }
         }
 
-        Ok(())
+        let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
+        Ok(public_interface_worker)
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn start_vane_web3(db_url: Option<String>) -> Result<PublicInterfaceWorker, JsValue> {
+    let worker = WasmMainServiceWorker::run(db_url)
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    Ok(worker)
+}
 // -------------------------------------------------------------------- //
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -593,7 +597,7 @@ pub struct MainServiceWorker {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MainServiceWorker {
-    pub(crate) async fn new(db_url_path: Option<String>) -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(db_url_path: Option<String>, port: Option<u16>) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -623,8 +627,13 @@ impl MainServiceWorker {
             p2p_port = ports.p_2_p_port as u16;
         } else {
             let (rp_port, p2_port) = {
-                let port = rand::thread_rng().gen_range(0..=u16::MAX);
-                (port, port - 541)
+                if let Some(port) = port {
+                    (port, port - 541)
+                }else{
+                    let port = rand::thread_rng().gen_range(0..=u16::MAX);
+                    (port, port - 541)
+                }
+
             };
             {
                 db.set_ports(rp_port, p2_port).await?
@@ -974,6 +983,7 @@ impl MainServiceWorker {
             .lock()
             .await
             .validate_receiver_sender_address(&txn_inner, "Sender")?;
+        log::info!(target: "MainServiceWorker","sender verification passed");
         // verify multi id
         if self
             .tx_processing_worker
@@ -983,6 +993,8 @@ impl MainServiceWorker {
         {
             // TODO! handle submission errors
             // signed and ready to be submitted to target chain
+            log::info!(target: "MainServiceWorker","multiId verification passed");
+
             match self
                 .tx_processing_worker
                 .lock()
@@ -998,6 +1010,7 @@ impl MainServiceWorker {
                         .await
                         .send(txn_inner.clone())
                         .await?;
+
                     // update local db on success tx
                     let db_tx = DbTxStateMachine {
                         tx_hash: tx_hash.to_vec(),
@@ -1006,6 +1019,8 @@ impl MainServiceWorker {
                         success: true,
                     };
                     self.db_worker.lock().await.update_success_tx(db_tx).await?;
+
+                    log::info!(target: "MainServiceWorker","Db recorded success tx");
                 }
                 Err(err) => {
                     txn_inner.tx_submission_failed(format!(
@@ -1096,7 +1111,7 @@ impl MainServiceWorker {
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
-    pub async fn run(db_url: Option<String>) -> Result<(), anyhow::Error> {
+    pub async fn run(db_url: Option<String>, port: Option<u16>) -> Result<(), anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -1105,7 +1120,7 @@ impl MainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url).await?;
+        let main_worker = Self::new(db_url,port).await?;
         // start rpc server
         let rpc_address = main_worker
             .start_rpc_server()

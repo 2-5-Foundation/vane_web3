@@ -5,3 +5,4 @@ Cargo.lock
 /db/migrations
 /integration-test/vane.log
 /integration-test/vane-test.log
++.env

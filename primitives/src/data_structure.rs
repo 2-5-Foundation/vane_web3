@@ -11,7 +11,6 @@ use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use twox_hash::XxHash64;
-
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -40,6 +39,7 @@ pub enum TxStatus {
     /// if the receiver has not registered to vane yet
     ReceiverNotRegistered,
 }
+
 impl Default for TxStatus {
     fn default() -> Self {
         Self::Genesis
@@ -338,7 +338,7 @@ impl From<&str> for ChainSupported {
 impl ChainSupported {
     // Associated constants representing network URLs or other constants
     const POLKADOT_URL: &'static str = "wss://polkadot-rpc.dwellir.com";
-    const ETHEREUM_URL: &'static str = "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID";
+    const ETHEREUM_URL: &'static str = "http://127.0.0.1:8545";
     const BNB_URL: &'static str = "https://bsc-dataseed.binance.org/";
     const SOLANA_URL: &'static str = "https://api.mainnet-beta.solana.com";
 
@@ -406,6 +406,7 @@ pub struct Discovery {
     pub peer_id: Option<String>,
     pub multi_addr: Option<String>,
     pub account_ids: Vec<String>,
+    pub rpc: Option<String>
 }
 
 impl From<Discovery> for PeerRecord {
@@ -495,6 +496,8 @@ pub struct Fields {
     pub account_id3: Option<String>,
     #[serde(rename = "accountId4", default)]
     pub account_id4: Option<String>,
+    #[serde(rename = "rpc", default)]
+    pub rpc: Option<String>
 }
 
 #[cfg(feature = "e2e")]
@@ -507,6 +510,7 @@ impl Default for Fields {
             account_id2: Some("2".to_string()),
             account_id3: Some("3".to_string()),
             account_id4: Some("4".to_string()),
+            rpc: Some("ws://192.168.1.177:39838".to_string()),
         }
     }
 }
@@ -523,6 +527,7 @@ impl From<PeerRecord> for Fields {
             account_id2: None,
             account_id3: None,
             account_id4: None,
+            rpc: None,
         };
 
         if let Some(acc_1) = value.account_id1 {

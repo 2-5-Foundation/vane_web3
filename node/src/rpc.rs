@@ -11,7 +11,10 @@
 // ========================================
 
 extern crate alloc;
+
+use core::str::FromStr;
 use anyhow::anyhow;
+use jsonrpsee::core::JsonValue;
 
 use log::{info, trace};
 
@@ -46,6 +49,8 @@ mod std_imports {
     pub use reqwest::{ClientBuilder, Url};
     pub use tokio::sync::mpsc::{Receiver, Sender};
     pub use tokio::sync::{Mutex, MutexGuard};
+    pub use sp_core::Blake2Hasher;
+    pub use sp_core::Hasher;
 }
 
 // -------------------- WASM CRATES IMPORT ------------------ //
@@ -64,13 +69,11 @@ mod rpc_wasm_imports {
     pub use reqwasm::http::{Request, RequestMode};
     pub use tokio_with_wasm::sync::mpsc::{Receiver, Sender};
     pub use tokio_with_wasm::sync::{Mutex, MutexGuard};
+    pub use wasm_bindgen::JsValue;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
 }
 
-// ----------------------------------------------------------- //
-
-const AIRTABLE_SECRET: &'static str =
-    "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";
-const AIRTABLE_CLIENT_ID: &'static str = "82c3deff-d786-465c-b456-b24c92c2c42f";
+// ----------------------------------------------------------- /
 const AIRTABLE_TOKEN: &'static str =
     "patk0xLAgM5lDfRnF.33307d75c85fdf2118d71025aa11eee60a87f9dc51ad876f56013054c1492540";
 const BASE_ID: &'static str = "appP1AoGmxoh2EmDI";
@@ -235,7 +238,7 @@ impl PublicInterfaceWorker {
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
         lru_cache: LruCache<u64, TxStateMachine>,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
             airtable_client: Rc::new(airtable_client),
@@ -248,14 +251,16 @@ impl PublicInterfaceWorker {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
 impl PublicInterfaceWorker {
 
+    #[wasm_bindgen]
     pub async fn register_vane_web3(
         &self,
         name: String,
         account_id: String,
         network: String,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), JsValue> {
         // TODO verify the account id as it belongs to the registerer
         let network = network.as_str().into();
         let user_account = UserAccount {
@@ -264,7 +269,7 @@ impl PublicInterfaceWorker {
             network,
         };
 
-        self.db_worker.set_user_account(user_account).await?;
+        self.db_worker.set_user_account(user_account).await.map_err(|e|JsonValue::from_str(e.into()))?;
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
@@ -274,7 +279,7 @@ impl PublicInterfaceWorker {
         let record = self
             .db_worker
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
-            .await?;
+            .await.map_err(|e|JsonValue::from_str(e.into()))?;
 
         let peer_account = PeerRecord {
             record_id: record.record_id.clone(),
@@ -290,7 +295,7 @@ impl PublicInterfaceWorker {
 
         self.db_worker
             .update_user_peer_id_accounts(peer_account.clone())
-            .await?;
+            .await.map_err(|e|JsonValue::from_str(e.into()))?;
 
         // update to airtable
         let field: Fields = peer_account.into();
@@ -298,13 +303,14 @@ impl PublicInterfaceWorker {
 
         self.airtable_client
             .update_peer(req_body, record.record_id)
-            .await?;
+            .await.map_err(|e|JsonValue::from_str(e.into()))?;
 
         info!("updated airtable db with user peer id");
 
         Ok(())
     }
 
+    #[wasm_bindgen]
     pub async fn initiate_transaction(
         &self,
         sender: String,
@@ -312,7 +318,7 @@ impl PublicInterfaceWorker {
         amount: u128,
         token: String,
         network: String,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), JsValue> {
         info!("initiated sending transaction");
         let token = token.as_str().into();
 
@@ -322,7 +328,7 @@ impl PublicInterfaceWorker {
             verify_public_bytes(receiver.as_str(), token, network),
         ) {
             if net_sender != net_recv {
-                Err(anyhow!("sender and receiver should be same network"))?
+                Err(anyhow!("sender and receiver should be same network")).map_err(|e|JsonValue::from_str(e.into()))?;
             }
 
             info!("successfully initially verified sender and receiver and related network bytes");
@@ -332,9 +338,9 @@ impl PublicInterfaceWorker {
             let multi_addr = blake2_256(&sender_recv[..]);
 
             let mut nonce = 0;
-            nonce = self.db_worker.get_nonce().await? + 1;
+            nonce = self.db_worker.get_nonce().await.map_err(|e|JsonValue::from_str(e.into()))? + 1;
             // update the db on nonce
-            self.db_worker.increment_nonce().await?;
+            self.db_worker.increment_nonce().await.map_err(|e|JsonValue::from_str(e.into()))?;
 
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
@@ -360,23 +366,24 @@ impl PublicInterfaceWorker {
             sender
                 .send(tx_state_machine)
                 .await
-                .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))?;
+                .map_err(|_| anyhow!("failed to send initial tx state to sender channel")).map_err(|e|JsonValue::from_str(e.into()))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
-            ))?
+            )).map_err(|e|JsonValue::from_str(e.into()))?;
         }
         Ok(())
     }
 
-    pub async fn sender_confirm(&self, mut tx: TxStateMachine) -> Result<(), anyhow::Error> {
+    #[wasm_bindgen]
+    pub async fn sender_confirm(&self, mut tx: TxStateMachine) -> Result<(), JsValue> {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
-            ))?
+            )).map_err(|e|JsonValue::from_str(e.into()))?;
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -387,30 +394,34 @@ impl PublicInterfaceWorker {
             let sender = sender_channel.clone();
             sender.send(tx).await.map_err(|_| {
                 anyhow!("failed to send sender confirmation tx state to sender-channel")
-            })?;
+            }).map_err(|e|JsonValue::from_str(e.into()))?;
         }
         Ok(())
     }
 
-    async fn watch_tx_updates(&self) -> Result<(), anyhow::Error> {
+    async fn watch_tx_updates(&self) -> Result<(), JsValue> {
         Ok(())
     }
 
-    async fn fetch_pending_tx_updates(&self) -> Result<Vec<TxStateMachine>, anyhow::Error> {
+    #[wasm_bindgen]
+    async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
         let tx_updates = self
             .lru_cache.borrow()
             .iter()
             .map(|(_k, v)| v.clone())
             .collect::<Vec<TxStateMachine>>();
         println!("lru: {tx_updates:?}");
-        Ok(tx_updates)
+
+        JsValue::from_serde(&tx_updates)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
-    pub async fn receiver_confirm(&self, mut tx: TxStateMachine) -> Result<(), anyhow::Error> {
+    #[wasm_bindgen]
+    pub async fn receiver_confirm(&self, mut tx: TxStateMachine) -> Result<(), JsValue> {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
-            Err(anyhow!("Receiver did not confirm".to_string()))?
+            Err(anyhow!("Receiver did not confirm".to_string())).map_err(|e|JsonValue::from_str(e.into()))?
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -421,7 +432,8 @@ impl PublicInterfaceWorker {
             let sender = sender_channel.clone();
             sender.send(tx).await.map_err(|_| {
                 anyhow!("failed to send recv confirmation tx state to sender channel")
-            })?;
+            }).map_err(|e|JsonValue::from_str(e.into()))?;
+
             Ok(())
         }
     }
@@ -497,6 +509,7 @@ impl Airtable {
                 peer_id: record.fields.peer_id,
                 multi_addr: record.fields.multi_addr,
                 account_ids: accounts,
+                rpc: record.fields.rpc,
             };
             peers.push(disc)
         });
@@ -541,9 +554,12 @@ impl Airtable {
             url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
 
         let acc_id = record.fields.account_id1.unwrap();
+        let rpc = record.fields.rpc.unwrap();
+
         let patch_value = serde_json::json!({
             "fields":{
-                "accountId1":acc_id
+                "accountId1":acc_id,
+                "rpc": rpc
             }
         });
         let resp = self
@@ -616,6 +632,7 @@ pub trait TransactionRpc {
     ///  - `name`
     ///  - `accountId`
     ///  - `network`
+    ///  - `rpc url`
 
     #[method(name = "register")]
     async fn register_vane_web3(
@@ -623,6 +640,7 @@ pub trait TransactionRpc {
         name: String,
         account_id: String,
         network: String,
+        rpc: String
     ) -> RpcResult<()>;
 
     /// add crypto address account
@@ -752,6 +770,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         name: String,
         account_id: String,
         network: String,
+        rpc: String
     ) -> RpcResult<()> {
         // TODO verify the account id as it belongs to the registerer
         let network = network.as_str().into();
@@ -797,7 +816,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await?;
 
         // update to airtable
-        let field: Fields = peer_account.into();
+        let mut field: Fields = peer_account.into();
+        field.rpc = Some(rpc);
         let req_body = PostRecord::new(field);
 
         self.airtable_client
@@ -853,7 +873,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
                 receiver_address: receiver,
-                multi_id: multi_addr,
+                multi_id: multi_addr.into(),
                 recv_signature: None,
                 network: net_sender,
                 status: TxStatus::default(),

@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+walkdir = "2.5.0"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 node                                        = { workspace = true, features = ["e2e"]}
 anyhow                                      = { workspace = true}
@@ -21,7 +22,8 @@ codec                                       = { workspace = true}
 jsonrpsee                                   = { workspace = true}
 alloy                                       = { workspace = true, features = ["full"]}
 alloy-primitives                            = { workspace = true}
-rand = "0.8.5"
+rand                                        = "0.8.5"
+walkdir                                     = "2.5.0"
 
 [features]
 e2e = []

@@ -1,5 +1,5 @@
 [package]
-name = "app"
+name = "vane_web3_app"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,8 +7,6 @@ edition = "2021"
 
 [dependencies]
 node                                        = { workspace = true}
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio                                       = { workspace = true}
 anyhow                                      = { workspace = true}
 log                                         = { workspace = true}
@@ -16,3 +14,5 @@ simple_logger                               = { workspace = true}
 simplelog                                   = "^0.12.0"
 clap                                        = { version = "4.5.21", features = ["derive"] }
 
+#[target.aarch64-unknown-linux-gnu]
+#linker = "aarch64-unknown-linux-gnu-gcc"

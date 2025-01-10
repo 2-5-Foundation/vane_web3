@@ -29,6 +29,9 @@ struct Args {
     /// Database URL to use
     #[arg(short, long)]
     pub db_url: Option<String>,
+    /// port
+    #[arg(short, long)]
+    pub port: Option<u16>,
 }
 
 #[tokio::main]
@@ -36,7 +39,7 @@ async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
 
-    node::MainServiceWorker::run(args.db_url).await?;
+    node::MainServiceWorker::run(args.db_url,args.port).await?;
     Ok(())
 }
 

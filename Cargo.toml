@@ -1,11 +1,11 @@
 [workspace]
-#members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
+members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
 resolver = "2"
 
 # Members for wasm builds
 #[workspace.target.'cfg(target_arch = "wasm32")']
-members = ["db-wasm", "node", "primitives"]
-default-members = ["db-wasm", "node", "primitives"]
+#members = ["db-wasm", "node", "primitives"]
+#default-members = ["db-wasm", "node", "primitives"]
 
 
 [workspace.dependencies]
@@ -18,7 +18,7 @@ aes-gcm                                 = { version = "0.10.3", features = ["aes
 libp2p                                  = { version = "0.53.2"}
 alloy                                   = { version = "0.3"}
 alloy-primitives                        = "0.8.11"
-sp-runtime                              = { version = "39.0.0",default-features = false}
+sp-runtime                              = { version = "39.0.0"}
 jsonrpsee                               = { version = "0.17", features = ["server", "client-core", "http-client", "ws-client", "macros"] }
 notion                                  = "0.6.0"
 reconnecting-jsonrpsee-ws-client        = "0.4.3"

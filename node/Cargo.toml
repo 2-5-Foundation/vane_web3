@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[build-dependencies]
-wasm-builder = "3.0.1"
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 
 
 [dependencies]
@@ -36,12 +37,11 @@ tinyrand                                    = "0.5.0"
 curve25519-dalek                            = { workspace = true}
 local-ip-address                            = { workspace = true}
 rand                                        = { workspace = true}
-alloy                                       = { workspace = true}
+alloy                                       = { workspace = true,features = ["full"]}
 libp2p                                      = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"]}
 sc-network                                  = "0.45.1"
 sc-service                                  = { workspace = true}
 subxt                                       = { workspace = true}
-
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 reqwasm                                     = {version = "0.5.0", default-features = true}
@@ -53,6 +53,7 @@ lru                                         = "0.12.5"
 alloy                                       = { workspace = true, default-features = false, features = ["wasm-bindgen","k256", "reqwest"]}
 web3                                        = { version = "0.19.0", default-features = false, features = ["wasm","eip-1193","http"]}
 wasm-bindgen-futures                        = "0.4.49"
+wasm-bindgen                                = "0.2.99"
 web-sys                                     = "0.3.76"
 #subxt                                       = { workspace = true, default-features = false, features = ["web"]}
 curve25519-dalek                            = { workspace = true, default-features = false, features = ["alloc"]}
