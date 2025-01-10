@@ -1,5 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::fs;
+use walkdir::WalkDir;
 
 use alloy::signers::SignerSync;
 use alloy::signers::{local::PrivateKeySigner, Signer};
@@ -31,6 +33,41 @@ fn log_setup() -> Result<(), anyhow::Error> {
             File::create("vane-test.log").unwrap(),
         ),
     ])?;
+    Ok(())
+}
+
+fn delete_unnecessary_test_files() -> Result<(), anyhow::Error> {
+    // Get current directory
+    let binding = std::env::current_dir().unwrap();
+    let current_dir = binding.parent().unwrap();
+
+    // Navigate to db directory
+    let search_dir = current_dir.join("db");
+
+    let patterns = [".db"];
+
+    for entry in WalkDir::new(search_dir)
+        .into_iter() {
+        match entry {
+            Ok(entry) => {
+                let path = entry.path();
+
+                if patterns.iter().any(|pattern| {
+                    path.to_string_lossy()
+                        .to_string()
+                        .contains(pattern)
+                }) {
+                    if let Err(e) = fs::remove_file(path) {
+                        println!("Error deleting file {:?}: {}", path, e);
+                    } else {
+                        println!("Deleted: {:?}", path);
+                    }
+                }
+            },
+            Err(e) => println!("Error accessing entry: {}", e),
+        }
+    }
+
     Ok(())
 }
 
@@ -265,7 +302,7 @@ mod e2e_tests {
         // testing 2 phantom wallet
         //0xb82e9d2e1d6fe235859ae5ea619486d084d87ad8d48fb96f0923cd93ae39b4ac
         let testing2_priv_key =
-            hex::decode(&"b82e9d2e1d6fe235859ae5ea619486d084d87ad8d48fb96f0923cd93ae39b4ac")
+            hex::decode(&"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
                 .unwrap();
         let signing_key_1 =
             SigningKey::from_bytes(<&FieldBytes>::from(&testing2_priv_key[..])).unwrap();
@@ -275,7 +312,7 @@ mod e2e_tests {
         // meme coin phantom wallet
         //0x30ec8bace0712e3f653bf986cbceae3fd017ceccd7636097687d12143b298f01
         let meme_priv_key =
-            hex::decode(&"30ec8bace0712e3f653bf986cbceae3fd017ceccd7636097687d12143b298f01")
+            hex::decode(&"59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
                 .unwrap();
         let signing_key_2 =
             SigningKey::from_bytes(<&FieldBytes>::from(&meme_priv_key[..])).unwrap();
@@ -288,7 +325,7 @@ mod e2e_tests {
         // ----------------------------------------------------------------------------------------//
         // ============================================================================
         let main_worker_1 = MainServiceWorker::e2e_new(port, "../db/test2.db").await?;
-        let main_worker_2 = MainServiceWorker::e2e_new(port + 890, "../db/test3.db").await?;
+        let main_worker_2 = MainServiceWorker::e2e_new(port + 80, "../db/test3.db").await?;
         let airtable_client = main_worker_1
             .tx_rpc_worker
             .lock()
@@ -338,6 +375,7 @@ mod e2e_tests {
             .insert(wallet_1.address().to_string())
             .unwrap();
         register_params_1.insert(network_id.clone()).unwrap();
+        register_params_1.insert("ws://bla.900").unwrap();
 
         let mut register_params_2 = ArrayParams::new();
         register_params_2.insert("Haji").unwrap();
@@ -345,6 +383,7 @@ mod e2e_tests {
             .insert(wallet_2.address().to_string())
             .unwrap();
         register_params_2.insert(network_id).unwrap();
+        register_params_2.insert("ws:nju.890").unwrap();
 
         // ============================================================================
 
@@ -397,7 +436,6 @@ mod e2e_tests {
                 match tx_update {
                     Ok(mut tx_state) => {
                         // Handle your TxStateMachine update here
-                        println!("\n in sub_handle 2 watching tx: {tx_state:?} \n");
                         match tx_state.status {
                             TxStatus::Genesis => {
                                 let msg = tx_state.clone().receiver_address;
@@ -439,7 +477,6 @@ mod e2e_tests {
             while let Some(tx_update) = subscription_1.next().await {
                 match tx_update {
                     Ok(mut tx_state) => {
-                        println!("\n in sub_handle 1 watching tx: {tx_state:?} \n");
                         // Handle your TxStateMachine update here
                         match tx_state.status {
                             TxStatus::RecvAddrConfirmationPassed => {
@@ -459,7 +496,13 @@ mod e2e_tests {
                                     )
                                     .await
                                     .expect("failed to confirm sender");
-                            }
+                            },
+                            TxStatus::FailedToSubmitTxn(msg) => {
+                                println!("in handle 1: {msg:?}")
+                            },
+                            TxStatus::TxSubmissionPassed(hash) => {
+                              println!("trx submitted hash: {hash:?}")
+                            },
                             _ => panic!("in sender's side txStatus is invalid"),
                         }
                     }
@@ -476,10 +519,11 @@ mod e2e_tests {
         println!("\n before initiating transactions \n");
 
         // rpc_1 (initiate transaction)
+        let amount:u128 = 1000000000000000000000;
         let mut tx_params = ArrayParams::new();
         tx_params.insert(wallet_1.address().to_string()).unwrap();
         tx_params.insert(wallet_2.address().to_string()).unwrap();
-        tx_params.insert(100_000).unwrap();
+        tx_params.insert(amount).unwrap();
         tx_params.insert("Eth".to_string()).unwrap();
         tx_params.insert("Ethereum".to_string()).unwrap();
 
@@ -491,6 +535,7 @@ mod e2e_tests {
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         // clean up
         airtable_client.delete_all().await?;
+        delete_unnecessary_test_files()?;
         Ok(())
     }
 

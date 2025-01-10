@@ -73,11 +73,7 @@ mod rpc_wasm_imports {
     pub use wasm_bindgen::prelude::wasm_bindgen;
 }
 
-// ----------------------------------------------------------- //
-
-const AIRTABLE_SECRET: &'static str =
-    "98c01b1e015d124f9317ee1c9dd1eb2deda439ef28e3d6e0975798a4a19f4768";
-const AIRTABLE_CLIENT_ID: &'static str = "82c3deff-d786-465c-b456-b24c92c2c42f";
+// ----------------------------------------------------------- /
 const AIRTABLE_TOKEN: &'static str =
     "patk0xLAgM5lDfRnF.33307d75c85fdf2118d71025aa11eee60a87f9dc51ad876f56013054c1492540";
 const BASE_ID: &'static str = "appP1AoGmxoh2EmDI";
@@ -513,6 +509,7 @@ impl Airtable {
                 peer_id: record.fields.peer_id,
                 multi_addr: record.fields.multi_addr,
                 account_ids: accounts,
+                rpc: record.fields.rpc,
             };
             peers.push(disc)
         });
@@ -557,9 +554,12 @@ impl Airtable {
             url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
 
         let acc_id = record.fields.account_id1.unwrap();
+        let rpc = record.fields.rpc.unwrap();
+
         let patch_value = serde_json::json!({
             "fields":{
-                "accountId1":acc_id
+                "accountId1":acc_id,
+                "rpc": rpc
             }
         });
         let resp = self
@@ -632,6 +632,7 @@ pub trait TransactionRpc {
     ///  - `name`
     ///  - `accountId`
     ///  - `network`
+    ///  - `rpc url`
 
     #[method(name = "register")]
     async fn register_vane_web3(
@@ -639,6 +640,7 @@ pub trait TransactionRpc {
         name: String,
         account_id: String,
         network: String,
+        rpc: String
     ) -> RpcResult<()>;
 
     /// add crypto address account
@@ -768,6 +770,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         name: String,
         account_id: String,
         network: String,
+        rpc: String
     ) -> RpcResult<()> {
         // TODO verify the account id as it belongs to the registerer
         let network = network.as_str().into();
@@ -813,7 +816,8 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .await?;
 
         // update to airtable
-        let field: Fields = peer_account.into();
+        let mut field: Fields = peer_account.into();
+        field.rpc = Some(rpc);
         let req_body = PostRecord::new(field);
 
         self.airtable_client

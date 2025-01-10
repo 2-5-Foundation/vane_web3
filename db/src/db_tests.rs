@@ -1,4 +1,4 @@
-use crate::DbWorker;
+use crate::LocalDbWorker;
 use aead::Aead;
 use aes_gcm::aes::cipher::consts::{U12, U16};
 use aes_gcm::{Aes128Gcm, Key, KeyInit, Nonce};
@@ -8,7 +8,7 @@ use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, U
 use tokio;
 
 async fn storing_success_n_failed_tx_works() -> Result<(), anyhow::Error> {
-    let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+    let db_client = LocalDbWorker::initialize_db_client("./dev.db").await?;
 
     let success_tx = DbTxStateMachine {
         tx_hash: b"0x12345".to_vec(),
@@ -51,7 +51,7 @@ async fn storing_success_n_failed_tx_works() -> Result<(), anyhow::Error> {
 }
 
 async fn user_creation_n_retrieving_works() -> Result<(), anyhow::Error> {
-    let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+    let db_client = LocalDbWorker::initialize_db_client("./dev.db").await?;
 
     let user_account1 = UserAccount {
         user_name: "Mrisho".to_string(),
@@ -104,7 +104,7 @@ async fn user_creation_n_retrieving_works() -> Result<(), anyhow::Error> {
 }
 
 async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> {
-    let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+    let db_client = LocalDbWorker::initialize_db_client("./dev.db").await?;
 
     let test_keypair_peer = libp2p::identity::Keypair::generate_ed25519();
     let peer_id = test_keypair_peer.public().to_peer_id().to_base58();
@@ -150,7 +150,7 @@ async fn storing_user_peer_id_n_retrieving_works() -> Result<(), anyhow::Error> 
 }
 
 async fn storing_n_retrieving_saved_peers_works() -> Result<(), anyhow::Error> {
-    let db_client = DbWorker::initialize_db_client("./dev.db").await?;
+    let db_client = LocalDbWorker::initialize_db_client("./dev.db").await?;
 
     let test_keypair_peer = libp2p::identity::Keypair::generate_ed25519();
     let peer_id = test_keypair_peer.public().to_peer_id().to_base58();

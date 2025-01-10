@@ -400,28 +400,44 @@ impl TxProcessingWorker {
             }
 
             ChainSupported::Ethereum => {
-                let from_address: Address = tx.sender_address.parse().expect("Invalid address");
-                let to_address: Address = tx.receiver_address.parse().expect("Invalid address");
+
+                let sender_address = tx.sender_address.parse().expect("Invalid sender address");
+                let to_address: Address = tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
 
-                // TODO upgrade to EIP7702
+                // Get nonce
+                let nonce = self.eth_client
+                    .get_transaction_count(sender_address)
+                    .await?;
+
+                // Get fee estimates
+                let fee_estimate = self.eth_client
+                    .estimate_eip1559_fees(None)
+                    .await?;
+
+                let max_fee = fee_estimate.max_fee_per_gas;
+                let priority_fee = fee_estimate.max_priority_fee_per_gas;
+
+                // Set gas limit (either calculate or use fixed amount)
+                let gas_limit:u128 = U256::from(21000).try_into().expect("failed to convert to u128"); // Basic ETH transfer gas limit
+
                 let tx_builder = TransactionRequest::default()
-                    .with_from(from_address)
                     .with_to(to_address)
                     .with_value(value)
-                    .with_nonce(0)
                     .with_chain_id(56)
-                    .with_gas_limit(21_000)
-                    .with_max_priority_fee_per_gas(1_000_000_000)
-                    .with_max_fee_per_gas(20_000_000_000)
+                    // Add required EIP-1559 fields
+                    .with_nonce(nonce)  // Get from eth_client.get_transaction_count
+                    .with_gas_limit(gas_limit.into())  // Either calculate or set fixed amount
+                    .with_max_fee_per_gas(max_fee)  // Get from eth_client.estimate_eip1559_fees
+                    .with_max_priority_fee_per_gas(priority_fee)  // Also from estimate_fees
                     .build_unsigned()
                     .map_err(|err| {
-                        anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
+                        anyhow!("cannot build tx to be signed by EOA; caused by: {err:?}")
                     })?;
 
                 let signing_hash = tx_builder
                     .eip1559()
-                    .ok_or(anyhow!("failed to convert to EIP 7702"))?
+                    .ok_or(anyhow!("failed to convert to EIP 1559"))?
                     .signature_hash();
 
                 tx.call_payload = Some(<[u8; 32]>::from(signing_hash));
@@ -434,7 +450,7 @@ impl TxProcessingWorker {
                 let tx_builder = alloy::rpc::types::TransactionRequest::default()
                     .with_to(to_address)
                     .with_value(value)
-                    .with_chain_id(56)
+                    .with_chain_id(31337)
                     .build_unsigned()
                     .map_err(|err| {
                         anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
@@ -512,22 +528,41 @@ impl TxProcessingWorker {
                 let signature = Signature::try_from(signature.as_slice())
                     .map_err(|err| anyhow!("failed to parse signature: {err}"))?;
 
-                let to_address: Address = tx.receiver_address.parse().expect("Invalid address");
+                let sender_address = tx.sender_address.parse().expect("Invalid sender address");
+                let to_address: Address = tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
+
+                // Get nonce
+                let nonce = self.eth_client
+                    .get_transaction_count(sender_address)
+                    .await?;
+
+                // Get fee estimates
+                let fee_estimate = self.eth_client
+                    .estimate_eip1559_fees(None)
+                    .await?;
+
+                let max_fee = fee_estimate.max_fee_per_gas;
+                let priority_fee = fee_estimate.max_priority_fee_per_gas;
+
+                // Set gas limit (either calculate or use fixed amount)
+                let gas_limit:u128 = U256::from(21000).try_into().expect("failed to convert to u128"); // Basic ETH transfer gas limit
 
                 let tx_builder = TransactionRequest::default()
                     .with_to(to_address)
                     .with_value(value)
-                    .with_chain_id(56)
+                    .with_chain_id(31337)
+                    // Add required EIP-1559 fields
+                    .with_nonce(nonce)  // Get from eth_client.get_transaction_count
+                    .with_gas_limit(gas_limit.into())  // Either calculate or set fixed amount
+                    .with_max_fee_per_gas(max_fee)  // Get from eth_client.estimate_eip1559_fees
+                    .with_max_priority_fee_per_gas(priority_fee)  // Also from estimate_fees
                     .build_unsigned()
                     .map_err(|err| {
-                        anyhow!("cannot build unsigned tx to be signed by EOA; caused by: {err:?}")
-                    })?
-                    .eip7702()
-                    .ok_or(anyhow!("failed to convert txn to eip7702"))?
-                    .clone();
+                        anyhow!("cannot build tx to be submitted; caused by: {err:?}")
+                    })?;
 
-                let signed_tx = tx_builder.into_signed(signature);
+                let signed_tx = tx_builder.eip1559().expect("failed to convert to EIP1559").clone().into_signed(signature);
 
                 let to_submit_tx: TransactionRequest = signed_tx.tx().clone().into();
                 let receipt = self
@@ -537,6 +572,8 @@ impl TxProcessingWorker {
                     .map_err(|err| anyhow!("failed to submit eth raw tx; caused by :{err}"))?
                     .tx_hash()
                     .clone();
+
+                log::info!(target: "MainServiceWorker","transaction submitted successfully: {receipt:?}");
 
                 receipt.to_vec().try_into().map_err(|err| {
                     anyhow!("failed to convert to 32 bytes array; caused by: {err:?}")
@@ -561,7 +598,7 @@ impl TxProcessingWorker {
                 signed_tx.tx().encode_with_signature(
                     signed_tx.signature(),
                     &mut encoded_signed_tx,
-                    false,
+                     false,
                 );
 
                 let receipt = self
