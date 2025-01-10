@@ -782,6 +782,7 @@ impl MainServiceWorker {
                                         success: false,
                                     };
                                     self.db_worker.lock().await.update_failed_tx(db_tx).await?;
+                                    log::info!(target: "MainServiceWorker","Db recorded failed transaction");
                                 }
                             }
 
