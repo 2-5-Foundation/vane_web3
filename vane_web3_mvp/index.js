@@ -1,6 +1,8 @@
 import { config } from 'dotenv';
 import Airtable from 'airtable';
 import { spawn } from 'bun';
+import ngrok from 'ngrok';
+
 import { readFile } from 'fs/promises';
 
 // Simple logger implementation for Bun
@@ -107,6 +109,20 @@ class VaneMonitor {
         throw new Error('Failed to extract RPC URL within timeout period');
     }
 
+    async createNgrokTunnel(port) {
+        try {
+            const url = await ngrok.connect({
+                addr: port,
+                proto: 'http'
+            });
+            logger.info('Created ngrok tunnel', { port, url });
+            return url.replace('https://', ''); // Remove protocol as we'll specify it later
+        } catch (error) {
+            logger.error('Failed to create ngrok tunnel', { error, port });
+            throw error;
+        }
+    }
+
     async registerWithNode(rpcUrl, twitter, ethAddress) {
         try {
             const hostRpcUrl = rpcUrl.replace(/172\.[0-9]+\.[0-9]+\.[0-9]+/, 'localhost');
@@ -123,7 +139,7 @@ class VaneMonitor {
                         twitter,           // name parameter
                         ethAddress,       // account_id parameter
                         'Ethereum',       // network parameter
-                        `ws://${rpcUrl}` // rpc parameter
+                        `wss://${rpcUrl}` // rpc parameter
                     ]
                 })
             });
@@ -158,13 +174,16 @@ class VaneMonitor {
             await Bun.sleep(3000)
             const rpcUrl = await this.extractRpcUrl(containerId);
 
+            const ngrokUrl = await this.createNgrokTunnel(containerId.rpcPort);
+
             // Register with the node
-            await this.registerWithNode(rpcUrl, Twitter, EthAddress);
+            await this.registerWithNode(ngrokUrl, Twitter, EthAddress);
 
             // Store container info
             runningContainers.set(Twitter, {
                 containerId,
                 rpcUrl,
+                publicRpcUrl: ngrokUrl,
                 EthAddress,
                 startTime: Date.now()
             });

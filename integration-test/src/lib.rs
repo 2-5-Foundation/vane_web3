@@ -533,6 +533,12 @@ mod e2e_tests {
 
         // put timeout for the test
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+        // TODO attest all storage changes and effect
+        // 1. Success Tx recorded in DB
+        // 2. Tx success value in DB
+        // 3. Balances changes
+        // 4. Revenue recorded
         // clean up
         airtable_client.delete_all().await?;
         delete_unnecessary_test_files()?;
@@ -682,43 +688,21 @@ mod e2e_tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn telemetry_test() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
     // user creating an account, and sending a wrong eth address transaction reverts
     #[tokio::test]
     async fn user_flow_eth_wrong_address_reverts() -> Result<(), anyhow::Error> {
+        // TODO
+        // 1. Wrong address signing
+        // 2. Sender gets notification on wrong address
+        // 3. Sender cancels transaction
+        // 4. Attest no Balance changes
+        // 5. Attest Db recorded Failed Tx and Failed Tx value
         Ok(())
     }
 
-    #[tokio::test]
-    async fn user_flow_bnb_works() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn user_flow_bnb_wrong_network_reverts() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-    #[tokio::test]
-    async fn user_flow_bnb_reverts() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn user_flow_brc20_works() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
 
     #[tokio::test]
     async fn revenue_eth_works() -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn revenue_bnb_works() -> Result<(), anyhow::Error> {
         Ok(())
     }
 }
