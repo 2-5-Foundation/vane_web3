@@ -127,6 +127,12 @@ Our development roadmap for the vane_web3 project:
 4. Mobile client ⏱️
 
    - Planned for the next phase, to provide a native mobile experience for users.
+  
+5. Docker container MVP setup ✅
+   - Spawn new docker containers for each registered user, this enables easy setup and better UX.
+  
+
+<img width="1239" alt="Screenshot 2025-01-11 at 02 18 55" src="https://github.com/user-attachments/assets/4cf97bbf-233f-46d6-96ba-374c98fbf7cd" />
 
 
-The team is actively working on the WASM compilation and web application development. We expect to have the browser-based version ready for initial testing and feedback in January 2025. The mobile client is on the roadmap for early February, as we aim to provide a comprehensive cross-platform solution.
+## The team is actively working on the browser client.
