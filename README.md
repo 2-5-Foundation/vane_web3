@@ -81,7 +81,12 @@ In itself is not a wallet, but can work with any type of wallet as it acts as an
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-2. Compile & Run
+2. Generate prisma code
+```
+./scripts/db_tests.sh
+```
+
+4. Compile & Run
 ```
 cargo build --release
 ```
@@ -92,11 +97,23 @@ or
 ./target/release -p app --db-url "url"
 ```
 
-3. Test
+4. Test
 
 ```
 cargo test --package integration-test --lib e2e_tests::transaction_processing_test -- --exact
 ```
+
+----
+Using Docker
+
+1. Build the image
+   ```
+   docker build -t vane_web3_app .
+   ```
+2. Run
+   ```
+   docker run vane_web3_app
+   ```
 
 ----
 
