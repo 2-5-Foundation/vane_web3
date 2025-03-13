@@ -14,22 +14,29 @@ use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
 use node::MainServiceWorker;
 use primitives::data_structure::{ChainSupported, PeerRecord, ETH_SIG_MSG_PREFIX};
-use simplelog::*;
+use simplelog::{CombinedLogger, TermLogger, WriteLogger, TerminalMode, ColorChoice, Config, LevelFilter, ConfigBuilder};
 use std::fs::File;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 fn log_setup() -> Result<(), anyhow::Error> {
+    let config = ConfigBuilder::new()
+        .set_target_level(LevelFilter::Error)
+        .set_location_level(LevelFilter::Info)  // This enables file and line logging
+        .set_thread_level(LevelFilter::Off)
+        .set_time_level(LevelFilter::Off)
+        .build();
+
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
-            Config::default(),
+            config.clone(),  // Use the custom config
             TerminalMode::Mixed,
             ColorChoice::Auto,
         ),
         WriteLogger::new(
             LevelFilter::Info,
-            Config::default(),
+            config,  // Use the same custom config
             File::create("vane-test.log").unwrap(),
         ),
     ])?;
@@ -92,7 +99,7 @@ mod e2e_tests {
     use node::rpc::Airtable;
     use node::MainServiceWorker;
     use primitives::data_structure::{
-        AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine, TxStatus,
+        AccountInfo, AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine, TxStatus
     };
     use rand::Rng;
     use std::hash::{DefaultHasher, Hash, Hasher};
@@ -265,7 +272,11 @@ mod e2e_tests {
         assert_eq!(record_data.fields, peer.clone());
 
         // try updating
-        peer.account_id1 = Some("4456".to_string());
+        let acc_info = AccountInfo {
+            account: "4456".to_string(),
+            network: ChainSupported::Ethereum
+        };
+        peer.account_id1 = Some(acc_info);
         let new_req_body = PostRecord::new(peer.clone());
         let updated_record = client.update_peer(new_req_body, record_data.id).await?;
         // try fetching

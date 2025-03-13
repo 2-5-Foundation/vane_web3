@@ -88,6 +88,36 @@ where
     }
 }
 
+fn string_serialize<S, T>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: serde::Serialize,
+{
+    match value {
+        Some(val) => {
+            let json_str = serde_json::to_string(val).map_err(serde::ser::Error::custom)?;
+            serializer.serialize_str(&json_str)
+        }
+        None => serializer.serialize_none(),
+    }
+}
+
+/// Deserialize a string into `AccountInfo`
+fn string_deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    match s {
+        Some(json_str) => {
+            let parsed = serde_json::from_str(&json_str).map_err(serde::de::Error::custom)?;
+            Ok(Some(parsed))
+        }
+        None => Ok(None),
+    }
+}
+
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
@@ -323,13 +353,14 @@ impl From<ChainSupported> for String {
 
 impl From<&str> for ChainSupported {
     fn from(value: &str) -> Self {
+        println!("value: {value}");
         match value {
             "Polkadot" => ChainSupported::Polkadot,
             "Ethereum" => ChainSupported::Ethereum,
             "Bnb" => ChainSupported::Bnb,
             "Solana" => ChainSupported::Solana,
             _ => {
-                unreachable!()
+                ChainSupported::Ethereum
             }
         }
     }
@@ -353,6 +384,12 @@ impl ChainSupported {
     }
 }
 
+impl std::fmt::Display for ChainSupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(*self))
+    }
+}
+
 /// User account
 #[derive(Clone, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct UserAccount {
@@ -366,10 +403,10 @@ pub struct UserAccount {
 pub struct PeerRecord {
     pub record_id: String,       // for airtable
     pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
-    pub account_id1: Option<String>,
-    pub account_id2: Option<String>,
-    pub account_id3: Option<String>,
-    pub account_id4: Option<String>,
+    pub account_id1: Option<AccountInfo>,
+    pub account_id2: Option<AccountInfo>,
+    pub account_id3: Option<AccountInfo>,
+    pub account_id4: Option<AccountInfo>,
     pub multi_addr: Option<String>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
@@ -405,7 +442,7 @@ pub struct Discovery {
     pub id: String,
     pub peer_id: Option<String>,
     pub multi_addr: Option<String>,
-    pub account_ids: Vec<String>,
+    pub account_ids: Vec<AccountInfo>,
     pub rpc: Option<String>
 }
 
@@ -482,21 +519,39 @@ impl AirtableRequestBody {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountInfo {
+    pub account: String,
+    pub network: ChainSupported,
+}
+
 #[derive(Debug, Serialize, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Fields {
-    #[serde(rename = "multiAddr", default)]
+    #[serde(rename = "multiAddr", default, skip_serializing_if = "Option::is_none")]
     pub multi_addr: Option<String>,
-    #[serde(rename = "peerId", default)]
+    
+    #[serde(rename = "peerId", default, skip_serializing_if = "Option::is_none")]
     pub peer_id: Option<String>,
-    #[serde(rename = "accountId1", default)]
-    pub account_id1: Option<String>,
-    #[serde(rename = "accountId2", default)]
-    pub account_id2: Option<String>,
-    #[serde(rename = "accountId3", default)]
-    pub account_id3: Option<String>,
-    #[serde(rename = "accountId4", default)]
-    pub account_id4: Option<String>,
-    #[serde(rename = "rpc", default)]
+    
+    #[serde(rename = "accountId1", default, skip_serializing_if = "Option::is_none", 
+            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
+    pub account_id1: Option<AccountInfo>,
+    
+    #[serde(rename = "accountId2", default, skip_serializing_if = "Option::is_none", 
+            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
+    pub account_id2: Option<AccountInfo>,
+    
+    #[serde(rename = "accountId3", default, skip_serializing_if = "Option::is_none",  
+            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
+    pub account_id3: Option<AccountInfo>,
+    
+    #[serde(rename = "accountId4", default, skip_serializing_if = "Option::is_none",  
+            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
+    pub account_id4: Option<AccountInfo>,
+    
+    #[serde(rename = "rpc", default, skip_serializing_if = "Option::is_none")]
     pub rpc: Option<String>
 }
 
@@ -506,10 +561,22 @@ impl Default for Fields {
         Fields {
             multi_addr: Some("ip4/127.0.0.1/tcp/3000".to_string()),
             peer_id: Some("0x378z9".to_string()),
-            account_id1: Some("1".to_string()),
-            account_id2: Some("2".to_string()),
-            account_id3: Some("3".to_string()),
-            account_id4: Some("4".to_string()),
+            account_id1: Some(AccountInfo {
+                account: "1".to_string(),
+                network: ChainSupported::Polkadot,
+            }),
+            account_id2: Some(AccountInfo {
+                account: "2".to_string(),
+                network: ChainSupported::Polkadot,
+            }),
+            account_id3: Some(AccountInfo {
+                account: "3".to_string(),
+                network: ChainSupported::Polkadot,
+            }),
+            account_id4: Some(AccountInfo {
+                account: "4".to_string(),
+                network: ChainSupported::Polkadot,
+            }),
             rpc: Some("ws://192.168.1.177:39838".to_string()),
         }
     }
@@ -572,7 +639,7 @@ pub trait DbWorkerInterface: Sized {
 
     async fn record_user_peer_id(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error>;
 
-    async fn update_user_peer_id_accounts(
+    async fn update_user_peer_id_account_ids(
         &self,
         peer_record: PeerRecord,
     ) -> Result<(), anyhow::Error>;

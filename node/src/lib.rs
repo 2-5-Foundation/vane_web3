@@ -597,7 +597,7 @@ pub struct MainServiceWorker {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MainServiceWorker {
-    pub(crate) async fn new(db_url_path: Option<String>, port: Option<u16>) -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(db_url_path: Option<String>, port: Option<u16>, airtable_record_id: String) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -662,6 +662,7 @@ impl MainServiceWorker {
             Arc::new(Mutex::new(airtable_client.clone())),
             db_worker.clone(),
             p2p_port,
+            airtable_record_id,
             p2p_command_recv,
         )
         .await?;
@@ -877,7 +878,7 @@ impl MainServiceWorker {
                             .clone()
                             .account_ids
                             .into_iter()
-                            .find(|addr| addr == &target_id_addr)
+                            .find(|addr| addr.account == target_id_addr)
                         {
                             Some(_) => {
                                 let peer_record: PeerRecord = discovery.clone().into();
@@ -1112,7 +1113,7 @@ impl MainServiceWorker {
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
-    pub async fn run(db_url: Option<String>, port: Option<u16>) -> Result<(), anyhow::Error> {
+    pub async fn run(db_url: Option<String>, port: Option<u16>, airtable_record_id: String) -> Result<(), anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -1121,7 +1122,7 @@ impl MainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url,port).await?;
+        let main_worker = Self::new(db_url,port,airtable_record_id).await?;
         // start rpc server
         let rpc_address = main_worker
             .start_rpc_server()
@@ -1188,7 +1189,7 @@ impl MainServiceWorker {
     // =================================== E2E ====================================== //
 
     #[cfg(feature = "e2e")]
-    pub async fn e2e_new(port: u16, db: &str) -> Result<Self, Error> {
+    pub async fn e2e_new(port: u16, db: &str, airtable_record_id: String) -> Result<Self, Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -1221,6 +1222,7 @@ impl MainServiceWorker {
             Arc::new(Mutex::new(airtable_client.clone())),
             db_worker.clone(),
             p2p_port,
+            airtable_record_id,
             p2p_command_recv,
         )
         .await?;
