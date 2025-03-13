@@ -7,7 +7,7 @@ pub use codec::Encode;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use primitives::data_structure::{DbWorkerInterface};
+use primitives::data_structure::{DbWorkerInterface, PostRecord};
 
 use primitives::data_structure::{AirtableRequestBody, Fields, HashId, PeerRecord};
 use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
@@ -530,6 +530,7 @@ impl P2pWorker {
         airtable_client: Arc<Mutex<Airtable>>,
         db_worker: Arc<Mutex<LocalDbWorker>>,
         port: u16,
+        airtable_record_id: String,
         command_recv_channel: Receiver<NetworkCommand>,
     ) -> Result<Self, Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
@@ -562,8 +563,8 @@ impl P2pWorker {
         };
 
         let field: Fields = user_peer_id.clone().into();
-        let req_body = AirtableRequestBody::new(field);
-        let record_data = airtable_client.lock().await.create_peer(req_body).await?;
+        let req_body = PostRecord::new(field);
+        let record_data = airtable_client.lock().await.update_peer(req_body, airtable_record_id).await?;
 
         // store in the local db and airtable db
         user_peer_id.record_id = record_data.id;

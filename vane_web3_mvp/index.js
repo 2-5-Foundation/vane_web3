@@ -3,7 +3,6 @@ import Airtable from 'airtable';
 import { spawn } from 'bun';
 import ngrok from 'ngrok';
 
-import { readFile } from 'fs/promises';
 
 // Simple logger implementation for Bun
 const logger = {
@@ -39,10 +38,10 @@ class VaneMonitor {
         }
     }
 
-    async startDockerInstance(twitter, ethAddress) {
+    async startDockerInstance(social, airtable_record_id) {
         try {
             // Generate unique container name
-            const containerName = `vane-${twitter.replace('@', '').toLowerCase()}`;
+            const containerName = `vane-${social.toLowerCase()}`;
 
             // Generate random port (avoiding well-known ports)
             const rpcPort = Math.floor(Math.random() * (65535 - 49152 + 1) + 49152);
@@ -53,7 +52,8 @@ class VaneMonitor {
                 '--network=bridge',
                 '-p', `${rpcPort}:${rpcPort}`,    // Map our random port
                 'vane_web3_app',
-                '--port', rpcPort.toString()     // Pass port as argument
+                '--port', rpcPort.toString(),     // Pass port as argument
+                '--airtable_record_id', airtable_record_id 
             ], {
                 stderr: 'pipe',
                 stdout: 'pipe'
@@ -69,7 +69,7 @@ class VaneMonitor {
 
             logger.info('Started Docker container', {
                 containerId: containerInfo.id,
-                twitter,
+                social,
                 containerName,
                 rpcPort
             });
@@ -77,7 +77,7 @@ class VaneMonitor {
             return containerInfo;
 
         } catch (error) {
-            logger.error('Error in startDockerInstance', { error, twitter });
+            logger.error('Error in startDockerInstance', { error, social });
             throw error;
         }
     }
@@ -123,7 +123,7 @@ class VaneMonitor {
         }
     }
 
-    async registerWithNode(rpcUrl, twitter, ethAddress) {
+    async registerWithNode(rpcUrl, social, address, network) {
         try {
             const hostRpcUrl = rpcUrl.replace(/172\.[0-9]+\.[0-9]+\.[0-9]+/, 'localhost');
             const response = await fetch(`http://${hostRpcUrl}`, {
@@ -136,9 +136,9 @@ class VaneMonitor {
                     id: 1,
                     method: 'register',
                     params: [
-                        twitter,           // name parameter
-                        ethAddress,       // account_id parameter
-                        'Ethereum',       // network parameter
+                        social,           // name parameter
+                        address,       // account_id parameter
+                        network,       // network parameter
                         `wss://${rpcUrl}` // rpc parameter
                     ]
                 })
@@ -150,25 +150,25 @@ class VaneMonitor {
                 throw new Error(`RPC error: ${JSON.stringify(data.error)}`);
             }
 
-            logger.info('Successfully registered with node', { twitter, ethAddress, rpcUrl });
+            logger.info('Successfully registered with node', { social, address, network, rpcUrl });
             return data.result;
         } catch (error) {
-            logger.error('Failed to register with node', { error, twitter, ethAddress });
+            logger.error('Failed to register with node', { error, social, address, network });
             throw error;
         }
     }
 
     async processNewEntry(record) {
-        const { Twitter, EthAddress } = record.fields;
+        const { Social, Address, Network } = record.fields;
 
-        if (!Twitter || !EthAddress) {
+        if (!Social || !Address || !Network) {
             logger.warn('Missing required fields', { record });
             return;
         }
 
         try {
             // Start Docker container
-            const containerId = await this.startDockerInstance(Twitter, EthAddress);
+            const containerId = await this.startDockerInstance(Social);
 
             // Wait for RPC endpoint to become available
             await Bun.sleep(3000)
@@ -177,20 +177,21 @@ class VaneMonitor {
             const ngrokUrl = await this.createNgrokTunnel(containerId.rpcPort);
 
             // Register with the node
-            await this.registerWithNode(ngrokUrl, Twitter, EthAddress);
+            await this.registerWithNode(ngrokUrl, Social, Address, Network);
 
             // Store container info
-            runningContainers.set(Twitter, {
+            runningContainers.set(Social, {
                 containerId,
                 rpcUrl,
                 publicRpcUrl: ngrokUrl,
-                EthAddress,
+                Address,
+                Network,
                 startTime: Date.now()
             });
 
-            logger.info('Successfully processed new entry', { Twitter, EthAddress, rpcUrl });
+            logger.info('Successfully processed new entry', { Social, Address, Network, rpcUrl });
         } catch (error) {
-            logger.error('Failed to process new entry', { error, Twitter, EthAddress });
+            logger.error('Failed to process new entry', { error, Social, Address, Network });
         }
     }
 
@@ -202,7 +203,7 @@ class VaneMonitor {
                 // Fetch all records from Airtable
                 const records = await airtable(AIRTABLE_TABLE_ID)
                     .select({
-                        filterByFormula: 'AND({Twitter}, {EthAddress}, NOT({processed}))'
+                        filterByFormula: 'AND({Social}, {Address}, {Network}, NOT({processed}))'
                     })
                     .all();
 

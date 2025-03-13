@@ -32,6 +32,8 @@ struct Args {
     /// port
     #[arg(short, long)]
     pub port: Option<u16>,
+    #[arg(short, long)]
+    pub airtable_record_id: String
 }
 
 #[tokio::main]
@@ -39,7 +41,7 @@ async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
 
-    node::MainServiceWorker::run(args.db_url,args.port).await?;
+    node::MainServiceWorker::run(args.db_url,args.port,args.airtable_record_id).await?;
     Ok(())
 }
 

@@ -20,8 +20,7 @@ use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
 use primitives::data_structure::{
-    AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord,
-    PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount,
+    AccountInfo, AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount
 };
 use sp_core::{blake2_256, H256};
 use sp_runtime::traits::Zero;
@@ -488,7 +487,7 @@ impl Airtable {
         let mut peers: Vec<Discovery> = vec![];
 
         record.records.iter().cloned().for_each(|record| {
-            let mut accounts: Vec<String> = vec![];
+            let mut accounts: Vec<AccountInfo> = vec![];
 
             if let Some(account_id1) = record.fields.account_id1.clone() {
                 accounts.push(account_id1);
@@ -520,7 +519,9 @@ impl Airtable {
     pub async fn create_peer(&self, record: AirtableRequestBody) -> Result<Record, anyhow::Error> {
         let url = Url::parse(AIRTABLE_URL)?;
         let create_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
-
+        
+        println!("record: {:?}", serde_json::json!(record));
+        
         let resp = self
             .client
             .post(create_record_url)
@@ -543,6 +544,15 @@ impl Airtable {
         Ok(resp)
     }
 
+    // fetch a single peer
+    pub async fn fetch_peer(&self, record_id: String) -> Result<Record, anyhow::Error>{
+        let url = Url::parse(AIRTABLE_URL)?;
+        let fetch_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
+        let resp = self.client.get(fetch_url).send().await?;
+        let resp = resp.json::<Record>().await?;
+        Ok(resp)
+    }
+
     // a patch request
     pub async fn update_peer(
         &self,
@@ -553,15 +563,13 @@ impl Airtable {
         let patch_record_url =
             url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
 
-        let acc_id = record.fields.account_id1.unwrap();
-        let rpc = record.fields.rpc.unwrap();
+        let fields_value = serde_json::to_value(record.fields)
+        .map_err(|e| anyhow!("Failed to serialize fields: {}", e))?;
 
         let patch_value = serde_json::json!({
-            "fields":{
-                "accountId1":acc_id,
-                "rpc": rpc
-            }
+        "fields": fields_value
         });
+
         let resp = self
             .client
             .patch(patch_record_url)
@@ -779,16 +787,15 @@ impl TransactionRpcServer for TransactionRpcWorker {
             account_id: account_id.clone(),
             network,
         };
+
         self.db_worker
             .lock()
             .await
             .set_user_account(user_account)
             .await?;
-
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
         // ========================================================================================//
-
         // fetch the record
         let record = self
             .db_worker
@@ -797,37 +804,30 @@ impl TransactionRpcServer for TransactionRpcWorker {
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
             .await?;
 
+        let acc_info = AccountInfo {
+            account: account_id,
+            network
+        };
+
         let peer_account = PeerRecord {
             record_id: record.record_id.clone(),
             peer_id: None,
-            account_id1: Some(account_id),
+            account_id1: Some(acc_info),
             account_id2: None,
             account_id3: None,
             account_id4: None,
             multi_addr: None,
             keypair: None,
         };
+
         info!("updated user peer record to be stored in local db");
 
         self.db_worker
             .lock()
             .await
-            .update_user_peer_id_accounts(peer_account.clone())
+            .update_user_peer_id_account_ids(peer_account.clone())
             .await?;
-
-        // update to airtable
-        let mut field: Fields = peer_account.into();
-        field.rpc = Some(rpc);
-        let req_body = PostRecord::new(field);
-
-        self.airtable_client
-            .lock()
-            .await
-            .update_peer(req_body, record.record_id)
-            .await?;
-
-        info!("updated airtable db with user peer id");
-
+        
         Ok(())
     }
 
