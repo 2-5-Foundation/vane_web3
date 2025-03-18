@@ -8,14 +8,14 @@
 A full sovereign custodian implementation of risk-free transaction sending for web3 users.
 
 ### What are we solving?
-  - Losing funds due wrong address input ( a huge pain currently in web3 as the action is not reversible after sending the transaction ).
+  - Losing funds due to wrong address input ( a huge pain currently in web3 as the action is irreversible after sending the transaction ).
 
-  - Losings funds due wrong network selection while sending the transaction.
+  - Losings funds due to wrong network selection while sending the transaction.
 
-At some point the address can be correct but the choice of the network can result to loss of funds
+At some point the address can be correct but the choice of the network can result to loss of funds.
 
 ### Our Solution
-vane act as a safety net for web3 users.
+Vane acts as a safety net for web3 users.
 
 - Receiver address confirmation
 
@@ -23,7 +23,7 @@ vane act as a safety net for web3 users.
 
 - Receiver account ownership confirmation after transaction execution and network simulation.
 
-As this is crucial to make sure that you control account provided ( receiver ) in X network/blockchain.
+As this is crucial to make sure that you control the account provided ( receiver ) in X network/blockchain.
 
 After all confirmation, vane will route and submit the transaction to X address to the Y network/blokchain.
 
@@ -38,7 +38,7 @@ https://x.com/MrishoLukamba/status/1866162459800707165
 
 vane_web3 is designed to be decentralized and locally run by users having complete control.
 
-In itself is not a wallet, but can work with any type of wallet as it acts as an extension safety layer for web3.
+It in itself is not a wallet, but can work with any type of wallet as it acts as an extension safety layer for web3.
 
 ### Technical components
 1. **DbWorker**
