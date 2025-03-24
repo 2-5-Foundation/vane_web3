@@ -2,6 +2,8 @@ import { config } from 'dotenv';
 import Airtable from 'airtable';
 import { spawn } from 'bun';
 import ngrok from 'ngrok';
+import path from 'path';
+
 
 
 // Simple logger implementation for Bun
@@ -12,17 +14,17 @@ const logger = {
 };
 
 // Load environment variables
-config();
+config({ path: path.join(import.meta.dirname, '..', '.env') });
 
 const {
-    AIRTABLE_API_KEY,
-    AIRTABLE_BASE_ID,
-    AIRTABLE_TABLE_ID
+    AIRTABLE_TOKEN,
+    BASE_ID,
+    TABLE_ID,
 } = process.env;
 
 
 // Configure Airtable
-const airtable = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
+const airtable = new Airtable({ apiKey: AIRTABLE_TOKEN }).base(BASE_ID);
 
 // Track running containers
 const runningContainers = new Map();
@@ -33,7 +35,7 @@ class VaneMonitor {
     }
 
     validateConfig() {
-        if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_ID) {
+        if (!AIRTABLE_TOKEN || !BASE_ID || !TABLE_ID) {
             throw new Error('Missing required environment variables');
         }
     }
@@ -159,16 +161,16 @@ class VaneMonitor {
     }
 
     async processNewEntry(record) {
-        const { Social, Address, Network } = record.fields;
-
-        if (!Social || !Address || !Network) {
+        const { accountId1, accountId2, accountId3, accountId4, peerId, multiAddr, rpc, social} = record.fields;
+        const {address, network} = JSON.parse(accountId1);
+        if (!accountId1 || !social) {
             logger.warn('Missing required fields', { record });
             return;
         }
 
         try {
             // Start Docker container
-            const containerId = await this.startDockerInstance(Social);
+            const containerId = await this.startDockerInstance(social);
 
             // Wait for RPC endpoint to become available
             await Bun.sleep(3000)
@@ -177,33 +179,33 @@ class VaneMonitor {
             const ngrokUrl = await this.createNgrokTunnel(containerId.rpcPort);
 
             // Register with the node
-            await this.registerWithNode(ngrokUrl, Social, Address, Network);
+            await this.registerWithNode(ngrokUrl, social, address, network);
 
             // Store container info
-            runningContainers.set(Social, {
+            runningContainers.set(social, {
                 containerId,
                 rpcUrl,
                 publicRpcUrl: ngrokUrl,
-                Address,
-                Network,
+                address,
+                network,
                 startTime: Date.now()
             });
 
-            logger.info('Successfully processed new entry', { Social, Address, Network, rpcUrl });
+            logger.info('Successfully processed new entry', { social, address, network, rpcUrl });
         } catch (error) {
-            logger.error('Failed to process new entry', { error, Social, Address, Network });
+            logger.error('Failed to process new entry', { error, social, address, network });
         }
     }
 
     async monitorTable() {
-        logger.info('Starting Vane monitor');
+        logger.info('Starting VaneWeb3 monitor');
 
         while (true) {
             try {
                 // Fetch all records from Airtable
-                const records = await airtable(AIRTABLE_TABLE_ID)
+                const records = await airtable(TABLE_ID)
                     .select({
-                        filterByFormula: 'AND({Social}, {Address}, {Network}, NOT({processed}))'
+                        filterByFormula: 'AND({accountId1}, {accountId2}, {accountId3}, {accountId4}, {peerId}, {multiAddr}, {rpc}, {social}, NOT({processed}))'
                     })
                     .all();
 
@@ -212,7 +214,7 @@ class VaneMonitor {
                     await this.processNewEntry(record);
 
                     // Mark as processed in Airtable
-                    await airtable(AIRTABLE_TABLE_ID).update(record.id, {
+                    await airtable(TABLE_ID).update(record.id, {
                         processed: true
                     });
                 }
