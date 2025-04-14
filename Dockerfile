@@ -26,6 +26,8 @@ FROM rust:latest
 WORKDIR /app
 COPY . .
 
+RUN stat /app/Cargo.lock
+
 RUN apt-get update && \
     apt-get install -y \
     protobuf-compiler \

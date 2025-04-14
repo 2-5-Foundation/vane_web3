@@ -25,7 +25,7 @@ use primitives::data_structure::{
 use sp_core::{blake2_256, H256};
 use sp_runtime::traits::Zero;
 
-use primitives::data_structure::DbWorkerInterface;
+use primitives::data_structure::{DbWorkerInterface, DbTxStateMachine};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use std_imports::*;
@@ -438,7 +438,7 @@ impl PublicInterfaceWorker {
     }
 }
 
-// ------------------------------------------------------------------------------------------ //
+// ================================================================ NATIVE ========================================================= //
 
 // minimal airtable client
 #[cfg(not(target_arch = "wasm32"))]
@@ -680,6 +680,12 @@ pub trait TransactionRpc {
         network: String,
     ) -> RpcResult<()>;
 
+    /// Allowing the sender to revery/cancel the transaction
+    /// params:
+    /// 
+    /// - `tx_id`
+    #[method(name = "revertTransaction")]
+    async fn revert_transaction(&self, tx_state: TxStateMachine) -> RpcResult<()>;
     /// confirm sender signifying agreeing all tx state after verification and this will trigger actual submission
     #[method(name = "senderConfirm")]
     async fn sender_confirm(&self, tx: TxStateMachine) -> RpcResult<()>;
@@ -717,7 +723,8 @@ pub struct TransactionRpcWorker {
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     /// tx pending store
-    pub moka_cache: AsyncCache<u64, TxStateMachine>, // initial fees, after dry running tx initialy without optimization
+    pub moka_cache: AsyncCache<u64, TxStateMachine>, 
+    // initial fees, after dry running tx initialy without optimization
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -903,6 +910,30 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 "sender and receiver should be correct accounts for the specified token"
             ))?
         }
+        Ok(())
+    }
+
+    async fn revert_transaction(&self, tx_state: TxStateMachine) -> RpcResult<()> {
+        // remove from cache
+        if let None = self.moka_cache.remove(&tx_state.tx_nonce.into()).await{
+            Err(anyhow!("tx not found in cache"))?
+        }
+        // update the db
+        let tx_hash = tx_state.get_tx_hash().to_vec();
+        let tx_db = DbTxStateMachine {
+            tx_hash: tx_hash,
+            amount: tx_state.amount,
+            network: tx_state.network,
+            success: false,
+        };
+        self.db_worker.lock().await.update_failed_tx(tx_db).await?;
+
+        let sender_channel = self.user_rpc_update_sender_channel.lock().await;
+        let sender = sender_channel.clone();
+        sender.send(Arc::from(Mutex::new(tx_state))).await.map_err(|_| {
+                anyhow!("failed to send sender confirmation tx state to sender-channel")
+        })?;
+
         Ok(())
     }
 

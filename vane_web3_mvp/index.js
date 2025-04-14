@@ -162,6 +162,7 @@ class VaneMonitor {
 
     async processNewEntry(record) {
         const { accountId1, accountId2, accountId3, accountId4, peerId, multiAddr, rpc, social} = record.fields;
+        // structure of accountId1 is {address: string, network: string}
         const {address, network} = JSON.parse(accountId1);
         if (!accountId1 || !social) {
             logger.warn('Missing required fields', { record });
