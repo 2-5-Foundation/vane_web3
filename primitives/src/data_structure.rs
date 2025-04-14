@@ -11,6 +11,7 @@ use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use twox_hash::XxHash64;
+use sp_core::{blake2_256,keccak_256,sha2_256};
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -38,6 +39,8 @@ pub enum TxStatus {
     TxSubmissionPassed([u8; 32]),
     /// if the receiver has not registered to vane yet
     ReceiverNotRegistered,
+    /// if the transaction is reverted
+    Reverted,
 }
 
 impl Default for TxStatus {
@@ -192,6 +195,20 @@ impl TxStateMachine {
     pub fn increment_nonce(&mut self) {
         self.tx_nonce += 1
     }
+    pub fn get_tx_hash(&self) -> [u8; 32] {
+        match self.network {
+            ChainSupported::Polkadot => {
+                blake2_256(&self.encode()[..])
+            },
+            ChainSupported::Solana => {
+                sha2_256(&self.encode()[..])
+            },
+            // EVM
+            _ => {
+                keccak_256(&self.encode()[..])
+            }
+        }   
+    }
 }
 
 // helper for hashing p2p swarm request ids
@@ -222,6 +239,9 @@ pub enum NetworkCommand {
     Dial {
         target_multi_addr: Multiaddr,
         target_peer_id: PeerId,
+    },
+    Close {
+        peer_id: PeerId,
     },
     WasmSendRequest {
         request: TxStateMachine,
@@ -402,7 +422,7 @@ pub struct UserAccount {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
     pub record_id: String,       // for airtable
-    pub peer_id: Option<String>, // this should be just account address and it will be converted to libp2p::PeerId,
+    pub peer_id: Option<String>, // IDEALLY this should be just account address and it will be converted to libp2p::PeerId,
     pub account_id1: Option<AccountInfo>,
     pub account_id2: Option<AccountInfo>,
     pub account_id3: Option<AccountInfo>,

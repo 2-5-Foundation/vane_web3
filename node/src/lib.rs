@@ -573,7 +573,7 @@ pub async fn start_vane_web3(db_url: Option<String>) -> Result<PublicInterfaceWo
 
     Ok(worker)
 }
-// -------------------------------------------------------------------- //
+// ========================================================= NATIVE ========================================================= //
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
@@ -726,11 +726,12 @@ impl MainServiceWorker {
             }
         });
 
-        // This loop should never end - it continuously processes messages
+
         loop {
             if let Some(swarm_msg_result) = recv_channel.recv().await {
                 match swarm_msg_result {
                     Ok(swarm_msg) => match swarm_msg {
+
                         SwarmMessage::Request { data, inbound_id } => {
                             let mut decoded_req: TxStateMachine = Decode::decode(&mut &data[..])
                                 .expect("failed to decode request body");
@@ -751,6 +752,7 @@ impl MainServiceWorker {
 
                             info!(target: "MainServiceWorker","propagating txn msg as a request to rpc layer for user interaction: {decoded_req:?}");
                         }
+
                         SwarmMessage::Response { data, outbound_id } => {
                             let mut decoded_resp: TxStateMachine = Decode::decode(&mut &data[..])
                                 .expect("failed to decode request body");
@@ -903,9 +905,9 @@ impl MainServiceWorker {
                         let peer_id = PeerId::from_str(
                             &*result_peer
                                 .clone()
-                                .expect("failed to parse peer id")
+                                .expect("GENESIS: failed to find peer id")
                                 .0
-                                .expect("failed to parse peerId"),
+                                .expect("GENESIS: failed to parse peerId"),
                         )?;
 
                         // save the target peer id to local db
@@ -1081,6 +1083,19 @@ impl MainServiceWorker {
                     info!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates: {:?} \n",txn.lock().await.clone());
 
                     self.handle_sender_confirmed_tx_state(txn.clone()).await?;
+                }
+
+                TxStatus::Reverted => {
+                    let peer_id = { 
+                        let tx = txn.lock().await;
+                        if let Some(peer_id) = self.db_worker.lock().await.get_saved_user_peers(tx.receiver_address.clone()).await?.peer_id {
+                            PeerId::from_str(peer_id.as_str()).unwrap()
+                            
+                        } else {
+                            return Err(anyhow!("Reverting: peer id not found"));
+                        }
+                    };
+                    self.p2p_network_service.lock().await.disconnect_from_peer_id(&peer_id).await?;
                 }
                 _ => {}
             };

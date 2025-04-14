@@ -793,6 +793,10 @@ impl P2pWorker {
                                 swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial: {err}"))?;
                             }
                         },
+                        Some(NetworkCommand::Close {peer_id}) => {
+                            swarm.disconnect_peer_id(peer_id);
+                            info!("closing connection to peer: {peer_id}");
+                        },
                         None => {
                             info!("command channel closed");
                         },
@@ -861,6 +865,20 @@ impl P2pNetworkService {
             .await
             .map_err(|err| anyhow!("failed to send dial command; {err}"))?;
 
+        Ok(())
+    }
+
+    // close the connection to the peer_id
+    pub async fn disconnect_from_peer_id(
+        &mut self,
+        peer_id: &PeerId,
+    ) -> Result<(), anyhow::Error> {
+        let close_command = NetworkCommand::Close {
+            peer_id: peer_id.clone(),
+        };
+
+        self.p2p_command_tx
+            .send(close_command);
         Ok(())
     }
 
