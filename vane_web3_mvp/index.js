@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 import Airtable from 'airtable';
 import { spawn } from 'bun';
 import ngrok from 'ngrok';
-import path from 'path';
+import path, { format } from 'path';
 
 
 
@@ -40,41 +40,62 @@ class VaneMonitor {
         }
     }
 
-    async startDockerInstance(social, airtable_record_id) {
+    async startDockerInstance(account,social, airtable_record_id) {
         try {
             // Generate unique container name
-            const containerName = `vane-${social.toLowerCase()}`;
-
+            const randomId = Math.floor(Math.random() * (887689 - 787 + 23) + 49152);
+            const containerName = `vane-${account}-${randomId}`;
             // Generate random port (avoiding well-known ports)
             const rpcPort = Math.floor(Math.random() * (65535 - 49152 + 1) + 49152);
 
             // Start Docker container with the specified port
-            const proc = spawn(['docker', 'run', '-d',
+            logger.info('spawning container with params:', {
+                containerName,
+                rpcPort,
+                airtable_record_id
+            });
+
+            const dockerCommand = [
+                'docker', 'run', '-d',
                 '--name', containerName,
                 '--network=bridge',
-                '-p', `${rpcPort}:${rpcPort}`,    // Map our random port
+                '-p', `${rpcPort}:${rpcPort}`,
                 'vane_web3_app',
-                '--port', rpcPort.toString(),     // Pass port as argument
-                '--airtable_record_id', airtable_record_id 
-            ], {
+                '--port', rpcPort.toString(),
+                '--airtable-record-id', airtable_record_id
+            ];
+            
+            const proc = spawn(dockerCommand, {
                 stderr: 'pipe',
                 stdout: 'pipe'
             });
 
-            const containerId = await new Response(proc.stdout).text();
 
-            // Store the port with the container info
-            const containerInfo = {
-                id: containerId.trim(),
-                rpcPort
-            };
+            // Get the output from the process
+            const stderr = await new Response(proc.stderr).text();
+            if (stderr) {
+                logger.error('Docker stderr:', stderr);
+            }
 
+            const stdout = await new Response(proc.stdout).text();
+            logger.info('Docker stdout:', stdout);
+
+            Bun.sleep(5000);  // Reduced sleep time for testing
+
+            const containerId = stdout.trim();
+            logger.info(`containerId: ${containerId}`);
             logger.info('Started Docker container', {
-                containerId: containerInfo.id,
+                containerId,
                 social,
                 containerName,
                 rpcPort
             });
+
+            // Store the port with the container info
+            const containerInfo = {
+                id: containerId,
+                rpcPort
+            };
 
             return containerInfo;
 
@@ -163,7 +184,7 @@ class VaneMonitor {
     async processNewEntry(record) {
         const { accountId1, accountId2, accountId3, accountId4, peerId, multiAddr, rpc, social} = record.fields;
         // structure of accountId1 is {address: string, network: string}
-        const {address, network} = JSON.parse(accountId1);
+        const {account, network} = JSON.parse(accountId1);
         if (!accountId1 || !social) {
             logger.warn('Missing required fields', { record });
             return;
@@ -171,30 +192,28 @@ class VaneMonitor {
 
         try {
             // Start Docker container
-            const containerId = await this.startDockerInstance(social);
-
+            const containerId = await this.startDockerInstance(account,social, record.id);
             // Wait for RPC endpoint to become available
             await Bun.sleep(3000)
             const rpcUrl = await this.extractRpcUrl(containerId);
-
             const ngrokUrl = await this.createNgrokTunnel(containerId.rpcPort);
-
             // Register with the node
-            await this.registerWithNode(ngrokUrl, social, address, network);
+            await this.registerWithNode(ngrokUrl, social, account, network);
 
             // Store container info
             runningContainers.set(social, {
                 containerId,
                 rpcUrl,
                 publicRpcUrl: ngrokUrl,
-                address,
+                account,
                 network,
                 startTime: Date.now()
             });
 
-            logger.info('Successfully processed new entry', { social, address, network, rpcUrl });
+            logger.info('Successfully processed new entry', { social, account, network, rpcUrl });
+            return ngrokUrl
         } catch (error) {
-            logger.error('Failed to process new entry', { error, social, address, network });
+            logger.error('Failed to process new entry', { error, social, account, network });
         }
     }
 
@@ -206,18 +225,23 @@ class VaneMonitor {
                 // Fetch all records from Airtable
                 const records = await airtable(TABLE_ID)
                     .select({
-                        filterByFormula: 'AND({accountId1}, {accountId2}, {accountId3}, {accountId4}, {peerId}, {multiAddr}, {rpc}, {social}, NOT({processed}))'
+                        filterByFormula: 'NOT({processed})'  // Only check for unprocessed records
                     })
                     .all();
-
+                
+               
                 // Process new records
                 for (const record of records) {
-                    await this.processNewEntry(record);
+                    logger.info('Starting to process record', { recordId: record.id });
+                    const ngrokUrl = await this.processNewEntry(record);
 
+                    const url = `ws://${ngrokUrl}`;
                     // Mark as processed in Airtable
                     await airtable(TABLE_ID).update(record.id, {
-                        processed: true
+                        processed: true,
+                        rpc: url
                     });
+                    logger.info('Successfully processed and marked record', { recordId: record.id });
                 }
 
                 // Wait before next check using Bun.sleep

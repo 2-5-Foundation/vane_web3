@@ -46,35 +46,32 @@ model Nonce {
 }
 
 // =========================================User Peer Ids=======================================
-
+model UserPeerAccountInfo{
+    id                String              @id @default(uuid())
+    accountId         String
+    network           String
+    userPeer          UserPeer            @relation(fields: [userPeerId], references: [id])
+    userPeerId        String
+}
 model UserPeer {
-    id                Int               @id @default(autoincrement())
-    recordId          String
-    peerId            String            @unique // String or data structure encoded
-    accountId1        String
-    network1          String
-    accountId2        String
-    network2          String
-    accountId3        String
-    network3          String
-    accountId4        String
-    network4          String
+    id                String              @id
+    peerId            String              @unique // String or data structure encoded
+    accounts          UserPeerAccountInfo[]
     multiAddr         String             // String or enum
     keypair           Bytes             // ed25519 node keypair encoded and encrypted
 }
 
 // =========================================Saved Peer Ids======================================
-
+model SavedPeerAccountInfo{
+    id                String              @id @default(uuid())
+    accountId         String
+    network           String
+    savedPeer         SavedPeers          @relation(fields: [savedPeerId], references: [id])
+    savedPeerId       String
+}
 model SavedPeers {
-    id                Int               @id @default(autoincrement())
+    id                String              @id @default(uuid())
     nodeId            String            @unique
-    accountId1        String
-    network1          String
-    accountId2        String
-    network2          String
-    accountId3        String
-    network3          String
-    accountId4        String
-    network4          String
+    accounts          SavedPeerAccountInfo[]
     multiAddr         String
 }

@@ -2,10 +2,12 @@
 
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
+use primitives::data_structure::{
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, PeerRecord, Ports, UserAccount,
+};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use web_sys::{FileSystemDirectoryHandle, StorageManager};
-use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, UserAccount, DbWorkerInterface, Ports};
 
 // ======================================= Define table schemas =============================== //
 const USER_ACCOUNT_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("user_accounts");
@@ -30,8 +32,6 @@ pub const USER_PEER_RECORD_KEY: &str = "user_peer";
 pub const SAVED_PEERS_KEY: &str = "saved_peers";
 pub const PORTS_KEY: &str = "saved_ports";
 
-
-
 /// handling connection and interaction with the browser based OPFS database
 pub struct OpfsRedbWorker {
     db: Database,
@@ -43,7 +43,6 @@ struct TransactionsData {
     success_value: i64,
     failed_value: i64,
 }
-
 
 impl OpfsRedbWorker {
     async fn new(file_url: &str) -> Result<Self, anyhow::Error> {
@@ -288,7 +287,10 @@ impl DbWorkerInterface for OpfsRedbWorker {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(PORT_TABLE)?;
-            let ports = Ports { rpc: p2p, p_2_p_port: p2p };
+            let ports = Ports {
+                rpc: p2p,
+                p_2_p_port: p2p,
+            };
             let port_data = ports.encode();
             table.insert(PORTS_KEY, &port_data)?;
         }
