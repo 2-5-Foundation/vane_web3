@@ -12,45 +12,20 @@
 
 extern crate alloc;
 
-use core::str::FromStr;
 use anyhow::anyhow;
+use core::str::FromStr;
 use jsonrpsee::core::JsonValue;
 
 use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
 use primitives::data_structure::{
-    AccountInfo, AirtableRequestBody, AirtableResponse, ChainSupported, Discovery, Fields, PeerRecord, PostRecord, Record, Token, TxStateMachine, TxStatus, UserAccount
+    AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
+    UserAccount,
 };
-use sp_core::{blake2_256, H256};
 use sp_runtime::traits::Zero;
 
-use primitives::data_structure::{DbWorkerInterface, DbTxStateMachine};
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use std_imports::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-mod std_imports {
-    pub use crate::cryptography::verify_public_bytes;
-    pub use alloc::sync::Arc;
-    pub use db::LocalDbWorker;
-    pub use jsonrpsee::core::Error;
-    pub use jsonrpsee::{
-        core::{async_trait, RpcResult, SubscriptionResult},
-        proc_macros::rpc,
-        PendingSubscriptionSink, SubscriptionMessage,
-    };
-    pub use libp2p::PeerId;
-    pub use local_ip_address;
-    pub use local_ip_address::local_ip;
-    pub use moka::future::Cache as AsyncCache;
-    pub use reqwest::{ClientBuilder, Url};
-    pub use tokio::sync::mpsc::{Receiver, Sender};
-    pub use tokio::sync::{Mutex, MutexGuard};
-    pub use sp_core::Blake2Hasher;
-    pub use sp_core::Hasher;
-}
+use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
 
 // -------------------- WASM CRATES IMPORT ------------------ //
 #[cfg(target_arch = "wasm32")]
@@ -68,8 +43,8 @@ mod rpc_wasm_imports {
     pub use reqwasm::http::{Request, RequestMode};
     pub use tokio_with_wasm::sync::mpsc::{Receiver, Sender};
     pub use tokio_with_wasm::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::JsValue;
     pub use wasm_bindgen::prelude::wasm_bindgen;
+    pub use wasm_bindgen::JsValue;
 }
 
 // ----------------------------------------------------------- /
@@ -252,7 +227,6 @@ impl PublicInterfaceWorker {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl PublicInterfaceWorker {
-
     #[wasm_bindgen]
     pub async fn register_vane_web3(
         &self,
@@ -268,7 +242,10 @@ impl PublicInterfaceWorker {
             network,
         };
 
-        self.db_worker.set_user_account(user_account).await.map_err(|e|JsonValue::from_str(e.into()))?;
+        self.db_worker
+            .set_user_account(user_account)
+            .await
+            .map_err(|e| JsonValue::from_str(e.into()))?;
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
@@ -278,7 +255,8 @@ impl PublicInterfaceWorker {
         let record = self
             .db_worker
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
-            .await.map_err(|e|JsonValue::from_str(e.into()))?;
+            .await
+            .map_err(|e| JsonValue::from_str(e.into()))?;
 
         let peer_account = PeerRecord {
             record_id: record.record_id.clone(),
@@ -294,7 +272,8 @@ impl PublicInterfaceWorker {
 
         self.db_worker
             .update_user_peer_id_accounts(peer_account.clone())
-            .await.map_err(|e|JsonValue::from_str(e.into()))?;
+            .await
+            .map_err(|e| JsonValue::from_str(e.into()))?;
 
         // update to airtable
         let field: Fields = peer_account.into();
@@ -302,7 +281,8 @@ impl PublicInterfaceWorker {
 
         self.airtable_client
             .update_peer(req_body, record.record_id)
-            .await.map_err(|e|JsonValue::from_str(e.into()))?;
+            .await
+            .map_err(|e| JsonValue::from_str(e.into()))?;
 
         info!("updated airtable db with user peer id");
 
@@ -327,7 +307,8 @@ impl PublicInterfaceWorker {
             verify_public_bytes(receiver.as_str(), token, network),
         ) {
             if net_sender != net_recv {
-                Err(anyhow!("sender and receiver should be same network")).map_err(|e|JsonValue::from_str(e.into()))?;
+                Err(anyhow!("sender and receiver should be same network"))
+                    .map_err(|e| JsonValue::from_str(e.into()))?;
             }
 
             info!("successfully initially verified sender and receiver and related network bytes");
@@ -337,9 +318,17 @@ impl PublicInterfaceWorker {
             let multi_addr = blake2_256(&sender_recv[..]);
 
             let mut nonce = 0;
-            nonce = self.db_worker.get_nonce().await.map_err(|e|JsonValue::from_str(e.into()))? + 1;
+            nonce = self
+                .db_worker
+                .get_nonce()
+                .await
+                .map_err(|e| JsonValue::from_str(e.into()))?
+                + 1;
             // update the db on nonce
-            self.db_worker.increment_nonce().await.map_err(|e|JsonValue::from_str(e.into()))?;
+            self.db_worker
+                .increment_nonce()
+                .await
+                .map_err(|e| JsonValue::from_str(e.into()))?;
 
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
@@ -365,12 +354,14 @@ impl PublicInterfaceWorker {
             sender
                 .send(tx_state_machine)
                 .await
-                .map_err(|_| anyhow!("failed to send initial tx state to sender channel")).map_err(|e|JsonValue::from_str(e.into()))?;
+                .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
+                .map_err(|e| JsonValue::from_str(e.into()))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
-            )).map_err(|e|JsonValue::from_str(e.into()))?;
+            ))
+            .map_err(|e| JsonValue::from_str(e.into()))?;
         }
         Ok(())
     }
@@ -382,7 +373,8 @@ impl PublicInterfaceWorker {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
-            )).map_err(|e|JsonValue::from_str(e.into()))?;
+            ))
+            .map_err(|e| JsonValue::from_str(e.into()))?;
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -391,9 +383,13 @@ impl PublicInterfaceWorker {
             // update the TxStatus to TxStatus::SenderConfirmed
             tx.sender_confirmation();
             let sender = sender_channel.clone();
-            sender.send(tx).await.map_err(|_| {
-                anyhow!("failed to send sender confirmation tx state to sender-channel")
-            }).map_err(|e|JsonValue::from_str(e.into()))?;
+            sender
+                .send(tx)
+                .await
+                .map_err(|_| {
+                    anyhow!("failed to send sender confirmation tx state to sender-channel")
+                })
+                .map_err(|e| JsonValue::from_str(e.into()))?;
         }
         Ok(())
     }
@@ -405,14 +401,14 @@ impl PublicInterfaceWorker {
     #[wasm_bindgen]
     async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
         let tx_updates = self
-            .lru_cache.borrow()
+            .lru_cache
+            .borrow()
             .iter()
             .map(|(_k, v)| v.clone())
             .collect::<Vec<TxStateMachine>>();
         println!("lru: {tx_updates:?}");
 
-        JsValue::from_serde(&tx_updates)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        JsValue::from_serde(&tx_updates).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen]
@@ -420,7 +416,8 @@ impl PublicInterfaceWorker {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
-            Err(anyhow!("Receiver did not confirm".to_string())).map_err(|e|JsonValue::from_str(e.into()))?
+            Err(anyhow!("Receiver did not confirm".to_string()))
+                .map_err(|e| JsonValue::from_str(e.into()))?
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -429,228 +426,52 @@ impl PublicInterfaceWorker {
             // tx status to TxStatus::RecvAddrConfirmed
             tx.recv_confirmed();
             let sender = sender_channel.clone();
-            sender.send(tx).await.map_err(|_| {
-                anyhow!("failed to send recv confirmation tx state to sender channel")
-            }).map_err(|e|JsonValue::from_str(e.into()))?;
+            sender
+                .send(tx)
+                .await
+                .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
+                .map_err(|e| JsonValue::from_str(e.into()))?;
 
             Ok(())
         }
     }
 }
 
-// ================================================================ NATIVE ========================================================= //
-
-// minimal airtable client
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Clone)]
-pub struct Airtable {
-    client: reqwest::Client,
-}
+/****************************************************
+*                                                  *
+*                  NATIVE CODE                     *
+*                                                  *
+****************************************************/
 
 #[cfg(not(target_arch = "wasm32"))]
-impl Airtable {
-    pub async fn new() -> Result<Self, anyhow::Error> {
-        let mut headers = reqwest::header::HeaderMap::new();
-        let bt = format!("Bearer {}", AIRTABLE_TOKEN);
-        let bearer = reqwest::header::HeaderValue::from_str(&bt)?;
+pub use std_imports::*;
 
-        // Set the default headers.
-        headers.append(reqwest::header::AUTHORIZATION, bearer);
-        headers.append(
-            reqwest::header::CONTENT_TYPE,
-            reqwest::header::HeaderValue::from_static("application/json"),
-        );
-
-        let client_builder = ClientBuilder::new();
-        let client = client_builder
-            .default_headers(headers)
-            .build()
-            .map_err(|_| anyhow!("failed to build reqwest client"))?;
-
-        Ok(Self { client })
-    }
-
-    pub async fn list_all_peers(&self) -> Result<Vec<Discovery>, anyhow::Error> {
-        let url = Url::parse(AIRTABLE_URL)?;
-        let list_record_url = url.join(&(BASE_ID.to_string() + "/" + TABLE_ID))?;
-
-        let req = self.client.get(list_record_url).build()?;
-        let resp = self.client.execute(req).await?;
-
-        if resp.status().is_server_error() || resp.status().is_client_error() {
-            Err(anyhow!("server or client error listing peers"))?
-        }
-        let body = resp.bytes().await?;
-        let json_value = serde_json::from_slice::<&serde_json::value::RawValue>(&*body)?;
-        let record: AirtableResponse = serde_json::from_str(json_value.get())?;
-
-        let mut peers: Vec<Discovery> = vec![];
-
-        record.records.iter().cloned().for_each(|record| {
-            let mut accounts: Vec<AccountInfo> = vec![];
-
-            if let Some(account_id1) = record.fields.account_id1.clone() {
-                accounts.push(account_id1);
-            }
-            if let Some(account_id2) = record.fields.account_id2.clone() {
-                accounts.push(account_id2);
-            }
-            if let Some(account_id3) = record.fields.account_id3.clone() {
-                accounts.push(account_id3);
-            }
-            if let Some(account_id4) = record.fields.account_id4.clone() {
-                accounts.push(account_id4);
-            }
-
-            // build the discovery object
-            let disc = Discovery {
-                id: record.id,
-                peer_id: record.fields.peer_id,
-                multi_addr: record.fields.multi_addr,
-                account_ids: accounts,
-                rpc: record.fields.rpc,
-            };
-            peers.push(disc)
-        });
-
-        Ok(peers)
-    }
-
-    pub async fn create_peer(&self, record: AirtableRequestBody) -> Result<Record, anyhow::Error> {
-        let url = Url::parse(AIRTABLE_URL)?;
-        let create_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
-        
-        println!("record: {:?}", serde_json::json!(record));
-        
-        let resp = self
-            .client
-            .post(create_record_url)
-            .json::<AirtableRequestBody>(&record.into())
-            .send()
-            .await?;
-
-        if resp.status().is_server_error() {
-            Err(anyhow!("server, create peer: {}", resp.status()))?
-        }
-        if resp.status().is_client_error() {
-            Err(anyhow!("client error, create peer: {}", resp.status()))?
-        }
-        if resp.status().is_success() {
-            info!("succesfully created peer in airtable");
-        }
-
-        let resp_object = resp.json::<AirtableResponse>().await?;
-        let resp = resp_object.records.first().unwrap().clone();
-        Ok(resp)
-    }
-
-    // fetch a single peer
-    pub async fn fetch_peer(&self, record_id: String) -> Result<Record, anyhow::Error>{
-        let url = Url::parse(AIRTABLE_URL)?;
-        let fetch_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
-        let resp = self.client.get(fetch_url).send().await?;
-        let resp = resp.json::<Record>().await?;
-        Ok(resp)
-    }
-
-    // a patch request
-    pub async fn update_peer(
-        &self,
-        record: PostRecord,
-        record_id: String,
-    ) -> Result<Record, anyhow::Error> {
-        let url = Url::parse(AIRTABLE_URL)?;
-        let patch_record_url =
-            url.join(&(BASE_ID.to_string() + "/" + "peer_discovery" + "/" + record_id.as_str()))?;
-
-        let fields_value = serde_json::to_value(record.fields)
-        .map_err(|e| anyhow!("Failed to serialize fields: {}", e))?;
-
-        let patch_value = serde_json::json!({
-        "fields": fields_value
-        });
-
-        let resp = self
-            .client
-            .patch(patch_record_url)
-            .json(&patch_value)
-            .send()
-            .await?;
-
-        if resp.status().is_server_error() {
-            Err(anyhow!("server error, update peer"))?
-        }
-        if resp.status().is_client_error() {
-            Err(anyhow!("client error, update peer"))?
-        }
-        if resp.status().is_success() {
-            info!("succesfully updated peer in airtable");
-        }
-
-        let resp = resp.json::<Record>().await?;
-        Ok(resp)
-    }
-
-    #[cfg(feature = "e2e")]
-    pub async fn delete_all(&self) -> Result<(), anyhow::Error> {
-        let url = Url::parse(AIRTABLE_URL)?;
-        let delete_record_url = url.join(&(BASE_ID.to_string() + "/" + "peer_discovery"))?;
-
-        // fetch all records
-        let record_ids = self
-            .list_all_peers()
-            .await?
-            .into_iter()
-            .map(|discv| discv.id)
-            .collect::<Vec<String>>();
-
-        // Process records in batches of 10
-        for chunk in record_ids.chunks(10) {
-            // Reset query parameters for each batch
-            let mut url = delete_record_url.clone();
-
-            // Add each record ID as a query parameter
-            for id in chunk {
-                url.query_pairs_mut().append_pair("records[]", id);
-            }
-
-            let resp = self.client.delete(url).send().await?;
-
-            if resp.status().is_server_error() {
-                Err(anyhow!("server, delete record: {}", resp.status()))?
-            }
-            if resp.status().is_client_error() {
-                Err(anyhow!("client error, delete records: {}", resp.status()))?
-            }
-            if resp.status().is_success() {
-                info!("succesfully deleted records in airtable");
-            }
-        }
-        Ok(())
-    }
+#[cfg(not(target_arch = "wasm32"))]
+mod std_imports {
+    pub use alloc::sync::Arc;
+    pub use db::LocalDbWorker;
+    pub use jsonrpsee::core::Error;
+    pub use jsonrpsee::{
+        core::{async_trait, RpcResult, SubscriptionResult},
+        proc_macros::rpc,
+        PendingSubscriptionSink, SubscriptionMessage,
+    };
+    pub use libp2p::PeerId;
+    pub use local_ip_address;
+    pub use local_ip_address::local_ip;
+    pub use moka::future::Cache as AsyncCache;
+    pub use redis::Client as RedisClient;
+    pub use reqwest::{ClientBuilder, Url};
+    pub use sp_core::Blake2Hasher;
+    pub use sp_core::Hasher;
+    pub use tokio::sync::mpsc::{Receiver, Sender};
+    pub use tokio::sync::{Mutex, MutexGuard};
 }
 
 /// Trait
 #[cfg(not(target_arch = "wasm32"))]
 #[rpc(server, client)]
 pub trait TransactionRpc {
-    /// register user profile, generate node peer id and push the profile for vane discovery server
-    /// params:
-    ///
-    ///  - `name`
-    ///  - `accountId`
-    ///  - `network`
-    ///  - `rpc url`
-
-    #[method(name = "register")]
-    async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-        rpc: String
-    ) -> RpcResult<()>;
-
     /// add crypto address account
     /// params:
     ///
@@ -682,7 +503,7 @@ pub trait TransactionRpc {
 
     /// Allowing the sender to revery/cancel the transaction
     /// params:
-    /// 
+    ///
     /// - `tx_id`
     #[method(name = "revertTransaction")]
     async fn revert_transaction(&self, tx_state: TxStateMachine) -> RpcResult<()>;
@@ -710,8 +531,6 @@ pub trait TransactionRpc {
 pub struct TransactionRpcWorker {
     /// local database worker
     pub db_worker: Arc<Mutex<LocalDbWorker>>,
-    /// central server to get peer data
-    pub airtable_client: Arc<Mutex<Airtable>>,
     /// rpc server url
     pub rpc_url: String,
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
@@ -723,14 +542,14 @@ pub struct TransactionRpcWorker {
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     /// tx pending store
-    pub moka_cache: AsyncCache<u64, TxStateMachine>, 
+    pub moka_cache: AsyncCache<u64, TxStateMachine>,
     // initial fees, after dry running tx initialy without optimization
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl TransactionRpcWorker {
     pub async fn new(
-        airtable_client: Airtable,
+        redis_client: RedisClient,
         db_worker: Arc<Mutex<LocalDbWorker>>,
         rpc_recv_channel: Arc<Mutex<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Arc<Mutex<Sender<Arc<Mutex<TxStateMachine>>>>>,
@@ -750,7 +569,6 @@ impl TransactionRpcWorker {
         }
         Ok(Self {
             db_worker,
-            airtable_client: Arc::new(Mutex::new(airtable_client)),
             rpc_url,
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
@@ -780,64 +598,6 @@ impl TransactionRpcWorker {
 #[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl TransactionRpcServer for TransactionRpcWorker {
-    async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-        rpc: String
-    ) -> RpcResult<()> {
-        // TODO verify the account id as it belongs to the registerer
-        let network = network.as_str().into();
-        let user_account = UserAccount {
-            user_name: name,
-            account_id: account_id.clone(),
-            network,
-        };
-
-        self.db_worker
-            .lock()
-            .await
-            .set_user_account(user_account)
-            .await?;
-        // NOTE: the peer-record is already registered, the following is only updating account details of the record
-        // update: account address related to peer id
-        // ========================================================================================//
-        // fetch the record
-        let record = self
-            .db_worker
-            .lock()
-            .await
-            .get_user_peer_id(None, Some(self.peer_id.to_string()))
-            .await?;
-
-        let acc_info = AccountInfo {
-            account: account_id,
-            network
-        };
-
-        let peer_account = PeerRecord {
-            record_id: record.record_id.clone(),
-            peer_id: None,
-            account_id1: Some(acc_info),
-            account_id2: None,
-            account_id3: None,
-            account_id4: None,
-            multi_addr: None,
-            keypair: None,
-        };
-
-        info!("updated user peer record to be stored in local db");
-
-        self.db_worker
-            .lock()
-            .await
-            .update_user_peer_id_account_ids(peer_account.clone())
-            .await?;
-        
-        Ok(())
-    }
-
     async fn add_account(
         &self,
         _name: String,
@@ -915,7 +675,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
     async fn revert_transaction(&self, tx_state: TxStateMachine) -> RpcResult<()> {
         // remove from cache
-        if let None = self.moka_cache.remove(&tx_state.tx_nonce.into()).await{
+        if let None = self.moka_cache.remove(&tx_state.tx_nonce.into()).await {
             Err(anyhow!("tx not found in cache"))?
         }
         // update the db
@@ -930,9 +690,12 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         let sender_channel = self.user_rpc_update_sender_channel.lock().await;
         let sender = sender_channel.clone();
-        sender.send(Arc::from(Mutex::new(tx_state))).await.map_err(|_| {
+        sender
+            .send(Arc::from(Mutex::new(tx_state)))
+            .await
+            .map_err(|_| {
                 anyhow!("failed to send sender confirmation tx state to sender-channel")
-        })?;
+            })?;
 
         Ok(())
     }

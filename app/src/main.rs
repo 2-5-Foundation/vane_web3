@@ -33,7 +33,27 @@ struct Args {
     #[arg(short, long)]
     pub port: Option<u16>,
     #[arg(short, long)]
-    pub airtable_record_id: String
+    pub redis_url: String,
+    #[arg(short, long)]
+    pub account_profile_hash: String,
+    /// Account pairs in format "address:network,address:network,..."
+    #[arg(short, long, value_parser = parse_account_pairs)]
+    pub accounts: Vec<(String, String)>,
+}
+
+fn parse_account_pairs(s: &str) -> Result<Vec<(String, String)>, String> {
+    s.split(',')
+        .map(|pair| {
+            let parts: Vec<&str> = pair.trim().split(':').collect();
+            if parts.len() != 2 {
+                return Err(format!(
+                    "Invalid account pair format: {}. Expected format: address:network",
+                    pair
+                ));
+            }
+            Ok((parts[0].trim().to_string(), parts[1].trim().to_string()))
+        })
+        .collect()
 }
 
 #[tokio::main]
@@ -41,8 +61,13 @@ async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
 
-    node::MainServiceWorker::run(args.db_url,args.port,args.airtable_record_id).await?;
+    node::MainServiceWorker::run(
+        args.db_url,
+        args.port,
+        args.redis_url,
+        args.account_profile_hash,
+        args.accounts,
+    )
+    .await?;
     Ok(())
 }
-
-

@@ -1,4 +1,3 @@
-
 extern crate alloc;
 extern crate core;
 
@@ -12,46 +11,23 @@ pub mod tx_processing;
 use crate::p2p::P2pNetworkService;
 
 use alloc::sync::Arc;
-use hex_literal::hex;
 use anyhow::{anyhow, Error};
 use codec::Decode;
 use core::str::FromStr;
+use hex_literal::hex;
 use primitives::data_structure::DbWorkerInterface;
 
 use libp2p::request_response::{InboundRequestId, Message, ResponseChannel};
 use libp2p::{Multiaddr, PeerId};
 use log::{error, info, warn};
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, HashId, NetworkCommand, PeerRecord, SwarmMessage,
-    TxStateMachine, TxStatus,
+    ChainSupported, DbTxStateMachine, HashId, NetworkCommand, PeerRecord, RedisAccountProfile,
+    SwarmMessage, TxStateMachine, TxStatus,
 };
 pub use rand::Rng;
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use lib_imports::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-mod lib_imports {
-    pub use crate::rpc::TransactionRpcWorker;
-    pub use crate::tx_processing::TxProcessingWorker;
-    pub use std::hash::{DefaultHasher, Hash, Hasher};
-    pub use std::net::SocketAddr;
-    pub use tokio::sync::Mutex;
-    pub extern crate rcgen;
-    pub use crate::p2p::P2pWorker;
-    pub use crate::rpc::{Airtable, TransactionRpcServer};
-    pub use db::db::saved_peers::Data;
-    pub use db::LocalDbWorker;
-    pub use jsonrpsee::server::ServerBuilder;
-    pub use libp2p::futures::{FutureExt, StreamExt};
-    pub use local_ip_address::local_ip;
-    pub use moka::future::Cache as AsyncCache;
-    pub use rcgen::{generate_simple_self_signed, CertifiedKey};
-    pub use tokio::sync::mpsc::{Receiver, Sender};
-}
 
 // -------------------------------- WASM ------------------------------ //
 #[cfg(target_arch = "wasm32")]
@@ -66,10 +42,9 @@ mod lib_wasm_imports {
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
     pub use db_wasm::OpfsRedbWorker;
-    pub use lru::LruCache;
     pub use futures::FutureExt;
+    pub use lru::LruCache;
     pub use wasm_bindgen::prelude::wasm_bindgen;
-
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -88,7 +63,8 @@ pub struct WasmMainServiceWorker {
     /// this serve as an update channel to the user
     pub rpc_sender_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<TxStateMachine>>>,
     /// receiver channel to handle the updates made by user from rpc
-    pub user_rpc_update_recv_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<TxStateMachine>>>,
+    pub user_rpc_update_recv_channel:
+        Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<TxStateMachine>>>,
     // moka cache
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>,
 }
@@ -104,7 +80,8 @@ impl WasmMainServiceWorker {
             tokio_with_wasm::sync::mpsc::channel(10);
 
         // for p2p network commands
-        let (p2p_command_tx, p2p_command_recv) = tokio_with_wasm::sync::mpsc::channel::<NetworkCommand>(10);
+        let (p2p_command_tx, p2p_command_recv) =
+            tokio_with_wasm::sync::mpsc::channel::<NetworkCommand>(10);
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
@@ -244,9 +221,9 @@ impl WasmMainServiceWorker {
                         return Err(e.into());
                     }
 
-                    self.lru_cache.borrow_mut()
+                    self.lru_cache
+                        .borrow_mut()
                         .push(decoded_req.tx_nonce.into(), decoded_req.clone());
-
 
                     info!(target: "MainServiceWorker",
                           "propagating txn msg as request: {decoded_req:?}");
@@ -291,7 +268,8 @@ impl WasmMainServiceWorker {
                         return Err(e.into());
                     }
 
-                    self.lru_cache.borrow_mut()
+                    self.lru_cache
+                        .borrow_mut()
                         .push(decoded_resp.tx_nonce.into(), decoded_resp.clone());
 
                     info!(target: "MainServiceWorker",
@@ -573,7 +551,36 @@ pub async fn start_vane_web3(db_url: Option<String>) -> Result<PublicInterfaceWo
 
     Ok(worker)
 }
-// ========================================================= NATIVE ========================================================= //
+
+/****************************************************
+*                                                  *
+*                  NATIVE CODE                     *
+*                                                  *
+****************************************************/
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use lib_imports::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod lib_imports {
+    pub use crate::rpc::TransactionRpcWorker;
+    pub use crate::tx_processing::TxProcessingWorker;
+    pub use std::hash::{DefaultHasher, Hash, Hasher};
+    pub use std::net::SocketAddr;
+    pub use tokio::sync::Mutex;
+    pub extern crate rcgen;
+    pub use crate::p2p::P2pWorker;
+    pub use crate::rpc::{RedisClient, TransactionRpcServer};
+    pub use db::db::saved_peers::Data;
+    pub use db::LocalDbWorker;
+    pub use jsonrpsee::server::ServerBuilder;
+    pub use libp2p::futures::{FutureExt, StreamExt};
+    pub use local_ip_address::local_ip;
+    pub use moka::future::Cache as AsyncCache;
+    pub use rcgen::{generate_simple_self_signed, CertifiedKey};
+    pub use redis::AsyncCommands;
+    pub use tokio::sync::mpsc::{Receiver, Sender};
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
@@ -581,7 +588,7 @@ pub struct MainServiceWorker {
     pub db_worker: Arc<Mutex<LocalDbWorker>>,
     pub tx_rpc_worker: Arc<Mutex<TransactionRpcWorker>>,
     pub tx_processing_worker: Arc<Mutex<TxProcessingWorker>>,
-    pub airtable_client: Airtable,
+    pub redis_client: RedisClient,
     // for swarm events
     pub p2p_worker: Arc<Mutex<P2pWorker>>, //telemetry_worker: TelemetryWorker,
     pub p2p_network_service: Arc<Mutex<P2pNetworkService>>,
@@ -597,7 +604,13 @@ pub struct MainServiceWorker {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MainServiceWorker {
-    pub(crate) async fn new(db_url_path: Option<String>, port: Option<u16>, airtable_record_id: String) -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(
+        db_url_path: Option<String>,
+        port: Option<u16>,
+        redis_url: String,
+        account_profile_hash: String,
+        accounts: Vec<(String, String)>,
+    ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -618,6 +631,8 @@ impl MainServiceWorker {
         }
         let db = LocalDbWorker::initialize_db_client(db_url.as_str()).await?;
 
+        let redis_client = RedisClient::open(redis_url)?;
+
         let mut rpc_port: u16 = 0;
         let mut p2p_port: u16 = 0;
 
@@ -629,11 +644,10 @@ impl MainServiceWorker {
             let (rp_port, p2_port) = {
                 if let Some(port) = port {
                     (port, port - 541)
-                }else{
+                } else {
                     let port = rand::thread_rng().gen_range(0..=u16::MAX);
                     (port, port - 541)
                 }
-
             };
             {
                 db.set_ports(rp_port, p2_port).await?
@@ -643,11 +657,6 @@ impl MainServiceWorker {
         }
 
         let db_worker = Arc::new(Mutex::new(db));
-
-        // fetch to the db, if not then set one
-        let airtable_client = Airtable::new()
-            .await
-            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
 
         let moka_cache = AsyncCache::builder()
             .max_capacity(10)
@@ -659,10 +668,11 @@ impl MainServiceWorker {
         // ===================================================================================== //
 
         let p2p_worker = P2pWorker::new(
-            Arc::new(Mutex::new(airtable_client.clone())),
+            redis_client.clone(),
             db_worker.clone(),
             p2p_port,
-            airtable_record_id,
+            account_profile_hash,
+            accounts,
             p2p_command_recv,
         )
         .await?;
@@ -674,7 +684,7 @@ impl MainServiceWorker {
         // ===================================================================================== //
 
         let txn_rpc_worker = TransactionRpcWorker::new(
-            airtable_client.clone(),
+            redis_client.clone(),
             db_worker.clone(),
             Arc::new(Mutex::new(rpc_recv_channel)),
             Arc::new(Mutex::new(user_rpc_update_sender_channel)),
@@ -699,7 +709,7 @@ impl MainServiceWorker {
             db_worker,
             tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
             tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
-            airtable_client,
+            redis_client,
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
             p2p_network_service: Arc::new(Mutex::new(p2p_network_service)),
             rpc_sender_channel: Arc::new(Mutex::new(rpc_sender_channel)),
@@ -726,12 +736,10 @@ impl MainServiceWorker {
             }
         });
 
-
         loop {
             if let Some(swarm_msg_result) = recv_channel.recv().await {
                 match swarm_msg_result {
                     Ok(swarm_msg) => match swarm_msg {
-
                         SwarmMessage::Request { data, inbound_id } => {
                             let mut decoded_req: TxStateMachine = Decode::decode(&mut &data[..])
                                 .expect("failed to decode request body");
@@ -801,7 +809,7 @@ impl MainServiceWorker {
                                 .await;
 
                             info!(target: "MainServiceWorker","propagating txn msg as a response to rpc layer for user interaction: {decoded_resp:?}");
-                        },
+                        }
                         _ => {}
                     },
                     Err(err) => {
@@ -842,7 +850,10 @@ impl MainServiceWorker {
             Ok(acc) => {
                 info!(target:"MainServiceWorker","target peer found in local db");
                 // dial the target
-                let multi_addr = acc.multi_addr.expect("multi addr not found").parse::<Multiaddr>()?;
+                let multi_addr = acc
+                    .multi_addr
+                    .expect("multi addr not found")
+                    .parse::<Multiaddr>()?;
                 let peer_id = PeerId::from_str(acc.peer_id.expect("peerId not found").as_str())?;
 
                 // ========================================================================= //
@@ -865,94 +876,91 @@ impl MainServiceWorker {
             }
             Err(_err) => {
                 // fetch from remote db
-                info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote db");
-
-                let acc_ids = self.airtable_client.list_all_peers().await?;
-
+                info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote redis db");
                 let target_id_addr = {
                     let tx = txn.lock().await;
                     tx.receiver_address.clone()
                 };
 
-                if !acc_ids.is_empty() {
-                    let result_peer = acc_ids.into_iter().find_map(|discovery| {
-                        match discovery
-                            .clone()
-                            .account_ids
-                            .into_iter()
-                            .find(|addr| addr.account == target_id_addr)
-                        {
-                            Some(_) => {
-                                let peer_record: PeerRecord = discovery.clone().into();
-                                Some((discovery.peer_id, discovery.multi_addr, peer_record))
-                            }
-                            None => None,
-                        }
-                    });
-
-                    if result_peer.is_some() {
-                        // dial the target
-                        info!(target:"MainServiceWorker","target peer found in remote db: {result_peer:?} \n");
-                        let multi_addr = result_peer
-                            .clone()
-                            .expect("failed to get multi addr")
-                            .1
-                            .unwrap()
-                            .parse::<Multiaddr>()
+                let target_user_profile: Option<RedisAccountProfile> = {
+                    let mut redis_conn =
+                        self.redis_client.get_multiplexed_async_connection().await?;
+                    if let Ok(redis_target_user_hash_id) = redis_conn
+                        .hget::<String, String, String>("ACCOUNT_LINK".to_string(), target_id_addr)
+                        .await
+                    {
+                        // at this point per design we should have the target user profile in redis
+                        let target_user_profile = redis_conn
+                            .hget::<String, String, String>(
+                                "ACCOUNT_PROFILE".to_string(),
+                                redis_target_user_hash_id,
+                            )
+                            .await
                             .map_err(|err| {
-                                anyhow!("failed to parse multi addr, caused by: {err}")
+                                anyhow!("failed to get target user profile, caused by: {err}")
                             })?;
-                        let peer_id = PeerId::from_str(
-                            &*result_peer
-                                .clone()
-                                .expect("GENESIS: failed to find peer id")
-                                .0
-                                .expect("GENESIS: failed to parse peerId"),
-                        )?;
-
-                        // save the target peer id to local db
-                        let peer_record = result_peer.clone().unwrap().2;
-                        info!(target: "MainServiceWorker","recording target peer id to local db");
-
-                        // ========================================================================= //
-                        {
-                            self.db_worker
-                                .lock()
-                                .await
-                                .record_saved_user_peers(peer_record)
-                                .await?;
-                        }
-
-                        // ========================================================================= //
-                        let mut p2p_network_service = self.p2p_network_service.lock().await;
-
-                        {
-                            p2p_network_service
-                                .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                                .await?;
-                        }
-
-                        // wait for dialing to complete
-                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-                        {
-                            p2p_network_service
-                                .send_request(txn.clone(), peer_id, multi_addr)
-                                .await?;
-                        }
+                        Some(
+                            serde_json::from_str::<RedisAccountProfile>(&target_user_profile)
+                                .unwrap()
+                                .into(),
+                        )
                     } else {
-                        // return tx state as error on sender rpc
-                        let mut txn = txn.lock().await.clone();
-                        txn.recv_not_registered();
-                        self.rpc_sender_channel
+                        None
+                    }
+                };
+
+                if let Some(result_peer) = target_user_profile {
+                    // dial the target
+                    info!(target:"MainServiceWorker","target peer found in remote db: {result_peer:?} \n");
+
+                    let multi_addr = result_peer
+                        .multi_addr
+                        .parse::<Multiaddr>()
+                        .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
+                    let peer_id = PeerId::from_str(&*result_peer.peer_id)?;
+
+                    // save the target peer id to local db
+                    let peer_record = result_peer.into();
+                    info!(target: "MainServiceWorker","recording target peer id to local db");
+
+                    // ========================================================================= //
+                    {
+                        self.db_worker
                             .lock()
                             .await
-                            .send(txn.clone())
+                            .record_saved_user_peers(peer_record)
                             .await?;
-                        self.moka_cache.insert(txn.tx_nonce.into(), txn).await;
-
-                        error!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
                     }
+
+                    // ========================================================================= //
+                    let mut p2p_network_service = self.p2p_network_service.lock().await;
+
+                    {
+                        p2p_network_service
+                            .dial_to_peer_id(multi_addr.clone(), &peer_id)
+                            .await?;
+                    }
+
+                    // wait for dialing to complete
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+                    {
+                        p2p_network_service
+                            .send_request(txn.clone(), peer_id, multi_addr)
+                            .await?;
+                    }
+                } else {
+                    // return tx state as error on sender rpc
+                    let mut txn = txn.lock().await.clone();
+                    txn.recv_not_registered();
+                    self.rpc_sender_channel
+                        .lock()
+                        .await
+                        .send(txn.clone())
+                        .await?;
+                    self.moka_cache.insert(txn.tx_nonce.into(), txn).await;
+
+                    warn!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
                 }
             }
         }
@@ -1086,16 +1094,26 @@ impl MainServiceWorker {
                 }
 
                 TxStatus::Reverted => {
-                    let peer_id = { 
+                    let peer_id = {
                         let tx = txn.lock().await;
-                        if let Some(peer_id) = self.db_worker.lock().await.get_saved_user_peers(tx.receiver_address.clone()).await?.peer_id {
+                        if let Some(peer_id) = self
+                            .db_worker
+                            .lock()
+                            .await
+                            .get_saved_user_peers(tx.receiver_address.clone())
+                            .await?
+                            .peer_id
+                        {
                             PeerId::from_str(peer_id.as_str()).unwrap()
-                            
                         } else {
                             return Err(anyhow!("Reverting: peer id not found"));
                         }
                     };
-                    self.p2p_network_service.lock().await.disconnect_from_peer_id(&peer_id).await?;
+                    self.p2p_network_service
+                        .lock()
+                        .await
+                        .disconnect_from_peer_id(&peer_id)
+                        .await?;
                 }
                 _ => {}
             };
@@ -1128,7 +1146,13 @@ impl MainServiceWorker {
     }
 
     /// compose all workers and run logically, the p2p swarm worker will be running indefinately on background same as rpc worker
-    pub async fn run(db_url: Option<String>, port: Option<u16>, airtable_record_id: String) -> Result<(), anyhow::Error> {
+    pub async fn run(
+        db_url: Option<String>,
+        port: Option<u16>,
+        redis_url: String,
+        account_profile_hash: String,
+        accounts: Vec<(String, String)>,
+    ) -> Result<(), anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -1137,7 +1161,8 @@ impl MainServiceWorker {
         );
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url,port,airtable_record_id).await?;
+        let main_worker =
+            Self::new(db_url, port, redis_url, account_profile_hash, accounts).await?;
         // start rpc server
         let rpc_address = main_worker
             .start_rpc_server()
@@ -1204,7 +1229,13 @@ impl MainServiceWorker {
     // =================================== E2E ====================================== //
 
     #[cfg(feature = "e2e")]
-    pub async fn e2e_new(port: u16, db: &str, airtable_record_id: String) -> Result<Self, Error> {
+    pub async fn e2e_new(
+        port: u16,
+        db: &str,
+        redis_url: String,
+        account_profile_hash: String,
+        accounts: Vec<(String, String)>,
+    ) -> Result<Self, Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -1218,11 +1249,8 @@ impl MainServiceWorker {
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
         let db_worker = Arc::new(Mutex::new(LocalDbWorker::initialize_db_client(db).await?));
-
         // fetch to the db, if not then set one
-        let airtable_client = Airtable::new()
-            .await
-            .map_err(|err| anyhow!("failed to instantiate airtable client, caused by: {err}"))?;
+        let redis_client = RedisClient::open(redis_url)?;
 
         let moka_cache = AsyncCache::builder()
             .max_capacity(10)
@@ -1234,10 +1262,11 @@ impl MainServiceWorker {
         // ===================================================================================== //
         let (rpc_port, p2p_port) = (port - 100, port - 589);
         let p2p_worker = P2pWorker::new(
-            Arc::new(Mutex::new(airtable_client.clone())),
+            redis_client.clone(),
             db_worker.clone(),
             p2p_port,
-            airtable_record_id,
+            account_profile_hash,
+            accounts,
             p2p_command_recv,
         )
         .await?;
@@ -1249,7 +1278,7 @@ impl MainServiceWorker {
         // ===================================================================================== //
 
         let txn_rpc_worker = TransactionRpcWorker::new(
-            airtable_client.clone(),
+            redis_client.clone(),
             db_worker.clone(),
             Arc::new(Mutex::new(rpc_recv_channel)),
             Arc::new(Mutex::new(user_rpc_update_sender_channel)),
@@ -1274,7 +1303,7 @@ impl MainServiceWorker {
             db_worker,
             tx_rpc_worker: Arc::new(Mutex::new(txn_rpc_worker)),
             tx_processing_worker: Arc::new(Mutex::new(tx_processing_worker)),
-            airtable_client,
+            redis_client: redis_client,
             p2p_worker: Arc::new(Mutex::new(p2p_worker)),
             p2p_network_service: Arc::new(Mutex::new(p2p_network_service)),
             rpc_sender_channel: Arc::new(Mutex::new(rpc_sender_channel)),

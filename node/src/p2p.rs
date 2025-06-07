@@ -1,16 +1,19 @@
 use anyhow::{anyhow, Error};
+pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
 use log::{debug, error, info, trace};
-pub use codec::Encode;
 
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use primitives::data_structure::{DbWorkerInterface, PostRecord};
+use primitives::data_structure::DbWorkerInterface;
 
-use primitives::data_structure::{AirtableRequestBody, Fields, HashId, PeerRecord};
-use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine};
+use primitives::data_structure::{
+    AccountInfo, ChainSupported, HashId, NetworkCommand, PeerRecord, RedisAccountProfile,
+    SwarmMessage, TxStateMachine,
+};
+
 use sp_core::H256;
 
 // ---------------------- libp2p common --------------------- //
@@ -20,32 +23,11 @@ use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 
-
 use std::collections::{HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 // ------------------
-
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use p2p_std_imports::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-mod p2p_std_imports {
-    pub use crate::rpc::Airtable;
-    pub use db::LocalDbWorker;
-    pub use local_ip_address::local_ip;
-    pub use tokio::select;
-    pub use tokio::sync::mpsc::{Receiver, Sender};
-    pub use tokio::sync::{Mutex, MutexGuard};
-    pub use tokio_stream::wrappers::ReceiverStream;
-    pub use tokio_stream::StreamExt;
-    pub use std::io;
-    pub use std::sync::Arc;
-    pub use std::time::Duration;
-}
 
 // -------------------- WASM CRATES IMPORT ------------------ //
 #[cfg(target_arch = "wasm32")]
@@ -53,16 +35,15 @@ use p2p_wasm_imports::*;
 
 #[cfg(target_arch = "wasm32")]
 mod p2p_wasm_imports {
+    pub use crate::rpc::AirtableWasm;
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
+    pub use db_wasm::OpfsRedbWorker;
+    pub use futures::StreamExt;
     pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
     pub use libp2p::webtransport_websys as webrtc_websys;
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
-    pub use futures::StreamExt;
-    pub use db_wasm::OpfsRedbWorker;
-    pub use crate::rpc::AirtableWasm;
-
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -224,8 +205,7 @@ pub struct WasmP2pWorker {
     pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
     pub url: Multiaddr,
     pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>>>,
-    pub wasm_pending_request:
-        Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
+    pub wasm_pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -240,7 +220,6 @@ impl WasmP2pWorker {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
         let p2p_url = String::new();
-
 
         info!("listening to p2p url: {p2p_url}");
         let mut user_peer_id = PeerRecord {
@@ -427,7 +406,9 @@ impl WasmP2pWorker {
 
     pub async fn start_swarm(
         &mut self,
-        sender_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
+        sender_channel: Rc<
+            RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
+        >,
     ) -> Result<(), Error> {
         let multi_addr = &self.url;
         let _listening_id = self.wasm_swarm.borrow_mut().listen_on(multi_addr.clone())?;
@@ -443,7 +424,6 @@ impl WasmP2pWorker {
             let p2p_command_recv = Rc::clone(&p2p_command_recv);
             let pending_request = Rc::clone(&pending_request);
             let sender = Rc::clone(&sender);
-
 
             wasm_bindgen_futures::spawn_local(async move {
                 let mut swarm = swarm.borrow_mut();
@@ -502,11 +482,37 @@ impl WasmP2pWorker {
             .set_interval_with_callback_and_timeout_and_arguments_0(
                 callback.as_ref().unchecked_ref(),
                 100, // 100 ms interval
-            ).map_err(|err|anyhow!("failed to set windows interval: {err:?}"))?;
+            )
+            .map_err(|err| anyhow!("failed to set windows interval: {err:?}"))?;
 
         callback.forget();
         Ok(())
     }
+}
+
+/****************************************************
+*                                                  *
+*                  NATIVE CODE                     *
+*                                                  *
+****************************************************/
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use p2p_std_imports::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod p2p_std_imports {
+    pub use crate::rpc::RedisClient;
+    pub use db::LocalDbWorker;
+    pub use local_ip_address::local_ip;
+    pub use redis::AsyncCommands;
+    pub use std::io;
+    pub use std::sync::Arc;
+    pub use std::time::Duration;
+    pub use tokio::select;
+    pub use tokio::sync::mpsc::{Receiver, Sender};
+    pub use tokio::sync::{Mutex, MutexGuard};
+    pub use tokio_stream::wrappers::ReceiverStream;
+    pub use tokio_stream::StreamExt;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -527,10 +533,11 @@ pub struct P2pWorker {
 impl P2pWorker {
     /// generate new ed25519 keypair for node identity and register the peer record in  the db
     pub async fn new(
-        airtable_client: Arc<Mutex<Airtable>>,
+        redis_client: RedisClient,
         db_worker: Arc<Mutex<LocalDbWorker>>,
         port: u16,
-        airtable_record_id: String,
+        account_profile_hash: String,
+        accounts: Vec<(String, String)>,
         command_recv_channel: Receiver<NetworkCommand>,
     ) -> Result<Self, Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
@@ -545,15 +552,34 @@ impl P2pWorker {
         } else {
             p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", local_ip.to_string(), port, peer_id);
         }
+        let accounts: Vec<AccountInfo> = accounts
+            .into_iter()
+            .map(|(account, network)| AccountInfo {
+                account,
+                network: ChainSupported::from(network.as_str()),
+            })
+            .collect();
+        info!("update redis dht db");
+        let account_profile = RedisAccountProfile {
+            accounts: accounts.clone(),
+            multi_addr: p2p_url.clone(),
+            peer_id: peer_id.clone(),
+            rpc: "".to_string(),
+        };
+        let mut redis_conn = redis_client.get_multiplexed_async_connection().await?;
+        redis_conn
+            .hset::<String, String, String, String>(
+                "ACCOUNT_PROFILE".to_string(),
+                account_profile_hash,
+                serde_json::to_string(&account_profile)
+                    .expect("failed to serialize redis account profile"),
+            )
+            .await?;
 
-        info!("listening to p2p url: {p2p_url}");
+        info!("listening to p2p url: {}", p2p_url.as_str());
         let mut user_peer_id = PeerRecord {
-            record_id: "".to_string(),
             peer_id: Some(peer_id),
-            account_id1: None,
-            account_id2: None,
-            account_id3: None,
-            account_id4: None,
+            accounts,
             multi_addr: Some(p2p_url),
             keypair: Some(
                 self_peer_id
@@ -562,12 +588,6 @@ impl P2pWorker {
             ),
         };
 
-        let field: Fields = user_peer_id.clone().into();
-        let req_body = PostRecord::new(field);
-        let record_data = airtable_client.lock().await.update_peer(req_body, airtable_record_id).await?;
-
-        // store in the local db and airtable db
-        user_peer_id.record_id = record_data.id;
         db_worker
             .lock()
             .await
@@ -841,13 +861,12 @@ impl P2pNetworkService {
     pub fn new(
         p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
         p2p_worker: WasmP2pWorker,
-    ) -> Result<Self,Error>{
-        Ok(Self{
+    ) -> Result<Self, Error> {
+        Ok(Self {
             p2p_command_tx,
-            wasm_p2p_worker: p2p_worker
+            wasm_p2p_worker: p2p_worker,
         })
     }
-
 
     // dialing the target peer_id
     pub async fn dial_to_peer_id(
@@ -869,16 +888,12 @@ impl P2pNetworkService {
     }
 
     // close the connection to the peer_id
-    pub async fn disconnect_from_peer_id(
-        &mut self,
-        peer_id: &PeerId,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn disconnect_from_peer_id(&mut self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
         let close_command = NetworkCommand::Close {
             peer_id: peer_id.clone(),
         };
 
-        self.p2p_command_tx
-            .send(close_command);
+        self.p2p_command_tx.send(close_command);
         Ok(())
     }
 

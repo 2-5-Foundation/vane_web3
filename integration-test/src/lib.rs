@@ -14,7 +14,10 @@ use libp2p::{Multiaddr, PeerId};
 use node::p2p::{BoxStream, P2pWorker};
 use node::MainServiceWorker;
 use primitives::data_structure::{ChainSupported, PeerRecord, ETH_SIG_MSG_PREFIX};
-use simplelog::{CombinedLogger, TermLogger, WriteLogger, TerminalMode, ColorChoice, Config, LevelFilter, ConfigBuilder};
+use simplelog::{
+    ColorChoice, CombinedLogger, Config, ConfigBuilder, LevelFilter, TermLogger, TerminalMode,
+    WriteLogger,
+};
 use std::fs::File;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -22,7 +25,7 @@ use tokio::sync::Mutex;
 fn log_setup() -> Result<(), anyhow::Error> {
     let config = ConfigBuilder::new()
         .set_target_level(LevelFilter::Error)
-        .set_location_level(LevelFilter::Info)  // This enables file and line logging
+        .set_location_level(LevelFilter::Info) // This enables file and line logging
         .set_thread_level(LevelFilter::Off)
         .set_time_level(LevelFilter::Off)
         .build();
@@ -30,13 +33,13 @@ fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
-            config.clone(),  // Use the custom config
+            config.clone(), // Use the custom config
             TerminalMode::Mixed,
             ColorChoice::Auto,
         ),
         WriteLogger::new(
             LevelFilter::Info,
-            config,  // Use the same custom config
+            config, // Use the same custom config
             File::create("vane-test.log").unwrap(),
         ),
     ])?;
@@ -53,24 +56,22 @@ fn delete_unnecessary_test_files() -> Result<(), anyhow::Error> {
 
     let patterns = [".db"];
 
-    for entry in WalkDir::new(search_dir)
-        .into_iter() {
+    for entry in WalkDir::new(search_dir).into_iter() {
         match entry {
             Ok(entry) => {
                 let path = entry.path();
 
-                if patterns.iter().any(|pattern| {
-                    path.to_string_lossy()
-                        .to_string()
-                        .contains(pattern)
-                }) {
+                if patterns
+                    .iter()
+                    .any(|pattern| path.to_string_lossy().to_string().contains(pattern))
+                {
                     if let Err(e) = fs::remove_file(path) {
                         println!("Error deleting file {:?}: {}", path, e);
                     } else {
                         println!("Deleted: {:?}", path);
                     }
                 }
-            },
+            }
             Err(e) => println!("Error accessing entry: {}", e),
         }
     }
@@ -99,7 +100,8 @@ mod e2e_tests {
     use node::rpc::Airtable;
     use node::MainServiceWorker;
     use primitives::data_structure::{
-        AccountInfo, AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine, TxStatus
+        AccountInfo, AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine,
+        TxStatus,
     };
     use rand::Rng;
     use std::hash::{DefaultHasher, Hash, Hasher};
@@ -274,7 +276,7 @@ mod e2e_tests {
         // try updating
         let acc_info = AccountInfo {
             account: "4456".to_string(),
-            network: ChainSupported::Ethereum
+            network: ChainSupported::Ethereum,
         };
         peer.account_id1 = Some(acc_info);
         let new_req_body = PostRecord::new(peer.clone());
@@ -507,13 +509,13 @@ mod e2e_tests {
                                     )
                                     .await
                                     .expect("failed to confirm sender");
-                            },
+                            }
                             TxStatus::FailedToSubmitTxn(msg) => {
                                 println!("in handle 1: {msg:?}")
-                            },
+                            }
                             TxStatus::TxSubmissionPassed(hash) => {
-                              println!("trx submitted hash: {hash:?}")
-                            },
+                                println!("trx submitted hash: {hash:?}")
+                            }
                             _ => panic!("in sender's side txStatus is invalid"),
                         }
                     }
@@ -530,7 +532,7 @@ mod e2e_tests {
         println!("\n before initiating transactions \n");
 
         // rpc_1 (initiate transaction)
-        let amount:u128 = 1000000000000000000000;
+        let amount: u128 = 1000000000000000000000;
         let mut tx_params = ArrayParams::new();
         tx_params.insert(wallet_1.address().to_string()).unwrap();
         tx_params.insert(wallet_2.address().to_string()).unwrap();
@@ -710,7 +712,6 @@ mod e2e_tests {
         // 5. Attest Db recorded Failed Tx and Failed Tx value
         Ok(())
     }
-
 
     #[tokio::test]
     async fn revenue_eth_works() -> Result<(), anyhow::Error> {

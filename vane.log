@@ -1,11 +1,11 @@
-13:24:22 [INFO] 
+17:35:36 [INFO] 
 🔥 =========== Vane Web3 =========== 🔥
 A safety layer for web3 transactions, allows you to feel secure when sending and receiving 
 tokens without the fear of selecting the wrong address or network. 
 It provides a safety net, giving you room to make mistakes without losing all your funds.
 
-13:24:22 [INFO] Starting a sqlite pool with 25 connections.
-13:24:22 [INFO] listening to p2p url: /ip4/192.168.1.153/tcp/45345/p2p/12D3KooWLrdDaxipaB75692LC87V7Ebh9o4JcJgcRsrjDM6Un2yX
-13:24:25 [INFO] succesfully created peer in airtable
-13:24:25 [INFO] listening to rpc url: 192.168.1.153:45886
-13:24:25 [INFO] new listener address: /ip4/192.168.1.153/tcp/45345
+17:35:36 [INFO] Starting a sqlite pool with 25 connections.
+17:35:36 [INFO] listening to p2p url: /ip4/192.168.0.185/tcp/64777/p2p/12D3KooWPNTrmCmfAn7McETjpb5UrJNtYSUVDzbfWFAfDbbqbevt
+17:35:37 [INFO] succesfully updated peer in airtable
+17:35:37 [INFO] listening to rpc url: 192.168.0.185:65318
+17:35:37 [INFO] new listener address: /ip4/192.168.0.185/tcp/64777

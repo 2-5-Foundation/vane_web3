@@ -10,8 +10,8 @@ use libp2p::{Multiaddr, PeerId};
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
-use sp_core::{blake2_256,keccak_256,sha2_256};
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -130,7 +130,7 @@ pub struct TxStateMachine {
     pub receiver_address: String,
     /// hashed sender and receiver address to bind the addresses while sending
     #[serde(rename = "multiId")]
-    pub multi_id: [u8;32],
+    pub multi_id: [u8; 32],
     /// signature of the receiver id (Signature)
     #[serde(rename = "recvSignature")]
     pub recv_signature: Option<Vec<u8>>,
@@ -197,17 +197,11 @@ impl TxStateMachine {
     }
     pub fn get_tx_hash(&self) -> [u8; 32] {
         match self.network {
-            ChainSupported::Polkadot => {
-                blake2_256(&self.encode()[..])
-            },
-            ChainSupported::Solana => {
-                sha2_256(&self.encode()[..])
-            },
+            ChainSupported::Polkadot => blake2_256(&self.encode()[..]),
+            ChainSupported::Solana => sha2_256(&self.encode()[..]),
             // EVM
-            _ => {
-                keccak_256(&self.encode()[..])
-            }
-        }   
+            _ => keccak_256(&self.encode()[..]),
+        }
     }
 }
 
@@ -379,9 +373,7 @@ impl From<&str> for ChainSupported {
             "Ethereum" => ChainSupported::Ethereum,
             "Bnb" => ChainSupported::Bnb,
             "Solana" => ChainSupported::Solana,
-            _ => {
-                ChainSupported::Ethereum
-            }
+            _ => ChainSupported::Ethereum,
         }
     }
 }
@@ -421,12 +413,8 @@ pub struct UserAccount {
 /// Vane peer record
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct PeerRecord {
-    pub record_id: String,       // for airtable
     pub peer_id: Option<String>, // IDEALLY this should be just account address and it will be converted to libp2p::PeerId,
-    pub account_id1: Option<AccountInfo>,
-    pub account_id2: Option<AccountInfo>,
-    pub account_id3: Option<AccountInfo>,
-    pub account_id4: Option<AccountInfo>,
+    pub accounts: Vec<AccountInfo>,
     pub multi_addr: Option<String>,
     pub keypair: Option<Vec<u8>>, // encrypted
 }
@@ -463,177 +451,40 @@ pub struct Discovery {
     pub peer_id: Option<String>,
     pub multi_addr: Option<String>,
     pub account_ids: Vec<AccountInfo>,
-    pub rpc: Option<String>
+    pub rpc: Option<String>,
 }
 
-impl From<Discovery> for PeerRecord {
-    fn from(value: Discovery) -> Self {
-        let mut acc = vec![];
-        if let Some(addr) = value.account_ids.get(0) {
-            let acc_to_vec_id = addr.to_owned();
-            acc.push(acc_to_vec_id)
-        }
-        if let Some(addr) = value.account_ids.get(1) {
-            let acc_to_vec_id = addr.to_owned();
-            acc.push(acc_to_vec_id)
-        }
-        if let Some(addr) = value.account_ids.get(2) {
-            let acc_to_vec_id = addr.to_owned();
-            acc.push(acc_to_vec_id)
-        }
-        if let Some(addr) = value.account_ids.get(3) {
-            let acc_to_vec_id = addr.to_owned();
-            acc.push(acc_to_vec_id)
-        }
-
+impl From<RedisAccountProfile> for PeerRecord {
+    fn from(value: RedisAccountProfile) -> Self {
         Self {
-            record_id: value.id,
-            peer_id: value.peer_id,
-            account_id1: acc.get(0).map(|x| x.clone()),
-            account_id2: acc.get(1).map(|x| x.clone()),
-            account_id3: acc.get(2).map(|x| x.clone()),
-            account_id4: acc.get(3).map(|x| x.clone()),
-            multi_addr: value.multi_addr,
+            peer_id: Some(value.peer_id),
+            multi_addr: Some(value.multi_addr),
             keypair: None,
+            accounts: value.accounts,
         }
     }
 }
+//  --------------------------- REMOTE DB ------------------------------------------------------------ //
 
-// to destructure returned json from db
-#[derive(Debug, Serialize, Clone, Deserialize)]
-pub struct AirtableResponse {
-    pub records: Vec<Record>,
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct RedisAccountProfile {
+    pub accounts: Vec<AccountInfo>,
+    pub peer_id: String,
+    pub multi_addr: String,
+    pub rpc: String,
 }
-#[derive(Debug, Serialize, Clone, Deserialize)]
-pub struct Record {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub id: String,
-    #[serde(rename = "createdTime")]
-    pub created_time: String,
-    pub fields: Fields,
-}
-
-// airtable request body
-#[derive(Debug, Serialize, Clone, Deserialize)]
-pub struct AirtableRequestBody {
-    pub records: Vec<PostRecord>,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize)]
-pub struct PostRecord {
-    pub fields: Fields,
-}
-
-impl PostRecord {
-    pub fn new(fields: Fields) -> Self {
-        Self { fields }
-    }
-}
-
-impl AirtableRequestBody {
-    pub fn new(fields: Fields) -> Self {
-        let record = PostRecord { fields };
-        AirtableRequestBody {
-            records: vec![record],
-        }
-    }
+// ----------------------- DB related ---------------------------------------------------------- //
+#[derive(Serialize, Deserialize, Encode, Decode)]
+pub struct Ports {
+    pub rpc: u16,
+    pub p_2_p_port: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-#[serde(rename_all = "camelCase")]
 pub struct AccountInfo {
     pub account: String,
     pub network: ChainSupported,
 }
-
-#[derive(Debug, Serialize, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Fields {
-    #[serde(rename = "multiAddr", default, skip_serializing_if = "Option::is_none")]
-    pub multi_addr: Option<String>,
-    
-    #[serde(rename = "peerId", default, skip_serializing_if = "Option::is_none")]
-    pub peer_id: Option<String>,
-    
-    #[serde(rename = "accountId1", default, skip_serializing_if = "Option::is_none", 
-            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
-    pub account_id1: Option<AccountInfo>,
-    
-    #[serde(rename = "accountId2", default, skip_serializing_if = "Option::is_none", 
-            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
-    pub account_id2: Option<AccountInfo>,
-    
-    #[serde(rename = "accountId3", default, skip_serializing_if = "Option::is_none",  
-            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
-    pub account_id3: Option<AccountInfo>,
-    
-    #[serde(rename = "accountId4", default, skip_serializing_if = "Option::is_none",  
-            serialize_with = "string_serialize", deserialize_with = "string_deserialize")]
-    pub account_id4: Option<AccountInfo>,
-    
-    #[serde(rename = "rpc", default, skip_serializing_if = "Option::is_none")]
-    pub rpc: Option<String>
-}
-
-#[cfg(feature = "e2e")]
-impl Default for Fields {
-    fn default() -> Self {
-        Fields {
-            multi_addr: Some("ip4/127.0.0.1/tcp/3000".to_string()),
-            peer_id: Some("0x378z9".to_string()),
-            account_id1: Some(AccountInfo {
-                account: "1".to_string(),
-                network: ChainSupported::Polkadot,
-            }),
-            account_id2: Some(AccountInfo {
-                account: "2".to_string(),
-                network: ChainSupported::Polkadot,
-            }),
-            account_id3: Some(AccountInfo {
-                account: "3".to_string(),
-                network: ChainSupported::Polkadot,
-            }),
-            account_id4: Some(AccountInfo {
-                account: "4".to_string(),
-                network: ChainSupported::Polkadot,
-            }),
-            rpc: Some("ws://192.168.1.177:39838".to_string()),
-        }
-    }
-}
-
-impl From<PeerRecord> for Fields {
-    fn from(value: PeerRecord) -> Self {
-        let multi_addr = value.multi_addr;
-        let peer_id = value.peer_id;
-
-        let mut fields = Fields {
-            multi_addr,
-            peer_id,
-            account_id1: None,
-            account_id2: None,
-            account_id3: None,
-            account_id4: None,
-            rpc: None,
-        };
-
-        if let Some(acc_1) = value.account_id1 {
-            fields.account_id1 = Some(acc_1)
-        }
-        // TODO convert all accounts
-
-        fields
-    }
-}
-
- // ----------------------- DB related ---------------------------------------------------------- //
- #[derive(Serialize, Deserialize, Encode, Decode)]
- pub struct Ports {
-     pub rpc: u16,
-     pub p_2_p_port: u16,
- }
-
-
 /// db interface
 #[allow(async_fn_in_trait)]
 pub trait DbWorkerInterface: Sized {

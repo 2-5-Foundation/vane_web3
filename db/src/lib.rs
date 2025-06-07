@@ -12,21 +12,22 @@ use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
 use crate::db::{
     new_client_with_url, nonce, port,
     read_filters::{BigIntFilter, BytesFilter, IntFilter},
-    saved_peers, transaction, transactions_data, user_account, user_peer, PrismaClient,
-    PrismaClientBuilder, UserPeerScalarFieldEnum,
+    saved_peer_account_info, saved_peers, transaction, transactions_data, user_account, user_peer,
+    user_peer_account_info, PrismaClient, PrismaClientBuilder, UserPeerScalarFieldEnum,
 };
 use alloc::sync::Arc;
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
 use hex;
 use log::{debug, error, info, trace, warn};
-use primitives::data_structure::{ChainSupported, DbTxStateMachine, PeerRecord, UserAccount, AccountInfo};
+use primitives::data_structure::{
+    AccountInfo, ChainSupported, DbTxStateMachine, PeerRecord, UserAccount,
+};
 use prisma_client_rust::{query_core::RawQuery, BatchItem, Direction, PrismaValue, Raw};
 
+use primitives::data_structure::{DbWorkerInterface, Ports};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-use primitives::data_structure::{DbWorkerInterface,Ports};
-
 
 /// Handling connection and interaction with the local database
 #[derive(Clone)]
@@ -125,9 +126,10 @@ impl DbWorkerInterface for LocalDbWorker {
             )])
             .exec()
             .await?;
-        let accounts = accounts.into_iter().map(|acc|{
-            acc.into()
-        }).collect::<Vec<UserAccount>>();
+        let accounts = accounts
+            .into_iter()
+            .map(|acc| acc.into())
+            .collect::<Vec<UserAccount>>();
         Ok(accounts)
     }
 
@@ -196,9 +198,10 @@ impl DbWorkerInterface for LocalDbWorker {
             ))])
             .exec()
             .await?;
-        let failed_txs = failed_txs.into_iter().map(|txn|{
-            txn.into()
-        }).collect::<Vec<DbTxStateMachine>>();
+        let failed_txs = failed_txs
+            .into_iter()
+            .map(|txn| txn.into())
+            .collect::<Vec<DbTxStateMachine>>();
         Ok(failed_txs)
     }
 
@@ -211,9 +214,10 @@ impl DbWorkerInterface for LocalDbWorker {
             ))])
             .exec()
             .await?;
-        let success_txs = success_txs.into_iter().map(|txn|{
-            txn.into()
-        }).collect::<Vec<DbTxStateMachine>>();
+        let success_txs = success_txs
+            .into_iter()
+            .map(|txn| txn.into())
+            .collect::<Vec<DbTxStateMachine>>();
         Ok(success_txs)
     }
 
@@ -247,85 +251,46 @@ impl DbWorkerInterface for LocalDbWorker {
 
     async fn record_user_peer_id(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
         let client = &self.db;
-        
-        client
-            .user_peer()
-            .create(
-                peer_record.record_id,
-                peer_record.peer_id.unwrap_or_default(),
-                peer_record.account_id1.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id1.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id2.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id2.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id3.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id3.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id4.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id4.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.multi_addr.unwrap_or_default(),
-                peer_record.keypair.unwrap_or_default(),
-                Default::default()
-            )
-            .exec()
-            .await?;
 
-        Ok(())
+        client
+            ._transaction()
+            .run(|tx| async move {
+                let user_peer = tx
+                    .user_peer()
+                    .create(
+                        "MAIN_USER_ID".to_string(),
+                        peer_record.peer_id.unwrap_or_default(),
+                        peer_record.multi_addr.unwrap_or_default(),
+                        peer_record.keypair.unwrap_or_default(),
+                        vec![],
+                    )
+                    .exec()
+                    .await?;
+
+                for account_info in peer_record.accounts {
+                    tx.user_peer_account_info()
+                        .create(
+                            account_info.account,
+                            account_info.network.to_string(),
+                            db::user_peer::UniqueWhereParam::IdEquals("MAIN_USER_ID".to_string()),
+                            vec![],
+                        )
+                        .exec()
+                        .await?;
+                }
+
+                Ok(())
+            })
+            .await
     }
 
-    async fn update_user_peer_id_account_ids(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+    async fn update_user_peer_id_account_ids(
+        &self,
+        peer_record: PeerRecord,
+    ) -> Result<(), anyhow::Error> {
         println!("updating peer record: {:?}", peer_record);
         let client = &self.db;
-        
-        let mut batch_updates = Vec::new();
-
-        // Check and create update for each account ID and network pair
-        if let Some(acc1) = &peer_record.account_id1 {
-            let update = client.user_peer().update(
-                user_peer::id::equals(1),
-                vec![
-                    user_peer::account_id_1::set(acc1.account.clone()),
-                    user_peer::network_1::set(acc1.network.to_string()),
-                ],
-            );
-            batch_updates.push(update);
-        }
-
-        if let Some(acc2) = &peer_record.account_id2 {
-            let update = client.user_peer().update(
-                user_peer::id::equals(1),
-                vec![
-                    user_peer::account_id_2::set(acc2.account.clone()),
-                    user_peer::network_2::set(acc2.network.to_string()),
-                ],
-            );
-            batch_updates.push(update);
-        }
-
-        if let Some(acc3) = &peer_record.account_id3 {
-            let update = client.user_peer().update(
-                user_peer::id::equals(1),
-                vec![
-                    user_peer::account_id_3::set(acc3.account.clone()),
-                    user_peer::network_3::set(acc3.network.to_string()),
-                ],
-            );
-            batch_updates.push(update);
-        }
-
-        if let Some(acc4) = &peer_record.account_id4 {
-            let update = client.user_peer().update(
-                user_peer::id::equals(1),
-                vec![
-                    user_peer::account_id_4::set(acc4.account.clone()),
-                    user_peer::network_4::set(acc4.network.to_string()),
-                ],
-            );
-            batch_updates.push(update);
-        };
-
-        // Execute all updates in a batch
-        if !batch_updates.is_empty() {
-            client._batch(batch_updates).await?;
-        }
+        // TODO
 
         Ok(())
     }
@@ -336,14 +301,16 @@ impl DbWorkerInterface for LocalDbWorker {
         account_id: Option<String>,
         peer_id: Option<String>,
     ) -> Result<PeerRecord, anyhow::Error> {
-        
         let where_param = match (account_id, peer_id) {
-            (Some(acc_id), _) => user_peer::WhereParam::AccountId1(StringFilter::Equals(acc_id)),
+            (Some(acc_id), _) => user_peer::WhereParam::AccountsEvery(vec![
+                user_peer_account_info::WhereParam::AccountId(StringFilter::Equals(acc_id)),
+            ]),
             (_, Some(pid)) => user_peer::WhereParam::PeerId(StringFilter::Equals(pid)),
             (None, None) => return Err(anyhow!("Please provide either account ID or peer ID")),
         };
 
-        let peer = self.db
+        let peer = self
+            .db
             .user_peer()
             .find_first(vec![where_param])
             .exec()
@@ -374,7 +341,7 @@ impl DbWorkerInterface for LocalDbWorker {
             .await?;
         let ports = if let Some(port) = ports {
             Some(port.into())
-        }else{
+        } else {
             None
         };
         Ok(ports)
@@ -383,39 +350,47 @@ impl DbWorkerInterface for LocalDbWorker {
     // saved peers interacted with
     async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
         let client = &self.db;
-        
-        client
-            .saved_peers()
-            .create(
-                peer_record.peer_id.unwrap_or_default(),
-                peer_record.account_id1.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id1.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id2.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id2.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id3.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id3.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.account_id4.as_ref().map(|a| a.account.clone()).unwrap_or_default(),
-                peer_record.account_id4.as_ref().map(|a| a.network.to_string()).unwrap_or_default(),
-                peer_record.multi_addr.unwrap_or_default(),
-                Default::default()
-            )
-            .exec()
-            .await?;
 
-        Ok(())
+        client
+            ._transaction()
+            .run(|tx| async move {
+                // Create the SavedPeer first
+                let saved_peer = tx
+                    .saved_peers()
+                    .create(
+                        peer_record.peer_id.unwrap_or_default(),
+                        peer_record.multi_addr.unwrap_or_default(),
+                        vec![],
+                    )
+                    .exec()
+                    .await?;
+
+                // Then create all associated account info records
+                for account_info in peer_record.accounts {
+                    tx.saved_peer_account_info() // Assuming this is your related model
+                        .create(
+                            account_info.account,
+                            account_info.network.to_string(),
+                            db::saved_peers::UniqueWhereParam::IdEquals(saved_peer.id.clone()),
+                            vec![],
+                        )
+                        .exec()
+                        .await?;
+                }
+
+                Ok(())
+            })
+            .await
     }
 
     // get saved peers
-    async fn get_saved_user_peers(
-        &self,
-        account_id: String,
-    ) -> Result<PeerRecord, anyhow::Error> {
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, anyhow::Error> {
         let peer_data = self
             .db
             .saved_peers()
-            .find_first(vec![saved_peers::WhereParam::AccountId1(
-                StringFilter::Equals(account_id),
-            )])
+            .find_first(vec![saved_peers::WhereParam::AccountsEvery(vec![
+                saved_peer_account_info::WhereParam::AccountId(StringFilter::Equals(account_id)),
+            ])])
             .exec()
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
@@ -427,26 +402,15 @@ impl DbWorkerInterface for LocalDbWorker {
 #[cfg(not(target_arch = "wasm32"))]
 impl From<user_peer::Data> for PeerRecord {
     fn from(data: user_peer::Data) -> Self {
-    
+        let mut accounts = vec![];
+        if let Some(accs) = data.accounts {
+            accs.into_iter().for_each(|acc| {
+                accounts.push(acc.into());
+            });
+        }
         PeerRecord {
-            record_id: data.record_id,
             peer_id: Some(data.peer_id),
-            account_id1: Some(AccountInfo {
-                account: data.account_id_1,
-                network: ChainSupported::from(data.network_1.as_str()),
-            }),
-            account_id2: Some(AccountInfo {
-                account: data.account_id_2,
-                network: ChainSupported::from(data.network_2.as_str()),
-            }),
-            account_id3: Some(AccountInfo {
-                account: data.account_id_3,
-                network: ChainSupported::from(data.network_3.as_str()),
-            }),
-            account_id4: Some(AccountInfo {
-                account: data.account_id_4,
-                network: ChainSupported::from(data.network_4.as_str()),
-            }),
+            accounts,
             multi_addr: Some(data.multi_addr),
             keypair: Some(data.keypair.to_vec()),
         }
@@ -454,27 +418,37 @@ impl From<user_peer::Data> for PeerRecord {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+impl From<user_peer_account_info::Data> for AccountInfo {
+    fn from(data: user_peer_account_info::Data) -> Self {
+        AccountInfo {
+            account: data.account_id,
+            network: ChainSupported::from(data.network.as_str()),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<saved_peer_account_info::Data> for AccountInfo {
+    fn from(data: saved_peer_account_info::Data) -> Self {
+        AccountInfo {
+            account: data.account_id,
+            network: ChainSupported::from(data.network.as_str()),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl From<saved_peers::Data> for PeerRecord {
     fn from(data: saved_peers::Data) -> Self {
+        let mut accounts = vec![];
+        if let Some(accs) = data.accounts {
+            accs.into_iter().for_each(|acc| {
+                accounts.push(acc.into());
+            });
+        }
         PeerRecord {
-            record_id: data.node_id.clone(), // Using nodeId as record_id
             peer_id: Some(data.node_id),
-            account_id1: Some(AccountInfo {
-                account: data.account_id_1,
-                network: ChainSupported::from(data.network_1.as_str()),
-            }),
-            account_id2: Some(AccountInfo {
-                account: data.account_id_2,
-                network: ChainSupported::from(data.network_2.as_str()),
-            }),
-            account_id3: Some(AccountInfo {
-                account: data.account_id_3,
-                network: ChainSupported::from(data.network_3.as_str()),
-            }),
-            account_id4: Some(AccountInfo {
-                account: data.account_id_4,
-                network: ChainSupported::from(data.network_4.as_str()),
-            }),
+            accounts,
             multi_addr: Some(data.multi_addr),
             keypair: None, // SavedPeers doesn't store keypair
         }

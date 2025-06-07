@@ -3,6 +3,7 @@
 A full sovereign custodian implementation of risk-free transaction sending for web3 businesses and degens
 
 ### What are we solving?
+
   - Losing funds due wrong address input ( a huge pain currently in web3 as the action is not reversible after sending the transaction ).
 
   - Losings funds due wrong network selection while sending the transaction.
@@ -10,44 +11,56 @@ A full sovereign custodian implementation of risk-free transaction sending for w
 At some point the address can be correct but the choice of the network can result to loss of funds
 
 ### Our Solution
-vane act as a safety net for web3 users.
 
-- Receiver address confirmation
+## Key Features
 
-- Transaction execution simulation
+### Transaction Safety Layer
 
-- Receiver account ownership confirmation after transaction execution and network simulation.
+- Provides a safety net for Web3 transactions
+- Verifies receiver addresses before transactions
+- Supports multiple chains (BNB, Ethereum, Solana)
 
-As this is crucial to make sure that you control account provided ( receiver ) in X network/blockchain.
+### P2P Networking
 
-After all confirmation, vane will route and submit the transaction to X address to the Y network/blokchain.
+- Uses libp2p for peer-to-peer communication
+- Handles peer discovery and connection management
+- Manages swarm events and message routing
 
-## Technical design
+### RPC Server
 
-vane_web3 is designed to be decentralized and locally run by users having complete control.
+- Provides JSON-RPC interface for transaction operations
+- Handles transaction state updates
+- Manages user interactions
 
-In itself is not a wallet, but can work with any type of wallet as it acts as an extension safety layer for web3.
+### Transaction Flow
 
-### Technical components
-1. **DbWorker**
-    
-    - database worker is responsible for locally storing, user addresses, tx records, and peers that user interacted with
-2. P2PWorker
-    
-    - responsible for sending pinging tx to receiver for confirmation on address and network
-3. TxProcessingWorker
+1. Genesis state: Initial transaction creation
+2. Receiver address confirmation
+3. Network confirmation
+4. Sender confirmation
+5. Transaction submission to blockchain
 
-    - signature verification, creating tx payload to be signed, simulating tx, submitting tx
-4. RpcWorker
+### Special Features
 
-    - interface where users interact with, signing tx, initiating tx, sender confirmation, receiver confirmation
-5. TelemetryWorker
+- e2e feature for end-to-end testing
+- Support for both WASM and native environments
+- Redis integration for distributed state management
+- Local database for peer information caching
 
-    - recording total volume of tx per user and reverted tx volume and number of peers(receivers) interacted with
-6. MainServiceWorker
+### Error Handling
 
-    - orchestrating all workers and having a single run function to spawn all workers and control the flow of passing tx state machine processing updates
-7. Remote Db (Airtable)
+- Comprehensive error handling using anyhow
+- Transaction state machine for tracking transaction status
+- Graceful error recovery and logging
 
-    - a naive solution to dht ( peer discovery mechanism) as new users for vane will register their peer id along with account addresses
-   to remote airtable server as a means to be discovered by other peers. 
+## Architecture Benefits
+
+The code is designed to provide a secure layer for Web3 transactions by:
+
+- Verifying receiver addresses
+- Confirming transaction details with both parties
+- Providing a safety net against wrong addresses or networks
+- Supporting multiple blockchain networks
+- Using P2P networking for secure communication
+
+This architecture ensures that transactions are verified and confirmed by both parties before being submitted to the blockchain, reducing the risk of sending funds to wrong addresses or networks.
