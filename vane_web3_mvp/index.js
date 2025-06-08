@@ -93,6 +93,7 @@ class VaneMonitor {
                 'vane_web3_app',
                 '--port', rpcPort.toString(),
                 '--redis-url', REDIS_URL,
+                '--redis-host', REDIS_HOST,
                 '--account-profile-hash', hash,
                 '--accounts', accounts.map(acc => `${acc.address}:${acc.network}`).join(',')
             ];
@@ -182,11 +183,11 @@ class VaneMonitor {
         }
     }
 
-    async processQueueEntry(hash, addresses) {
+    async processQueueEntry(hash, accounts) {
         let containerId = null;
         try {
             // Start Docker container
-            containerId = await this.startDockerInstance(addresses, hash);
+            containerId = await this.startDockerInstance(accounts, hash);
             await Bun.sleep(3000);
             
             // Get RPC URL and create ngrok tunnel
@@ -197,7 +198,7 @@ class VaneMonitor {
             const accountProfile = {
                 peerId,
                 multiAddr,
-                accounts: addresses,
+                accounts: accounts,
                 rpc: ngrokUrl
             };
 
@@ -209,14 +210,14 @@ class VaneMonitor {
                 containerId,
                 rpcUrl,
                 publicRpcUrl: ngrokUrl,
-                addresses,
+                addresses: accounts,
                 startTime: Date.now()
             });
 
-            logger.info('Successfully processed queue entry', { hash, addresses, rpcUrl });
+            logger.info('Successfully processed queue entry', { hash, accounts, rpcUrl });
             return ngrokUrl;
         } catch (error) {
-            logger.error('Failed to process queue entry', { error, hash, addresses });
+            logger.error('Failed to process queue entry', { error, hash, accounts });
             await this.cleanup(containerId?.id, hash);
             throw error;
         }
@@ -230,12 +231,15 @@ class VaneMonitor {
                 // Get all entries from QUEUE
                 const queueEntries = await redisClient.hGetAll('QUEUE');
                 
-                for (const [hash, addressesStr] of Object.entries(queueEntries)) {
+                for (const [hash, accounts] of Object.entries(queueEntries)) {
                     try {
-                        const addresses = JSON.parse(addressesStr);
-                        logger.info('Processing queue entry', { hash, addresses });
+                        logger.info('Processing queue entry', { hash, accounts });
                         
-                        await this.processQueueEntry(hash, addresses);
+                        // json decode accounts
+                        /** @type {{address: string, network: string}[]} */
+                        const parsedAccounts = JSON.parse(accounts);
+                        
+                        await this.processQueueEntry(hash, parsedAccounts);
                         
                         // Remove from queue after successful processing
                         await redisClient.hDel('QUEUE', hash);
