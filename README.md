@@ -53,6 +53,14 @@ DEMO POST
 
 https://x.com/MrishoLukamba/status/1866162459800707165
 
+
+[App:](https://wwww.vaneweb3.com)
+
+Sentiments:
+
+[1](https://www.linkedin.com/posts/jake-edwards-27bb44155_context-httpslnkdineaf7iyik-in-the-ugcPost-7352443063161532416-vObV?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAADJZPCsBacGm1-F9KIi-L8AC5ynOqG1i-PE)
+
+[2](https://x.com/onukogufavour/status/1945121048459976760?s=46)
 ----
 
 ## Technical design
@@ -97,6 +105,7 @@ This architecture ensures that transactions are verified and confirmed by both p
 ---
 
 ![SCR-20241217-pikb](https://github.com/user-attachments/assets/f8c82fa4-2d2b-46d8-87bf-7c1a7f18cae1)
+
 
 
 ## HOW TO RUN & TEST
