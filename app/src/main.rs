@@ -61,7 +61,7 @@ async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
 
-    node::MainServiceWorker::run(
+    native_node::MainServiceWorker::run(
         args.db_url,
         args.port,
         args.redis_url,

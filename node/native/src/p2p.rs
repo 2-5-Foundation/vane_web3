@@ -691,6 +691,7 @@ impl P2pWorker {
                     error,
                     peer,
                     request_id,
+                    ..
                 } => {
                     let req_id_hash = request_id.get_hash_id();
                     error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")

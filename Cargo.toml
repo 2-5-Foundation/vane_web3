@@ -1,5 +1,5 @@
 [workspace]
-members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
+members =[ "app", "db", "integration-test", "node/native", "node/wasm", "primitives","db/prisma", "db-wasm"]
 resolver = "2"
 
 # Members for wasm builds
@@ -56,7 +56,8 @@ sp-core                                 = { version = "34.0.0", default-features
 db                                      = { path = "db" }
 db-wasm                                 = { path = "db-wasm"}
 integration-test                        = { path = "integration-test" }
-node                                    = { path = "node" }
+native-node                             = { path = "node/native" }
+wasm-node                               = { path = "node/wasm" }
 primitives                              = { path = "primitives" }
 tokio_with_wasm                         = { version = "0.7.4",features = ["full"]}
 # ========================================== Patch =======================================

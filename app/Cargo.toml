@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-node                                        = { workspace = true}
+native-node                                = { workspace = true}
+wasm-node                                  = { workspace = true}
 tokio                                       = { workspace = true}
 anyhow                                      = { workspace = true}
 log                                         = { workspace = true}
