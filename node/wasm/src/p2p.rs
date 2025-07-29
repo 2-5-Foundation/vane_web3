@@ -23,6 +23,19 @@ use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 
+use p2p_wasm_imports::*;
+
+mod p2p_wasm_imports {
+    pub use alloc::rc::Rc;
+    pub use core::cell::RefCell;
+    pub use db_wasm::OpfsRedbWorker;
+    pub use futures::StreamExt;
+    pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
+    pub use libp2p::webtransport_websys as webrtc_websys;
+    pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
+    pub use web_sys::wasm_bindgen::JsCast;
+    pub use heapless::FnvHashMap;
+}
 
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -30,7 +43,7 @@ pub struct WasmP2pWorker {
     pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
     pub url: Multiaddr,
     pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>>>,
-    pub wasm_pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
+    pub wasm_pending_request: Rc<RefCell<FnvHashMap<u64, ResponseChannel<TxStateMachine>,10>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -80,7 +93,7 @@ impl WasmP2pWorker {
             })?
             .with_behaviour(|_| json_behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(std::time::Duration::from_secs(300))
+                cfg.with_idle_connection_timeout(core::time::Duration::from_secs(30))
             })
             .build();
 
@@ -95,7 +108,7 @@ impl WasmP2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<TxStateMachine>>>>,
+        pending_request: Rc<RefCell<FnvHashMap<u64, ResponseChannel<TxStateMachine>,10>>>,
         events: SwarmEvent<Event<TxStateMachine, TxStateMachine>>,
         sender: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {

@@ -27,6 +27,7 @@ mod tx_wasm_imports {
     pub use core::cell::RefCell;
     pub use web3::transports;
     pub use web3::Web3;
+    pub use log::info;
     //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
 }
 
@@ -80,7 +81,7 @@ impl WasmTxProcessingWorker {
         who: &str,
     ) -> Result<(), anyhow::Error> {
         let (network, signature, msg, address) = if who == "Receiver" {
-            println!("\n receiver address verification \n");
+            info!("\n receiver address verification \n");
 
             let network = tx.network;
             let signature = tx
@@ -93,7 +94,7 @@ impl WasmTxProcessingWorker {
 
             (network, signature, msg, recv_address)
         } else {
-            println!("\n sender address verification \n");
+            info!("\n sender address verification \n");
             // who == Sender
             let network = tx.network;
             let signature = tx
@@ -129,7 +130,7 @@ impl WasmTxProcessingWorker {
 
                 match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
                     Ok(recovered_addr) => {
-                        println!(
+                        info!(
                             "recovered addr: {recovered_addr:?} == address: {address:?} ==== {:?}",
                             tx.status
                         );

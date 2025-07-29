@@ -14,7 +14,6 @@ extern crate alloc;
 
 use anyhow::anyhow;
 use core::str::FromStr;
-use jsonrpsee::core::JsonValue;
 
 use log::{info, trace};
 
@@ -26,7 +25,7 @@ use primitives::data_structure::{
 use sp_runtime::traits::Zero;
 
 use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
-
+use alloc::string::String;
 use rpc_wasm_imports::*;
 
 mod rpc_wasm_imports {
@@ -42,6 +41,8 @@ mod rpc_wasm_imports {
     pub use tokio_with_wasm::sync::{Mutex, MutexGuard};
     pub use wasm_bindgen::prelude::wasm_bindgen;
     pub use wasm_bindgen::JsValue;
+    pub use sp_core::blake2_256;
+    pub use alloc::vec::Vec;
 }
 
 // ----------------------------------- WASM -------------------------------- //
@@ -236,7 +237,7 @@ impl PublicInterfaceWorker {
             .iter()
             .map(|(_k, v)| v.clone())
             .collect::<Vec<TxStateMachine>>();
-        println!("lru: {tx_updates:?}");
+        info!("lru: {tx_updates:?}");
 
         JsValue::from_serde(&tx_updates).map_err(|e| JsValue::from_str(&e.to_string()))
     }

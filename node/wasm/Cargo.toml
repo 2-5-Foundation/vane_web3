@@ -29,3 +29,5 @@ log                                         = { workspace = true}
 codec                                       = { workspace = true}
 sp-core                                     = { workspace = true}
 sp-runtime                                  = { workspace = true}
+hex-literal                                 = "0.4.0"
+heapless                                    = "0.7.17"

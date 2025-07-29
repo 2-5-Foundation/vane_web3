@@ -9,6 +9,7 @@ pub mod cryptography;
 
 use crate::p2p::P2pNetworkService;
 
+use alloc::vec;
 use alloc::sync::Arc;
 use anyhow::{anyhow, Error};
 use codec::Decode;
@@ -21,7 +22,7 @@ use lib_wasm_imports::*;
 
 mod lib_wasm_imports {
     pub use crate::p2p::WasmP2pWorker;
-    pub use crate::rpc::PublicInterfaceWorker;
+    pub use crate::interface::PublicInterfaceWorker;
     pub use crate::tx_processing::WasmTxProcessingWorker;
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
@@ -37,6 +38,7 @@ mod lib_wasm_imports {
     pub use codec::Decode;
     pub use core::str::FromStr;
     pub use log::{error, info, warn};
+    pub use alloc::format;
 }
 
 
@@ -113,7 +115,6 @@ impl WasmMainServiceWorker {
         // ===================================================================================== //
 
         let public_interface_worker = PublicInterfaceWorker::new(
-            airtable_client.clone(),
             db_worker.clone(),
             Rc::new(RefCell::new(rpc_recv_channel)),
             Rc::new(RefCell::new(user_rpc_update_sender_channel)),
