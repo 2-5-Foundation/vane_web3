@@ -1,9 +1,8 @@
-#![cfg(target_arch = "wasm32")]
 
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, PeerRecord, Ports, UserAccount,
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, PeerRecord, Ports, UserAccount, AccountInfo
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -65,7 +64,6 @@ impl OpfsRedbWorker {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
 impl DbWorkerInterface for OpfsRedbWorker {
     async fn initialize_db_client(file_url: &str) -> Result<Self, anyhow::Error> {
         Self::new(file_url).await
@@ -262,25 +260,26 @@ impl DbWorkerInterface for OpfsRedbWorker {
         account_id: Option<String>,
         peer_id: Option<String>,
     ) -> Result<PeerRecord, anyhow::Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(USER_PEER_TABLE)?;
-        if let Some(value) = table.get(USER_PEER_RECORD_KEY)? {
-            let peer: PeerRecord = Decode::decode(&mut &value.value()[..])
-                .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
+        // let read_txn = self.db.begin_read()?;
+        // let table = read_txn.open_table(USER_PEER_TABLE)?;
+        // if let Some(value) = table.get(USER_PEER_RECORD_KEY)? {
+        //     let peer: PeerRecord = Decode::decode(&mut &value.value()[..])
+        //         .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
 
-            if let Some(ref acc_id) = account_id {
-                if peer.account_id1.as_ref().unwrap() == acc_id {
-                    return Ok(peer.clone());
-                }
-            }
+        //     if let Some(ref acc_id) = account_id {
+        //         if peer.account_id1.as_ref().unwrap() == acc_id {
+        //             return Ok(peer.clone());
+        //         }
+        //     }
 
-            if let Some(ref pid) = peer_id {
-                if peer.peer_id.as_ref().unwrap() == pid {
-                    return Ok(peer.clone());
-                }
-            }
-        }
-        Err(anyhow!("Peer not found"))
+        //     if let Some(ref pid) = peer_id {
+        //         if peer.peer_id.as_ref().unwrap() == pid {
+        //             return Ok(peer.clone());
+        //         }
+        //     }
+        // }
+        // Err(anyhow!("Peer not found"))
+        todo!()
     }
 
     async fn set_ports(&self, _rpc: u16, p2p: u16) -> Result<(), anyhow::Error> {
@@ -349,40 +348,45 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Ok(data.failed_value as u64)
     }
 
+    async fn update_user_peer_id_account_ids(&self, peer_record: AccountInfo) -> Result<(), Error> {
+        todo!()
+    }
+
     async fn update_user_peer_id_accounts(&self, peer_record: PeerRecord) -> Result<(), Error> {
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(USER_PEER_TABLE)?;
+        // let write_txn = self.db.begin_write()?;
+        // {
+        //     let mut table = write_txn.open_table(USER_PEER_TABLE)?;
 
-            // Get current data
-            let encoded_to_store = {
-                let val = table
-                    .get(&USER_PEER_RECORD_KEY)
-                    .map_err(|err| anyhow!("failed to get user peer record: {err:?}"))?
-                    .expect("user not available");
-                let mut current_peer: PeerRecord = Decode::decode(&mut &val.value()[..])
-                    .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
+        //     // Get current data
+        //     let encoded_to_store = {
+        //         let val = table
+        //             .get(&USER_PEER_RECORD_KEY)
+        //             .map_err(|err| anyhow!("failed to get user peer record: {err:?}"))?
+        //             .expect("user not available");
+        //         let mut current_peer: PeerRecord = Decode::decode(&mut &val.value()[..])
+        //             .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
 
-                // Update account IDs if provided
-                if let Some(account_id) = peer_record.account_id1 {
-                    current_peer.account_id1 = Some(account_id);
-                }
-                if let Some(account_id) = peer_record.account_id2 {
-                    current_peer.account_id2 = Some(account_id);
-                }
-                if let Some(account_id) = peer_record.account_id3 {
-                    current_peer.account_id3 = Some(account_id);
-                }
-                if let Some(account_id) = peer_record.account_id4 {
-                    current_peer.account_id4 = Some(account_id);
-                }
-                current_peer.encode()
-            };
-            // Save updated data
-            table.insert(SAVED_PEERS_KEY, encoded_to_store)?;
-        }
-        write_txn.commit()?;
-        Ok(())
+        //         // Update account IDs if provided
+        //         if let Some(account_id) = peer_record.account_id1 {
+        //             current_peer.account_id1 = Some(account_id);
+        //         }
+        //         if let Some(account_id) = peer_record.account_id2 {
+        //             current_peer.account_id2 = Some(account_id);
+        //         }
+        //         if let Some(account_id) = peer_record.account_id3 {
+        //             current_peer.account_id3 = Some(account_id);
+        //         }
+        //         if let Some(account_id) = peer_record.account_id4 {
+        //             current_peer.account_id4 = Some(account_id);
+        //         }
+        //         current_peer.encode()
+        //     };
+        //     // Save updated data
+        //     table.insert(SAVED_PEERS_KEY, encoded_to_store)?;
+        // }
+        // write_txn.commit()?;
+        // Ok(())
+        todo!()
     }
 
     async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), Error> {
@@ -408,30 +412,31 @@ impl DbWorkerInterface for OpfsRedbWorker {
     }
 
     async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SAVED_PEERS_TABLE)?;
+        // let read_txn = self.db.begin_read()?;
+        // let table = read_txn.open_table(SAVED_PEERS_TABLE)?;
 
-        let saved_peers = table
-            .get(SAVED_PEERS_KEY)
-            .map_err(|err| anyhow!("failed to get saved peer record: {err:?}"))?
-            .expect("saved peers not available");
-        for value in saved_peers.value() {
-            let peer: PeerRecord = Decode::decode(&mut &value[..])
-                .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
+        // let saved_peers = table
+        //     .get(SAVED_PEERS_KEY)
+        //     .map_err(|err| anyhow!("failed to get saved peer record: {err:?}"))?
+        //     .expect("saved peers not available");
+        // for value in saved_peers.value() {
+        //     let peer: PeerRecord = Decode::decode(&mut &value[..])
+        //         .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
 
-            // Check all account ID fields
-            if peer.account_id1 == Some(account_id.clone())
-                || peer.account_id2 == Some(account_id.clone())
-                || peer.account_id3 == Some(account_id.clone())
-                || peer.account_id4 == Some(account_id.clone())
-            {
-                return Ok(peer);
-            }
-        }
+        //     // Check all account ID fields
+        //     if peer.account_id1 == Some(account_id.clone())
+        //         || peer.account_id2 == Some(account_id.clone())
+        //         || peer.account_id3 == Some(account_id.clone())
+        //         || peer.account_id4 == Some(account_id.clone())
+        //     {
+        //         return Ok(peer);
+        //     }
+        // }
 
-        Err(anyhow!(
-            "No saved peer found for account ID: {}",
-            account_id
-        ))
+        // Err(anyhow!(
+        //     "No saved peer found for account ID: {}",
+        //     account_id
+        // ))
+        todo!()
     }
 }

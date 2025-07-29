@@ -503,6 +503,9 @@ pub trait DbWorkerInterface: Sized {
     async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
 
     async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
+
+    async fn update_user_peer_id_accounts(&self, peer_record: PeerRecord) -> Result<(), Error>;
+    
     async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
 
     async fn get_total_value_success(&self) -> Result<u64, anyhow::Error>;

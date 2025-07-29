@@ -20,6 +20,5 @@ primitives                  = { workspace = true }
 log                         = { workspace = true }
 hex                         = { workspace = true }
 codec                       = { workspace = true }
-sp-core                     = { workspace = true, default-features = false}
 aead                        = { workspace = true }
 aes-gcm                     = { workspace = true }
