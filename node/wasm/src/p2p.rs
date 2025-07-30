@@ -34,7 +34,7 @@ mod p2p_wasm_imports {
     pub use libp2p::webtransport_websys as webrtc_websys;
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
-    pub use heapless::FnvHashMap;
+    pub use heapless::FnvIndexMap;
 }
 
 #[derive(Clone)]
@@ -43,7 +43,7 @@ pub struct WasmP2pWorker {
     pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
     pub url: Multiaddr,
     pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>>>,
-    pub wasm_pending_request: Rc<RefCell<FnvHashMap<u64, ResponseChannel<TxStateMachine>,10>>>,
+    pub wasm_pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<TxStateMachine>,10>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -108,7 +108,7 @@ impl WasmP2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Rc<RefCell<FnvHashMap<u64, ResponseChannel<TxStateMachine>,10>>>,
+        pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<TxStateMachine>,10>>>,
         events: SwarmEvent<Event<TxStateMachine, TxStateMachine>>,
         sender: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {
