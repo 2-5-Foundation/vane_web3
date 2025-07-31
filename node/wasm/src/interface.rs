@@ -22,14 +22,16 @@ use primitives::data_structure::{
     AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
     UserAccount,
 };
+use alloc::string::ToString;
 use sp_runtime::traits::Zero;
 
 use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
 use alloc::string::String;
 use rpc_wasm_imports::*;
+use alloc::rc::Rc;
 
 mod rpc_wasm_imports {
-    pub use alloc::rc::Rc;
+    pub use alloc::alloc;
     pub use async_stream::stream;
     pub use core::cell::RefCell;
     pub use db_wasm::OpfsRedbWorker;
@@ -42,7 +44,10 @@ mod rpc_wasm_imports {
     pub use wasm_bindgen::prelude::wasm_bindgen;
     pub use wasm_bindgen::JsValue;
     pub use sp_core::blake2_256;
-    pub use alloc::vec::Vec;
+    pub use core::fmt;
+    pub use serde_wasm_bindgen;
+    pub use sp_runtime::format;
+    pub use sp_runtime::Vec;
 }
 
 // ----------------------------------- WASM -------------------------------- //
@@ -64,6 +69,12 @@ pub struct PublicInterfaceWorker {
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>, // initial fees, after dry running tx initialy without optimization
 }
 
+
+#[wasm_bindgen]
+pub struct PublicInterfaceWorkerJs {
+    inner: Rc<RefCell<PublicInterfaceWorker>>,
+}
+
 impl PublicInterfaceWorker {
     pub async fn new(
         db_worker: Rc<OpfsRedbWorker>,
@@ -82,9 +93,7 @@ impl PublicInterfaceWorker {
     }
 }
 
-#[wasm_bindgen]
 impl PublicInterfaceWorker {
-    #[wasm_bindgen]
     pub async fn register_vane_web3(
         &self,
         name: String,
@@ -102,7 +111,7 @@ impl PublicInterfaceWorker {
         self.db_worker
             .set_user_account(user_account)
             .await
-            .map_err(|e| JsonValue::from_str(e.into()))?;
+            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
         // NOTE: the peer-record is already registered, the following is only updating account details of the record
         // update: account address related to peer id
@@ -113,14 +122,13 @@ impl PublicInterfaceWorker {
             .db_worker
             .get_user_peer_id(None, Some(self.peer_id.to_string()))
             .await
-            .map_err(|e| JsonValue::from_str(e.into()))?;
+            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
         // TODO:
 
         Ok(())
     }
 
-    #[wasm_bindgen]
     pub async fn initiate_transaction(
         &self,
         sender: String,
@@ -139,7 +147,7 @@ impl PublicInterfaceWorker {
         ) {
             if net_sender != net_recv {
                 Err(anyhow!("sender and receiver should be same network"))
-                    .map_err(|e| JsonValue::from_str(e.into()))?;
+                    .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
             }
 
             info!("successfully initially verified sender and receiver and related network bytes");
@@ -153,13 +161,13 @@ impl PublicInterfaceWorker {
                 .db_worker
                 .get_nonce()
                 .await
-                .map_err(|e| JsonValue::from_str(e.into()))?
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?
                 + 1;
             // update the db on nonce
             self.db_worker
                 .increment_nonce()
                 .await
-                .map_err(|e| JsonValue::from_str(e.into()))?;
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
@@ -186,26 +194,26 @@ impl PublicInterfaceWorker {
                 .send(tx_state_machine)
                 .await
                 .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
-                .map_err(|e| JsonValue::from_str(e.into()))?;
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
             ))
-            .map_err(|e| JsonValue::from_str(e.into()))?;
+            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
         }
         Ok(())
     }
 
-    #[wasm_bindgen]
-    pub async fn sender_confirm(&self, mut tx: TxStateMachine) -> Result<(), JsValue> {
+    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+        let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))
-            .map_err(|e| JsonValue::from_str(e.into()))?;
+            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -220,7 +228,7 @@ impl PublicInterfaceWorker {
                 .map_err(|_| {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
-                .map_err(|e| JsonValue::from_str(e.into()))?;
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
         }
         Ok(())
     }
@@ -229,7 +237,6 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
-    #[wasm_bindgen]
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
         let tx_updates = self
             .lru_cache
@@ -239,16 +246,17 @@ impl PublicInterfaceWorker {
             .collect::<Vec<TxStateMachine>>();
         info!("lru: {tx_updates:?}");
 
-        JsValue::from_serde(&tx_updates).map_err(|e| JsValue::from_str(&e.to_string()))
+        serde_wasm_bindgen::to_value(&tx_updates)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {:?}", e)))
     }
 
-    #[wasm_bindgen]
-    pub async fn receiver_confirm(&self, mut tx: TxStateMachine) -> Result<(), JsValue> {
+    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+        let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))
-                .map_err(|e| JsonValue::from_str(e.into()))?
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -261,7 +269,7 @@ impl PublicInterfaceWorker {
                 .send(tx)
                 .await
                 .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
-                .map_err(|e| JsonValue::from_str(e.into()))?;
+                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
             Ok(())
         }

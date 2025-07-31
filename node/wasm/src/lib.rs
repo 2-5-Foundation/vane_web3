@@ -39,6 +39,11 @@ mod lib_wasm_imports {
     pub use core::str::FromStr;
     pub use log::{error, info, warn};
     pub use alloc::format;
+    pub use alloc::string::String;
+    pub use primitives::data_structure::NetworkCommand;
+    pub use libp2p::Multiaddr;
+    pub use libp2p::PeerId;
+    pub use wasm_bindgen::JsValue;
 }
 
 
@@ -63,7 +68,7 @@ pub struct WasmMainServiceWorker {
 }
 
 impl WasmMainServiceWorker {
-    pub(crate) async fn new(db_url_path: Option<String>, p2p_port: u16) -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(db_url_path: Option<String>, p2p_port: u16, dns: String) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
@@ -91,7 +96,7 @@ impl WasmMainServiceWorker {
         if let Some(ports) = returned_pots {
             p2p_port = ports.p_2_p_port as u16;
         } else {
-            p2p_port = p2_port
+            p2p_port = p2p_port
         }
 
         let db_worker = Rc::new(db);
@@ -104,9 +109,10 @@ impl WasmMainServiceWorker {
         let p2p_worker = WasmP2pWorker::new(
             db_worker.clone(),
             p2p_port,
+            dns,
             p2p_command_recv,
         )
-        .await?;
+        .await.map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
 
         let p2p_network_service =
             P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
@@ -121,7 +127,7 @@ impl WasmMainServiceWorker {
             p2p_worker.node_id,
             lru_cache.clone(),
         )
-        .await?;
+        .await.map_err(|e| anyhow::anyhow!("Public interface worker creation failed: {:?}", e))?;
 
         // TRANSACTION PROCESSING LAYER
         // ===================================================================================== //
@@ -286,6 +292,7 @@ impl WasmMainServiceWorker {
                     .multi_addr
                     .expect("multi addr is not found")
                     .parse::<Multiaddr>()?;
+
                 let peer_id = PeerId::from_str(&acc.peer_id.expect("peer id not found"))?;
 
                 // ========================================================================= //
@@ -486,7 +493,7 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn run(db_url: Option<String>, p2p_port: u16) -> Result<PublicInterfaceWorker, anyhow::Error> {
+    pub async fn run(db_url: Option<String>, p2p_port: u16, dns: String) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -495,7 +502,7 @@ impl WasmMainServiceWorker {
         );
 
         // ====================================================================================== //
-        let mut main_worker = Self::new(db_url, p2p_port).await?;
+        let main_worker = Self::new(db_url, p2p_port, dns).await?;
 
         // ====================================================================================== //
 
@@ -524,11 +531,11 @@ impl WasmMainServiceWorker {
     }
 }
 
-#[wasm_bindgen]
-pub async fn start_vane_web3(db_url: Option<String>, p2p_port: u16) -> Result<PublicInterfaceWorker, JsValue> {
-    let worker = WasmMainServiceWorker::run(db_url, p2p_port)
-        .await
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+// #[wasm_bindgen]
+// pub async fn start_vane_web3(db_url: Option<String>, p2p_port: u16) -> Result<PublicInterfaceWorker, JsValue> {
+//     let worker = WasmMainServiceWorker::run(db_url, p2p_port)
+//         .await
+//         .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
-    Ok(worker)
-}
+//     Ok(worker)
+// }

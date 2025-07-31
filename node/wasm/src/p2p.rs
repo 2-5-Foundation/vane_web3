@@ -35,6 +35,10 @@ mod p2p_wasm_imports {
     pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
     pub use web_sys::wasm_bindgen::JsCast;
     pub use heapless::FnvIndexMap;
+    pub use alloc::collections::VecDeque;
+    pub use alloc::string::String;
+    pub use alloc::format;
+    pub use alloc::boxed::Box;
 }
 
 #[derive(Clone)]
@@ -51,32 +55,28 @@ impl WasmP2pWorker {
     pub async fn new(
         db_worker: Rc<OpfsRedbWorker>,
         port: u16,
+        dns: String,
         command_recv_channel: tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>,
     ) -> Result<Self, anyhow::Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
-        let p2p_url = String::new();
-
-        info!("listening to p2p url: {p2p_url}");
        
-
         // TODO:
-        // db_worker.record_user_peer_id(user_peer_id.clone()).await?;
 
-        let url = user_peer_id.multi_addr.unwrap();
-        let multi_addr: Multiaddr = url
+        let p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", dns, port, peer_id);
+        info!("listening to p2p url: {p2p_url}");
+        
+
+        let multi_addr: Multiaddr = p2p_url
             .parse()
             .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
-        let peer_id: PeerId = PeerId::from_str(&user_peer_id.peer_id.unwrap())
+        let peer_id: PeerId = PeerId::from_str(&peer_id)
             .map_err(|err| anyhow!("failed to convert PeerId, caused by: {err}"))?;
 
-        let secret_bytes = user_peer_id.keypair.ok_or(anyhow!("keyPair is not set"))?;
-        let keypair = libp2p::identity::Keypair::from_protobuf_encoding(&secret_bytes[..])
-            .map_err(|_| anyhow!("failed to decode keypair ed25519"))?;
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(std::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
+            .with_request_timeout(core::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
 
         let json_behaviour = JsonBehaviour::new(
             [(
@@ -86,7 +86,7 @@ impl WasmP2pWorker {
             request_response_config,
         );
 
-        let wasm_swarm = SwarmBuilder::with_existing_identity(keypair)
+        let wasm_swarm = SwarmBuilder::with_existing_identity(self_peer_id)
             .with_wasm_bindgen()
             .with_other_transport(|key| {
                 webrtc_websys::Transport::new(webrtc_websys::Config::new(&key))

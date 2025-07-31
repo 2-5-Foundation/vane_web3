@@ -1282,6 +1282,12 @@ dependencies = [
 
 [[package]]
 name = "base58"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5024ee8015f02155eee35c711107ddd9a9bf3cb689cf2a9089c97e79b6e1ae83"
+
+[[package]]
+name = "base58"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6107fe1be6682a68940da878d9e9f5e90ca5745b3dec9fd1bb393c8777d4f581"
@@ -7167,7 +7173,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "base58",
+ "base58 0.2.0",
  "curve25519-dalek 4.1.3",
  "db",
  "hex-literal",
@@ -8243,9 +8249,11 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "serde",
+ "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "sp-core",
  "twox-hash 2.1.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -10820,7 +10828,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2096d36e94ce9bf87d8addb752423b6b19730dc88edd7cc452bb2b90573f7a7"
 dependencies = [
- "base58",
+ "base58 0.2.0",
  "blake2 0.10.6",
  "either",
  "frame-metadata 15.1.0",
@@ -11088,6 +11096,17 @@ name = "serde-wasm-bindgen"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3b143e2833c57ab9ad3ea280d21fd34e285a42837aeb0ee301f4f41890fa00e"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
 dependencies = [
  "js-sys",
  "serde",
@@ -12495,7 +12514,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ba02ada83ba2640c46e200a1758cc83ce876a16326d2c52ca5db41b7d6645ce"
 dependencies = [
- "base58",
+ "base58 0.2.0",
  "blake2 0.10.6",
  "derivative",
  "either",
@@ -13850,6 +13869,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-stream",
+ "base58 0.1.0",
  "curve25519-dalek 4.1.3",
  "db-wasm",
  "futures",
@@ -13862,6 +13882,7 @@ dependencies = [
  "primitives",
  "rand 0.8.5",
  "reqwasm",
+ "serde-wasm-bindgen 0.6.5",
  "sp-core",
  "sp-runtime",
  "tokio_with_wasm",
@@ -14179,7 +14200,7 @@ dependencies = [
  "reqwest 0.11.27",
  "rlp",
  "serde",
- "serde-wasm-bindgen",
+ "serde-wasm-bindgen 0.5.0",
  "serde_json",
  "tiny-keccak",
  "url",

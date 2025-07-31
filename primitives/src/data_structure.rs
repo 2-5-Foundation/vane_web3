@@ -12,6 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
+use wasm_bindgen::prelude::wasm_bindgen;
+
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -165,6 +167,7 @@ pub struct TxStateMachine {
 }
 
 impl TxStateMachine {
+
     pub fn recv_confirmation_passed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmationPassed
     }
@@ -202,6 +205,32 @@ impl TxStateMachine {
             // EVM
             _ => keccak_256(&self.encode()[..]),
         }
+    }
+
+    /// Convert TxStateMachine to JsValue for WASM
+    #[cfg(target_arch = "wasm32")]
+    pub fn to_js_value(&self) -> Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue> {
+        serde_wasm_bindgen::to_value(self)
+            .map_err(|e| wasm_bindgen::JsValue::from_str(&format!("Serialization error: {:?}", e)))
+    }
+
+    /// Convert JsValue to TxStateMachine for WASM
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_js_value(js_value: wasm_bindgen::JsValue) -> Result<Self, wasm_bindgen::JsValue> {
+        serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| wasm_bindgen::JsValue::from_str(&format!("Deserialization error: {:?}", e)))
+    }
+
+    /// Convert TxStateMachine to JsValue (non-conditional version for explicit use)
+    pub fn to_js_value_unconditional(&self) -> Result<wasm_bindgen::JsValue, wasm_bindgen::JsValue> {
+        serde_wasm_bindgen::to_value(self)
+            .map_err(|e| wasm_bindgen::JsValue::from_str(&format!("Serialization error: {:?}", e)))
+    }
+
+    /// Convert JsValue to TxStateMachine (non-conditional version for explicit use)
+    pub fn from_js_value_unconditional(js_value: wasm_bindgen::JsValue) -> Result<Self, wasm_bindgen::JsValue> {
+        serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| wasm_bindgen::JsValue::from_str(&format!("Deserialization error: {:?}", e)))
     }
 }
 

@@ -6,23 +6,19 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde        = { version = "1.0.204", features = ["derive", "alloc"] }
-codec        = { workspace = true }
-anyhow       = "1.0.86"
-log          = { workspace = true }
-serde_json   = { workspace = true }
-twox-hash    = { version = "2.1.0", features = ["alloc"] }
-sp-core      = { workspace = true, default-features = false }
-
-
-# Native dependencies
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libp2p       = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"] }
-
+serde                                       = { version = "1.0.204", features = ["derive", "alloc"] }
+codec                                       = { workspace = true }
+anyhow                                      = "1.0.86"
+log                                         = { workspace = true }
+serde_json                                  = { workspace = true }
+twox-hash                                   = { version = "2.1.0", features = ["alloc"] }
+sp-core                                     = { workspace = true, default-features = false }
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 libp2p      = { workspace = true, default-features = false, features = ["wasm-bindgen", "websocket","request-response"] }
+wasm-bindgen                                = "0.2.99"
+serde-wasm-bindgen                          = "0.6.5"
 
 [features]
 default = []

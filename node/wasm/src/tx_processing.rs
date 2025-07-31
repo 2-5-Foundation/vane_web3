@@ -28,6 +28,9 @@ mod tx_wasm_imports {
     pub use web3::transports;
     pub use web3::Web3;
     pub use log::info;
+    pub use alloc::vec::Vec;
+    pub use alloc::collections::BTreeMap;
+    pub use crate::alloc::string::ToString;
     //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
 }
 
