@@ -22,7 +22,7 @@ use lib_wasm_imports::*;
 
 mod lib_wasm_imports {
     pub use crate::p2p::WasmP2pWorker;
-    pub use crate::interface::PublicInterfaceWorker;
+    pub use crate::interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs};
     pub use crate::tx_processing::WasmTxProcessingWorker;
     pub use alloc::rc::Rc;
     pub use core::cell::RefCell;
@@ -531,11 +531,11 @@ impl WasmMainServiceWorker {
     }
 }
 
-// #[wasm_bindgen]
-// pub async fn start_vane_web3(db_url: Option<String>, p2p_port: u16) -> Result<PublicInterfaceWorker, JsValue> {
-//     let worker = WasmMainServiceWorker::run(db_url, p2p_port)
-//         .await
-//         .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-
-//     Ok(worker)
-// }
+#[wasm_bindgen]
+pub async fn start_vane_web3(db_url: Option<String>, p2p_port: u16, dns: String) -> Result<PublicInterfaceWorkerJs, JsValue> {
+    let worker = WasmMainServiceWorker::run(db_url, p2p_port, dns)
+        .await
+        .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+    let public_interface_worker_js = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(worker)));
+    Ok(public_interface_worker_js)
+}

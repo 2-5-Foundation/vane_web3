@@ -70,10 +70,6 @@ pub struct PublicInterfaceWorker {
 }
 
 
-#[wasm_bindgen]
-pub struct PublicInterfaceWorkerJs {
-    inner: Rc<RefCell<PublicInterfaceWorker>>,
-}
 
 impl PublicInterfaceWorker {
     pub async fn new(
@@ -276,3 +272,61 @@ impl PublicInterfaceWorker {
     }
 }
 
+// =================== The interface =================== //
+
+#[wasm_bindgen]
+pub struct PublicInterfaceWorkerJs {
+    inner: Rc<RefCell<PublicInterfaceWorker>>,
+}
+
+impl PublicInterfaceWorkerJs {
+    pub fn new(inner: Rc<RefCell<PublicInterfaceWorker>>) -> Self {
+        Self { inner }
+    }
+}
+
+#[wasm_bindgen]
+impl PublicInterfaceWorkerJs {
+
+    #[wasm_bindgen(js_name = "registerVaneWeb3")]
+    pub async fn register_vane_web3(
+        &self,
+        name: String,
+        account_id: String,
+        network: String,
+    ) -> Result<(), JsValue> {
+        self.inner.borrow().register_vane_web3(name, account_id, network).await
+    }
+
+    #[wasm_bindgen(js_name = "initiateTransaction")]
+    pub async fn initiate_transaction(
+        &self,
+        sender: String,
+        receiver: String,
+        amount: u128,
+        token: String,
+        network: String,
+    ) -> Result<(), JsValue> {
+        self.inner.borrow().initiate_transaction(sender, receiver, amount, token, network).await
+    }
+
+    #[wasm_bindgen(js_name = "senderConfirm")]
+    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+        self.inner.borrow().sender_confirm(tx).await
+    }
+
+    #[wasm_bindgen(js_name = "watchTxUpdates")]
+    pub async fn watch_tx_updates(&self) -> Result<(), JsValue> {
+        self.inner.borrow().watch_tx_updates().await
+    }
+
+    #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]
+    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
+        self.inner.borrow().fetch_pending_tx_updates().await
+    }
+
+    #[wasm_bindgen(js_name = "receiverConfirm")]
+    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+        self.inner.borrow().receiver_confirm(tx).await
+    }
+}
