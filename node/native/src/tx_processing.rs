@@ -1,12 +1,3 @@
-// receives tx from rpc
-// Tx State machine updating
-// Db updates
-// Send and receive tx update events from p2p swarm
-// send to designated chain network
-
-extern crate alloc;
-
-use alloc::sync::Arc;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
@@ -21,11 +12,10 @@ use sp_runtime::traits::Verify;
 use std::collections::BTreeMap;
 
 // use solana_client::rpc_client::RpcClient;
-#[cfg(not(target_arch = "wasm32"))]
 pub use tx_std_imports::*;
 
-#[cfg(not(target_arch = "wasm32"))]
 mod tx_std_imports {
+    pub use std::sync::Arc;
     pub use crate::rpc::Blake2Hasher;
     pub use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
     pub use alloy::network::TransactionBuilder;
@@ -42,9 +32,6 @@ mod tx_std_imports {
 }
 
 
-#[cfg(not(target_arch = "wasm32"))]
-/// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
-/// & tx submission to specified and confirmed chain
 #[derive(Clone)]
 pub struct TxProcessingWorker {
     /// In-memory Db for tx processing at any stage
@@ -56,12 +43,10 @@ pub struct TxProcessingWorker {
     // /// substrate client
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
-    eth_client: ReqwestProvider,
-    bnb_client: ReqwestProvider,
+    pub eth_client: ReqwestProvider,
+    pub bnb_client: ReqwestProvider,
     // solana_client: RpcClient
 }
-
-#[cfg(not(target_arch = "wasm32"))]
 
 impl TxProcessingWorker {
     pub async fn new(
@@ -249,14 +234,24 @@ impl TxProcessingWorker {
                     tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
 
-                // Get nonce
+                // Get nonce and fee estimates from Ethereum RPC
                 let nonce = self
                     .eth_client
                     .get_transaction_count(sender_address)
-                    .await?;
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get nonce from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction creation")
+                    })?;
 
-                // Get fee estimates
-                let fee_estimate = self.eth_client.estimate_eip1559_fees(None).await?;
+                let fee_estimate = self
+                    .eth_client
+                    .estimate_eip1559_fees(None)
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get fee estimates from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get fee estimates for transaction creation")
+                    })?;
 
                 let max_fee = fee_estimate.max_fee_per_gas;
                 let priority_fee = fee_estimate.max_priority_fee_per_gas;
@@ -378,14 +373,24 @@ impl TxProcessingWorker {
                     tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
 
-                // Get nonce
+                // Get nonce and fee estimates from Ethereum RPC
                 let nonce = self
                     .eth_client
                     .get_transaction_count(sender_address)
-                    .await?;
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get nonce from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction submission")
+                    })?;
 
-                // Get fee estimates
-                let fee_estimate = self.eth_client.estimate_eip1559_fees(None).await?;
+                let fee_estimate = self
+                    .eth_client
+                    .estimate_eip1559_fees(None)
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get fee estimates from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get fee estimates for transaction submission")
+                    })?;
 
                 let max_fee = fee_estimate.max_fee_per_gas;
                 let priority_fee = fee_estimate.max_priority_fee_per_gas;
@@ -416,11 +421,15 @@ impl TxProcessingWorker {
                     .into_signed(signature);
 
                 let to_submit_tx: TransactionRequest = signed_tx.tx().clone().into();
+                
                 let receipt = self
                     .eth_client
                     .send_transaction(to_submit_tx)
                     .await
-                    .map_err(|err| anyhow!("failed to submit eth raw tx; caused by :{err}"))?
+                    .map_err(|err| {
+                        log::error!("Failed to submit transaction to Ethereum RPC: {err}");
+                        anyhow!("Failed to submit transaction to Ethereum RPC: {err}")
+                    })?
                     .tx_hash()
                     .clone();
 

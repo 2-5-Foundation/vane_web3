@@ -71,7 +71,7 @@ model SavedPeerAccountInfo{
 }
 model SavedPeers {
     id                String              @id @default(uuid())
-    nodeId            String            @unique
+    nodeId            String              @unique
     accounts          SavedPeerAccountInfo[]
     multiAddr         String
 }

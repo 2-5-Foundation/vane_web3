@@ -1,7 +1,7 @@
 [package]
 name = "native-node"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -23,6 +23,7 @@ hex-literal                                 = "0.4.1"
 serde_json                                  = { workspace = true}
 
 
+#solana-client-wasm                          = { workspace = true}
 db                                          = { workspace = true}
 moka                                        = { workspace = true}
 rcgen                                       = { workspace = true}
@@ -41,6 +42,7 @@ sc-network                                  = "0.45.1"
 sc-service                                  = { workspace = true}
 subxt                                       = { workspace = true}
 redis                                       = { workspace = true}
+
 
 [features]
 e2e = []

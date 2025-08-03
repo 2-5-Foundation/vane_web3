@@ -27,8 +27,10 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
+// ------------------
 
-#[cfg(not(target_arch = "wasm32"))]
+
+
 #[derive(Debug, Clone)]
 #[doc(hidden)] // Needs to be public in order to satisfy the Rust compiler.
 pub struct GenericCodec {
@@ -36,7 +38,6 @@ pub struct GenericCodec {
     max_response_size: u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Default for GenericCodec {
     fn default() -> Self {
         Self {
@@ -46,7 +47,6 @@ impl Default for GenericCodec {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[async_trait::async_trait]
 impl Codec for GenericCodec {
     type Protocol = &'static str;
@@ -179,8 +179,6 @@ impl Codec for GenericCodec {
 type BlockStream<T> = Pin<Box<dyn Stream<Item = Result<T, anyhow::Error>> + Send>>;
 type BlockStreamRes<T> = Result<BlockStream<T>, anyhow::Error>;
 
-
-
 pub use p2p_std_imports::*;
 
 mod p2p_std_imports {
@@ -211,7 +209,6 @@ pub struct P2pWorker {
     pub current_req: VecDeque<SwarmMessage>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl P2pWorker {
     /// generate new ed25519 keypair for node identity and register the peer record in  the db
     pub async fn new(
@@ -373,7 +370,6 @@ impl P2pWorker {
                     error,
                     peer,
                     request_id,
-                    ..
                 } => {
                     let req_id_hash = request_id.get_hash_id();
                     error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
@@ -517,19 +513,12 @@ impl P2pWorker {
 #[derive(Clone)]
 pub struct P2pNetworkService {
     // for sending p2p network commands
-    #[cfg(not(target_arch = "wasm32"))]
     pub p2p_command_tx: Arc<Sender<NetworkCommand>>,
-    #[cfg(target_arch = "wasm32")]
-    pub p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
     // p2p worker instance
-    #[cfg(not(target_arch = "wasm32"))]
     pub p2p_worker: P2pWorker,
-    #[cfg(target_arch = "wasm32")]
-    pub wasm_p2p_worker: WasmP2pWorker,
 }
 
 impl P2pNetworkService {
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(
         p2p_command_tx: Arc<Sender<NetworkCommand>>,
         p2p_worker: P2pWorker,
@@ -537,17 +526,6 @@ impl P2pNetworkService {
         Ok(Self {
             p2p_command_tx,
             p2p_worker,
-        })
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn new(
-        p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
-        p2p_worker: WasmP2pWorker,
-    ) -> Result<Self, Error> {
-        Ok(Self {
-            p2p_command_tx,
-            wasm_p2p_worker: p2p_worker,
         })
     }
 
@@ -580,7 +558,6 @@ impl P2pNetworkService {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn send_request(
         &mut self,
         request: Arc<Mutex<TxStateMachine>>,
@@ -602,29 +579,8 @@ impl P2pNetworkService {
         trace!(target: "p2p","\nsending request command to the swarm thread ");
         Ok(())
     }
-    #[cfg(target_arch = "wasm32")]
-    pub async fn wasm_send_request(
-        &mut self,
-        request: Rc<RefCell<TxStateMachine>>,
-        target_peer_id: PeerId,
-        target_multi_addr: Multiaddr,
-    ) -> Result<(), Error> {
-        let req = request.borrow().clone();
-        let req_command = NetworkCommand::WasmSendRequest {
-            request: req,
-            peer_id: target_peer_id,
-            target_multi_addr,
-        };
+   
 
-        self.p2p_command_tx
-            .send(req_command)
-            .await
-            .map_err(|err| anyhow!("failed to send req command; {err}"))?;
-        trace!(target: "p2p","\nsending request command to the swarm thread ");
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn send_response(
         &mut self,
         outbound_id: u64,
@@ -651,32 +607,4 @@ impl P2pNetworkService {
 
         Ok(())
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub async fn wasm_send_response(
-        &mut self,
-        outbound_id: u64,
-        response: Rc<RefCell<TxStateMachine>>,
-    ) -> Result<(), anyhow::Error> {
-        let txn_state = response.borrow().clone();
-
-        let channel = self
-            .clone()
-            .wasm_p2p_worker
-            .wasm_pending_request
-            .borrow_mut()
-            .remove(&outbound_id)
-            .ok_or(anyhow!("failed to get response channel"))?;
-
-        let resp_command = NetworkCommand::WasmSendResponse {
-            response: txn_state,
-            channel,
-        };
-        self.p2p_command_tx.send(resp_command).await?;
-        trace!(target: "p2p","sending response command");
-
-        Ok(())
-    }
 }
-
-// -------------------------------------- BEHAVIOUR IMPLEMENTING PARITY CODEC -------------------- //

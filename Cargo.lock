@@ -8245,15 +8245,14 @@ name = "primitives"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dotenv",
  "libp2p 0.53.2",
  "log",
  "parity-scale-codec",
  "serde",
- "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "sp-core",
  "twox-hash 2.1.0",
- "wasm-bindgen",
 ]
 
 [[package]]

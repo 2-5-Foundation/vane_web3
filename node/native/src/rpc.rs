@@ -1,16 +1,4 @@
-// this layer should only be about user interaction
-// receive tx requests
-// pre processing
-// send to tx processing layer
-// NGIX for ssl
-
-// ========================================
-// TODO!
-// Make sure that user cannot manually change the STATUS,RECEIVER AND SENDER ADDRESSES, AND NETWORK AND TOKEN ID
-// hence hash all those values and everytime user updates, assert if they are intact
-// ========================================
-
-extern crate alloc;
+pub use std_imports::*;
 
 use anyhow::anyhow;
 use core::str::FromStr;
@@ -20,18 +8,15 @@ use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
+    AccountInfo, ChainSupported, Discovery, NodeError, PeerRecord, Token, TxStateMachine, TxStatus,
     UserAccount,
 };
 use sp_runtime::traits::Zero;
 
 use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
 
-
-pub use std_imports::*;
-
 mod std_imports {
-    pub use alloc::sync::Arc;
+    pub use std::sync::Arc;
     pub use db::LocalDbWorker;
     pub use jsonrpsee::core::Error;
     pub use jsonrpsee::{
@@ -81,6 +66,7 @@ pub trait TransactionRpc {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> RpcResult<()>;
 
     /// Allowing the sender to revery/cancel the transaction
@@ -104,6 +90,10 @@ pub trait TransactionRpc {
     /// receiver confirmation on address and ownership of account ( network ) signifying correct token to the network choice
     #[method(name = "receiverConfirm")]
     async fn receiver_confirm(&self, tx: TxStateMachine) -> RpcResult<()>;
+
+    /// Subscribe to node execution status and errors
+    #[subscription(name = "subscribeNodeExecutionStatus", item = NodeError)]
+    async fn subscribe_node_execution_status(&self) -> SubscriptionResult;
 }
 
 /// handling tx submission & tx confirmation & tx simulation interactions
@@ -124,6 +114,8 @@ pub struct TransactionRpcWorker {
     // HashMap<txn_counter,Integrity hash>
     /// tx pending store
     pub moka_cache: AsyncCache<u64, TxStateMachine>,
+    /// error sender channel for subscriptions
+    pub error_sender: Arc<Mutex<Sender<NodeError>>>,
     // initial fees, after dry running tx initialy without optimization
 }
 
@@ -137,6 +129,7 @@ impl TransactionRpcWorker {
         peer_id: PeerId,
         moka_cache: AsyncCache<u64, TxStateMachine>,
     ) -> Result<Self, anyhow::Error> {
+        let (error_sender, _error_receiver) = tokio::sync::mpsc::channel::<NodeError>(100);
         let local_ip = local_ip()
             .map_err(|err| anyhow!("failed to get local ip address; caused by: {err}"))?;
 
@@ -154,6 +147,7 @@ impl TransactionRpcWorker {
             user_rpc_update_sender_channel,
             peer_id,
             moka_cache,
+            error_sender: Arc::new(Mutex::new(error_sender)),
         })
     }
 
@@ -175,7 +169,6 @@ impl TransactionRpcWorker {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 impl TransactionRpcServer for TransactionRpcWorker {
     async fn add_account(
@@ -193,6 +186,7 @@ impl TransactionRpcServer for TransactionRpcWorker {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> RpcResult<()> {
         info!("initiated sending transaction");
         let token = token.as_str().into();
@@ -223,7 +217,9 @@ impl TransactionRpcServer for TransactionRpcWorker {
                 multi_id: multi_addr.into(),
                 recv_signature: None,
                 network: net_sender,
+                token,
                 status: TxStatus::default(),
+                code_word,
                 amount,
                 signed_call_payload: None,
                 call_payload: None,
@@ -235,6 +231,9 @@ impl TransactionRpcServer for TransactionRpcWorker {
             // dry run the tx
 
             //let fees = self::dry_run_tx().map_err(|err|anyhow!("{}",err))?;
+
+            // save to the cache
+            self.moka_cache.insert(tx_state_machine.tx_nonce.into(), tx_state_machine.clone()).await;
 
             // propagate the tx to lower layer (Main service worker layer)
             let sender_channel = self.user_rpc_update_sender_channel.lock().await;
@@ -355,6 +354,57 @@ impl TransactionRpcServer for TransactionRpcWorker {
         println!("moka: {tx_updates:?}");
         Ok(tx_updates)
     }
+
+    async fn subscribe_node_execution_status(
+        &self,
+        subscription_sink: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
+        let sink = subscription_sink
+            .accept()
+            .await
+            .map_err(|_| anyhow!("failed to accept error subscription channel"))?;
+
+        // Create a receiver for this subscription
+        let (error_sender, mut error_receiver) = tokio::sync::mpsc::channel::<NodeError>(100);
+        
+        // Clone the main error sender to send errors to this subscription
+        let main_error_sender = self.error_sender.clone();
+        
+        // Spawn a task to forward errors to this subscription
+        tokio::spawn(async move {
+            while let Some(error) = error_receiver.recv().await {
+                let subscription_msg = SubscriptionMessage::from_json(&error)
+                    .unwrap_or_else(|_| SubscriptionMessage::from_json(&serde_json::json!({"error": "Failed to serialize error"})).unwrap());
+                
+                if let Err(e) = sink.send(subscription_msg).await {
+                    log::warn!("Failed to send error to subscription: {}", e);
+                    break;
+                }
+            }
+        });
+
+        Ok(())
+    }
 }
 
-// -------------------------------------- WASM BINDGEN ----------------------------------------- //
+// Helper method to send errors to subscribers
+impl TransactionRpcWorker {
+    pub async fn send_error(&self, error_type: &str, message: &str, details: Option<&str>) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let error = NodeError {
+            timestamp,
+            error_type: error_type.to_string(),
+            message: message.to_string(),
+            details: details.map(|s| s.to_string()),
+        };
+
+        // Send error to subscribers via channel
+        if let Err(e) = self.error_sender.lock().await.send(error).await {
+            log::warn!("Failed to send error to subscribers: {}", e);
+        }
+    }
+}
