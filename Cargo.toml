@@ -1,5 +1,5 @@
 [workspace]
-members =[ "app", "db", "integration-test", "node", "primitives","db/prisma", "db-wasm"]
+members =[ "app", "db", "integration-test", "node/native", "node/wasm", "primitives","db/prisma", "db-wasm"]
 resolver = "2"
 
 # Members for wasm builds
@@ -18,7 +18,7 @@ aes-gcm                                 = { version = "0.10.3", features = ["aes
 libp2p                                  = { version = "0.53.2"}
 alloy                                   = { version = "0.3"}
 alloy-primitives                        = "0.8.11"
-sp-runtime                              = { version = "39.0.0"}
+sp-runtime                              = { version = "39.0.0", default-features = false}
 jsonrpsee                               = { version = "0.17", features = ["server", "client-core", "http-client", "ws-client", "macros"] }
 notion                                  = "0.6.0"
 reconnecting-jsonrpsee-ws-client        = "0.4.3"
@@ -56,7 +56,8 @@ sp-core                                 = { version = "34.0.0", default-features
 db                                      = { path = "db" }
 db-wasm                                 = { path = "db-wasm"}
 integration-test                        = { path = "integration-test" }
-node                                    = { path = "node" }
+native-node                             = { path = "node/native" }
+wasm-node                               = { path = "node/wasm" }
 primitives                              = { path = "primitives" }
 tokio_with_wasm                         = { version = "0.7.4",features = ["full"]}
 # ========================================== Patch =======================================

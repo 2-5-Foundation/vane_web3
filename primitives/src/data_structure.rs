@@ -12,6 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
+
+use dotenv::dotenv;
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -136,8 +138,13 @@ pub struct TxStateMachine {
     pub recv_signature: Option<Vec<u8>>,
     /// chain network
     pub network: ChainSupported,
+    /// token
+    pub token: Token,
     /// State Machine status
     pub status: TxStatus,
+    /// code word
+    #[serde(rename = "codeWord")]
+    pub code_word: String,
     /// amount to be sent
     pub amount: u128,
     /// signed call payload (signed hash of the transaction)
@@ -236,16 +243,7 @@ pub enum NetworkCommand {
     },
     Close {
         peer_id: PeerId,
-    },
-    WasmSendRequest {
-        request: TxStateMachine,
-        peer_id: PeerId,
-        target_multi_addr: Multiaddr,
-    },
-    WasmSendResponse {
-        response: TxStateMachine,
-        channel: ResponseChannel<TxStateMachine>,
-    },
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -257,15 +255,7 @@ pub enum SwarmMessage {
     Response {
         data: Vec<u8>,
         outbound_id: OutboundRequestId,
-    },
-    WasmRequest {
-        data: TxStateMachine,
-        inbound_id: InboundRequestId,
-    },
-    WasmResponse {
-        data: TxStateMachine,
-        outbound_id: OutboundRequestId,
-    },
+    }
 }
 
 /// Transaction data structure to store in the db
@@ -293,6 +283,12 @@ pub enum Token {
     UsdtEth,
     UsdcEth,
     UsdtDot,
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Self::Eth
+    }
 }
 
 impl From<Token> for String {
@@ -379,19 +375,22 @@ impl From<&str> for ChainSupported {
 }
 
 impl ChainSupported {
-    // Associated constants representing network URLs or other constants
-    const POLKADOT_URL: &'static str = "wss://polkadot-rpc.dwellir.com";
-    const ETHEREUM_URL: &'static str = "http://127.0.0.1:8545";
-    const BNB_URL: &'static str = "https://bsc-dataseed.binance.org/";
-    const SOLANA_URL: &'static str = "https://api.mainnet-beta.solana.com";
-
     // Method to get the URL based on the network type
-    pub fn url(&self) -> &'static str {
+    pub fn url(&self) -> String {
+        {
+            // Load .env file if it exists
+            dotenv().ok();
+        }
+        
         match self {
-            ChainSupported::Polkadot => Self::POLKADOT_URL,
-            ChainSupported::Ethereum => Self::ETHEREUM_URL,
-            ChainSupported::Bnb => Self::BNB_URL,
-            ChainSupported::Solana => Self::SOLANA_URL,
+            ChainSupported::Polkadot => std::env::var("POLKADOT_RPC_URL")
+                .unwrap_or_else(|_| "wss://polkadot-rpc.dwellir.com".to_string()),
+            ChainSupported::Ethereum => std::env::var("ETHEREUM_RPC_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string()),
+            ChainSupported::Bnb => std::env::var("BNB_RPC_URL")
+                .unwrap_or_else(|_| "https://bsc-dataseed.binance.org/".to_string()),
+            ChainSupported::Solana => std::env::var("SOLANA_RPC_URL")
+                .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
         }
     }
 }
@@ -468,9 +467,11 @@ impl From<RedisAccountProfile> for PeerRecord {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct RedisAccountProfile {
-    pub accounts: Vec<AccountInfo>,
+    #[serde(rename = "peerId")]
     pub peer_id: String,
+    #[serde(rename = "multiAddr")]
     pub multi_addr: String,
+    pub accounts: Vec<AccountInfo>,
     pub rpc: String,
 }
 // ----------------------- DB related ---------------------------------------------------------- //
@@ -512,7 +513,7 @@ pub trait DbWorkerInterface: Sized {
 
     async fn update_user_peer_id_account_ids(
         &self,
-        peer_record: PeerRecord,
+        account: AccountInfo,
     ) -> Result<(), anyhow::Error>;
 
     async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
@@ -535,4 +536,13 @@ pub trait DbWorkerInterface: Sized {
 
     // get saved peers
     async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, anyhow::Error>;
+}
+
+/// Node error reporting structure
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NodeError {
+    pub timestamp: u64,
+    pub error_type: String, // "network", "database", "execution", "rpc"
+    pub message: String,
+    pub details: Option<String>,
 }

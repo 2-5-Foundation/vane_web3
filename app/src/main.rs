@@ -1,7 +1,7 @@
-#![cfg(not(target_arch = "wasm32"))]
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
+use anyhow::{anyhow, Result};
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
@@ -37,8 +37,8 @@ struct Args {
     #[arg(short, long)]
     pub account_profile_hash: String,
     /// Account pairs in format "address:network,address:network,..."
-    #[arg(short, long, value_parser = parse_account_pairs)]
-    pub accounts: Vec<(String, String)>,
+    #[arg(short, long)]
+    pub accounts: String,
 }
 
 fn parse_account_pairs(s: &str) -> Result<Vec<(String, String)>, String> {
@@ -60,13 +60,17 @@ fn parse_account_pairs(s: &str) -> Result<Vec<(String, String)>, String> {
 async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
+    
+    // Parse accounts string into Vec<(String, String)>
+    let accounts = parse_account_pairs(&args.accounts)
+        .map_err(|e| anyhow!("Failed to parse accounts: {}", e))?;
 
     node::MainServiceWorker::run(
         args.db_url,
         args.port,
         args.redis_url,
         args.account_profile_hash,
-        args.accounts,
+        accounts,
     )
     .await?;
     Ok(())

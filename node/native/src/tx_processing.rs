@@ -1,12 +1,3 @@
-// receives tx from rpc
-// Tx State machine updating
-// Db updates
-// Send and receive tx update events from p2p swarm
-// send to designated chain network
-
-extern crate alloc;
-
-use alloc::sync::Arc;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
@@ -21,11 +12,10 @@ use sp_runtime::traits::Verify;
 use std::collections::BTreeMap;
 
 // use solana_client::rpc_client::RpcClient;
-#[cfg(not(target_arch = "wasm32"))]
 pub use tx_std_imports::*;
 
-#[cfg(not(target_arch = "wasm32"))]
 mod tx_std_imports {
+    pub use std::sync::Arc;
     pub use crate::rpc::Blake2Hasher;
     pub use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
     pub use alloy::network::TransactionBuilder;
@@ -41,23 +31,7 @@ mod tx_std_imports {
     pub use tokio::sync::Mutex;
 }
 
-// ------------------------------------- WASM ------------------------------------- //
-#[cfg(target_arch = "wasm32")]
-use tx_wasm_imports::*;
 
-#[cfg(target_arch = "wasm32")]
-mod tx_wasm_imports {
-    pub use alloc::rc::Rc;
-    pub use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
-    pub use core::cell::RefCell;
-    pub use web3::transports;
-    pub use web3::Web3;
-    //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-/// handling tx processing, updating tx state machine, updating db and tx chain simulation processing
-/// & tx submission to specified and confirmed chain
 #[derive(Clone)]
 pub struct TxProcessingWorker {
     /// In-memory Db for tx processing at any stage
@@ -69,154 +43,10 @@ pub struct TxProcessingWorker {
     // /// substrate client
     // sub_client: OnlineClient<PolkadotConfig>,
     /// ethereum & bnb client
-    eth_client: ReqwestProvider,
-    bnb_client: ReqwestProvider,
+    pub eth_client: ReqwestProvider,
+    pub bnb_client: ReqwestProvider,
     // solana_client: RpcClient
 }
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Clone)]
-pub struct WasmTxProcessingWorker {
-    /// In-memory Db for tx processing at any stage
-    tx_staging: Rc<RefCell<BTreeMap<H256, TxStateMachine>>>,
-    /// In-memory Db for to be confirmed tx on sender
-    pub sender_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
-    /// In-memory Db for to be confirmed tx on receiver
-    pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
-    // /// substrate client
-    // sub_client: OnlineClient<PolkadotConfig>,
-    //// ethereum & bnb client
-    // eth_client: ReqwestProvider,
-    // bnb_client: ReqwestProvider,
-    // solana_client: RpcClient
-}
-
-#[cfg(target_arch = "wasm32")]
-impl WasmTxProcessingWorker {
-    pub fn new(
-        chain_networks: (ChainSupported, ChainSupported, ChainSupported),
-    ) -> Result<Self, anyhow::Error> {
-        let (_solana, eth, bnb) = chain_networks;
-        let eth_url = eth.url();
-        let bnb_url = bnb.url().to_string();
-
-        // let eth_rpc_url = eth_url
-        //     .parse()
-        //     .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
-        // // Create a provider with the HTTP transport using the `reqwest` crate.
-        // let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
-        //
-        // let bnb_rpc_url = bnb_url
-        //     .parse()
-        //     .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
-        // let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
-
-        Ok(Self {
-            tx_staging: Rc::new(RefCell::new(Default::default())),
-            sender_tx_pending: Rc::new(RefCell::new(Default::default())),
-            receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
-            // eth_client: eth_provider,
-            // bnb_client: bnb_provider,
-        })
-    }
-
-    pub fn validate_receiver_sender_address(
-        &self,
-        tx: &TxStateMachine,
-        who: &str,
-    ) -> Result<(), anyhow::Error> {
-        let (network, signature, msg, address) = if who == "Receiver" {
-            println!("\n receiver address verification \n");
-
-            let network = tx.network;
-            let signature = tx
-                .clone()
-                .recv_signature
-                .ok_or(anyhow!("receiver didnt signed"))?;
-
-            let recv_address = tx.receiver_address.clone();
-            let msg = tx.receiver_address.as_bytes().to_vec();
-
-            (network, signature, msg, recv_address)
-        } else {
-            println!("\n sender address verification \n");
-            // who == Sender
-            let network = tx.network;
-            let signature = tx
-                .clone()
-                .signed_call_payload
-                .ok_or(anyhow!("original sender didnt signed"))?;
-
-            let msg = tx
-                .call_payload
-                .expect("unexpected error, call payload should be available");
-            let sender_address = tx.sender_address.clone();
-
-            (network, signature, msg.to_vec(), sender_address)
-        };
-        match network {
-            ChainSupported::Ethereum => {
-                let address: alloy::primitives::Address = address.parse().expect("Invalid address");
-
-                let hashed_msg = {
-                    if who == "Receiver" {
-                        let mut signable_msg = Vec::<u8>::new();
-                        signable_msg.extend_from_slice(ETH_SIG_MSG_PREFIX.as_bytes());
-                        signable_msg.extend_from_slice(msg.len().to_string().as_bytes());
-                        signable_msg.extend_from_slice(msg.as_slice());
-
-                        keccak_256(signable_msg.as_slice())
-                    } else {
-                        msg.try_into().unwrap()
-                    }
-                };
-                let signature = EcdsaSignature::try_from(signature.as_slice())
-                    .map_err(|err| anyhow!("failed to convert ecdsa signature"))?;
-
-                match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
-                    Ok(recovered_addr) => {
-                        println!(
-                            "recovered addr: {recovered_addr:?} == address: {address:?} ==== {:?}",
-                            tx.status
-                        );
-                        if recovered_addr == address {
-                            Ok::<(), anyhow::Error>(())?
-                        } else {
-                            Err(anyhow!(
-                                "addr recovery equality failed hence account invalid"
-                            ))?
-                        }
-                    }
-                    Err(err) => Err(anyhow!("ec signature verification failed: {err}"))?,
-                }
-            }
-            _ => unreachable!(),
-        }
-        Ok(())
-    }
-
-    pub fn validate_multi_id(&self, txn: &TxStateMachine) -> bool {
-        let post_multi_id = {
-            let mut sender_recv = txn.sender_address.as_bytes().to_vec();
-            sender_recv.extend_from_slice(txn.receiver_address.as_bytes());
-            blake2_256(&sender_recv[..])
-        };
-
-        post_multi_id == txn.multi_id
-    }
-
-    pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
-        // TODO
-        Ok([0u8; 32])
-    }
-
-    pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
-        // TODO
-        Ok(())
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 
 impl TxProcessingWorker {
     pub async fn new(
@@ -404,14 +234,24 @@ impl TxProcessingWorker {
                     tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
 
-                // Get nonce
+                // Get nonce and fee estimates from Ethereum RPC
                 let nonce = self
                     .eth_client
                     .get_transaction_count(sender_address)
-                    .await?;
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get nonce from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction creation")
+                    })?;
 
-                // Get fee estimates
-                let fee_estimate = self.eth_client.estimate_eip1559_fees(None).await?;
+                let fee_estimate = self
+                    .eth_client
+                    .estimate_eip1559_fees(None)
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get fee estimates from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get fee estimates for transaction creation")
+                    })?;
 
                 let max_fee = fee_estimate.max_fee_per_gas;
                 let priority_fee = fee_estimate.max_priority_fee_per_gas;
@@ -533,14 +373,24 @@ impl TxProcessingWorker {
                     tx.receiver_address.parse().expect("Invalid recv address");
                 let value = U256::from(tx.amount);
 
-                // Get nonce
+                // Get nonce and fee estimates from Ethereum RPC
                 let nonce = self
                     .eth_client
                     .get_transaction_count(sender_address)
-                    .await?;
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get nonce from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction submission")
+                    })?;
 
-                // Get fee estimates
-                let fee_estimate = self.eth_client.estimate_eip1559_fees(None).await?;
+                let fee_estimate = self
+                    .eth_client
+                    .estimate_eip1559_fees(None)
+                    .await
+                    .map_err(|err| {
+                        log::error!("Failed to get fee estimates from Ethereum RPC: {err}");
+                        anyhow!("Ethereum RPC unavailable - cannot get fee estimates for transaction submission")
+                    })?;
 
                 let max_fee = fee_estimate.max_fee_per_gas;
                 let priority_fee = fee_estimate.max_priority_fee_per_gas;
@@ -571,11 +421,15 @@ impl TxProcessingWorker {
                     .into_signed(signature);
 
                 let to_submit_tx: TransactionRequest = signed_tx.tx().clone().into();
+                
                 let receipt = self
                     .eth_client
                     .send_transaction(to_submit_tx)
                     .await
-                    .map_err(|err| anyhow!("failed to submit eth raw tx; caused by :{err}"))?
+                    .map_err(|err| {
+                        log::error!("Failed to submit transaction to Ethereum RPC: {err}");
+                        anyhow!("Failed to submit transaction to Ethereum RPC: {err}")
+                    })?
                     .tx_hash()
                     .clone();
 

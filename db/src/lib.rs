@@ -286,11 +286,17 @@ impl DbWorkerInterface for LocalDbWorker {
 
     async fn update_user_peer_id_account_ids(
         &self,
-        peer_record: PeerRecord,
+        account: AccountInfo,
     ) -> Result<(), anyhow::Error> {
-        println!("updating peer record: {:?}", peer_record);
+        println!("updating peer record: {:?}", &account);
         let client = &self.db;
-        // TODO
+        client.user_peer_account_info().create(
+            account.account,
+            account.network.to_string(),
+            db::user_peer::UniqueWhereParam::IdEquals("MAIN_USER_ID".to_string()),
+            vec![],
+        )
+        .exec().await?;
 
         Ok(())
     }

@@ -1,5 +1,5 @@
 [package]
-name = "node"
+name = "native-node"
 version = "0.1.0"
 edition = "2021"
 
@@ -24,7 +24,6 @@ serde_json                                  = { workspace = true}
 
 
 #solana-client-wasm                          = { workspace = true}
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 db                                          = { workspace = true}
 moka                                        = { workspace = true}
 rcgen                                       = { workspace = true}
@@ -44,22 +43,6 @@ sc-service                                  = { workspace = true}
 subxt                                       = { workspace = true}
 redis                                       = { workspace = true}
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwasm                                     = {version = "0.5.0", default-features = true}
-tokio_with_wasm                             = { version = "0.7.4", features = ["full"]}
-libp2p                                      = { workspace = true, features = ["wasm-bindgen","webtransport-websys","websocket-websys","json"]}
-async-stream                                = { version = "0.3.6"}
-futures                                     = { version = "0.3.31", features = ["alloc","async-await"]}
-lru                                         = "0.12.5"
-alloy                                       = { workspace = true, default-features = false, features = ["wasm-bindgen","k256", "reqwest"]}
-web3                                        = { version = "0.19.0", default-features = false, features = ["wasm","eip-1193","http"]}
-wasm-bindgen-futures                        = "0.4.49"
-wasm-bindgen                                = "0.2.99"
-web-sys                                     = "0.3.76"
-#subxt                                       = { workspace = true, default-features = false, features = ["web"]}
-curve25519-dalek                            = { workspace = true, default-features = false, features = ["alloc"]}
-rand                                        = {version = "0.8.5", default-features = false, features = ["alloc"]}
-db-wasm                                     = { workspace = true}
 
 [features]
 e2e = []

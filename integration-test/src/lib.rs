@@ -1,4 +1,3 @@
-#![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
 use walkdir::WalkDir;
@@ -11,8 +10,8 @@ use db::LocalDbWorker;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::HttpClient;
 use libp2p::{Multiaddr, PeerId};
-use node::p2p::{BoxStream, P2pWorker};
-use node::MainServiceWorker;
+use native_node::p2p::{BoxStream, P2pWorker};
+use native_node::MainServiceWorker;
 use primitives::data_structure::{ChainSupported, PeerRecord, ETH_SIG_MSG_PREFIX};
 use simplelog::{
     ColorChoice, CombinedLogger, Config, ConfigBuilder, LevelFilter, TermLogger, TerminalMode,
@@ -97,8 +96,7 @@ mod e2e_tests {
     use libp2p::futures::StreamExt;
     use libp2p::request_response::Message;
     use log::{error, info};
-    use node::rpc::Airtable;
-    use node::MainServiceWorker;
+    use node_native::MainServiceWorker;
     use primitives::data_structure::{
         AccountInfo, AirtableRequestBody, Fields, PostRecord, SwarmMessage, TxStateMachine,
         TxStatus,
@@ -262,32 +260,6 @@ mod e2e_tests {
 
         Ok(())
     }
-
-    #[tokio::test]
-    async fn airtable_test() -> Result<(), anyhow::Error> {
-        let _ = log_setup();
-
-        let client = Airtable::new().await?;
-        let mut peer = Fields::default();
-        let req_body = AirtableRequestBody::new(peer.clone());
-        let record_data = client.create_peer(req_body).await?;
-        assert_eq!(record_data.fields, peer.clone());
-
-        // try updating
-        let acc_info = AccountInfo {
-            account: "4456".to_string(),
-            network: ChainSupported::Ethereum,
-        };
-        peer.account_id1 = Some(acc_info);
-        let new_req_body = PostRecord::new(peer.clone());
-        let updated_record = client.update_peer(new_req_body, record_data.id).await?;
-        // try fetching
-        assert_eq!(updated_record.fields, peer);
-
-        client.delete_all().await?;
-        Ok(())
-    }
-
     // Retry connection with backoff
     async fn connect_with_retry(url: &str, max_attempts: u32) -> Result<Client, Error> {
         let mut attempts = 0;
