@@ -352,43 +352,6 @@ impl DbWorkerInterface for OpfsRedbWorker {
         todo!()
     }
 
-    async fn update_user_peer_id_accounts(&self, peer_record: PeerRecord) -> Result<(), Error> {
-        // let write_txn = self.db.begin_write()?;
-        // {
-        //     let mut table = write_txn.open_table(USER_PEER_TABLE)?;
-
-        //     // Get current data
-        //     let encoded_to_store = {
-        //         let val = table
-        //             .get(&USER_PEER_RECORD_KEY)
-        //             .map_err(|err| anyhow!("failed to get user peer record: {err:?}"))?
-        //             .expect("user not available");
-        //         let mut current_peer: PeerRecord = Decode::decode(&mut &val.value()[..])
-        //             .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
-
-        //         // Update account IDs if provided
-        //         if let Some(account_id) = peer_record.account_id1 {
-        //             current_peer.account_id1 = Some(account_id);
-        //         }
-        //         if let Some(account_id) = peer_record.account_id2 {
-        //             current_peer.account_id2 = Some(account_id);
-        //         }
-        //         if let Some(account_id) = peer_record.account_id3 {
-        //             current_peer.account_id3 = Some(account_id);
-        //         }
-        //         if let Some(account_id) = peer_record.account_id4 {
-        //             current_peer.account_id4 = Some(account_id);
-        //         }
-        //         current_peer.encode()
-        //     };
-        //     // Save updated data
-        //     table.insert(SAVED_PEERS_KEY, encoded_to_store)?;
-        // }
-        // write_txn.commit()?;
-        // Ok(())
-        todo!()
-    }
-
     async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
         {

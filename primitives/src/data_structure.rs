@@ -12,6 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
+#[cfg(feature = "wasm")]
+use wasm_bindgen::JsValue;
 
 use dotenv::dotenv;
 // Ethereum signature preimage prefix according to EIP-191
@@ -171,6 +173,15 @@ pub struct TxStateMachine {
     pub tx_nonce: u32,
 }
 
+#[cfg(feature = "wasm")]
+impl TxStateMachine {
+    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsValue> {
+        let tx_state_machine: TxStateMachine = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize TxStateMachine: {:?}", e)))?;
+        Ok(tx_state_machine)
+    }
+}
+
 impl TxStateMachine {
     pub fn recv_confirmation_passed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmationPassed
@@ -237,6 +248,15 @@ pub enum NetworkCommand {
         response: Vec<u8>,
         channel: ResponseChannel<Result<Vec<u8>, Error>>,
     },
+    WasmSendRequest {
+        request: TxStateMachine,
+        peer_id: PeerId,
+        target_multi_addr: Multiaddr,
+    },
+    WasmSendResponse {  
+        response: Result<TxStateMachine, String>,
+        channel: ResponseChannel<Result<TxStateMachine, String>>,
+    },
     Dial {
         target_multi_addr: Multiaddr,
         target_peer_id: PeerId,
@@ -255,7 +275,15 @@ pub enum SwarmMessage {
     Response {
         data: Vec<u8>,
         outbound_id: OutboundRequestId,
-    }
+    },
+    WasmRequest {
+        data: TxStateMachine,
+        inbound_id: InboundRequestId,
+    },
+    WasmResponse {
+        data: TxStateMachine,
+        outbound_id: OutboundRequestId,
+    },
 }
 
 /// Transaction data structure to store in the db

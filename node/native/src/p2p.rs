@@ -38,6 +38,7 @@ pub struct GenericCodec {
     max_response_size: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for GenericCodec {
     fn default() -> Self {
         Self {
@@ -519,6 +520,7 @@ pub struct P2pNetworkService {
 }
 
 impl P2pNetworkService {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(
         p2p_command_tx: Arc<Sender<NetworkCommand>>,
         p2p_worker: P2pWorker,

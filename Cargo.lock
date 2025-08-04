@@ -8250,9 +8250,11 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "serde",
+ "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "sp-core",
  "twox-hash 2.1.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -9406,6 +9408,16 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "relay-node"
+version = "0.1.0"
+dependencies = [
+ "libp2p 0.53.2",
+ "primitives",
+ "sp-core",
+ "sp-runtime",
+]
 
 [[package]]
 name = "remove_dir_all"
@@ -11134,9 +11146,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.134"
+version = "1.0.142"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
+checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
 dependencies = [
  "indexmap 2.7.0",
  "itoa",
@@ -13082,9 +13094,9 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm"
-version = "0.7.4"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c33ccdd8192685c79013359bf42e1c2649ed6bf11e8fa05f1f7f2acc7c71368"
+checksum = "4dfba9b946459940fb564dcf576631074cdfb0bfe4c962acd4c31f0dca7897e6"
 dependencies = [
  "js-sys",
  "tokio",
@@ -13096,9 +13108,9 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm_proc"
-version = "0.7.4"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ff8fa1b71e329058cc97c093972aeb51dd7e658bd5197f294665639194bbc4c"
+checksum = "37e04c1865c281139e5ccf633cb9f76ffdaabeebfe53b703984cf82878e2aabb"
 dependencies = [
  "quote",
  "syn 2.0.95",
@@ -13882,6 +13894,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwasm",
  "serde-wasm-bindgen 0.6.5",
+ "serde_json",
  "sp-core",
  "sp-runtime",
  "tokio_with_wasm",

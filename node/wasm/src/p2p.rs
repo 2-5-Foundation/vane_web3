@@ -31,7 +31,7 @@ mod p2p_wasm_imports {
     pub use db_wasm::OpfsRedbWorker;
     pub use futures::StreamExt;
     pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
-    pub use libp2p::core::Transport;
+    pub use libp2p::core::Transport as TransportTrait;
     pub use libp2p::core::transport::global_only::Transport;
     pub use libp2p::webtransport_websys as webrtc_websys;
 
@@ -47,10 +47,10 @@ mod p2p_wasm_imports {
 #[derive(Clone)]
 pub struct WasmP2pWorker {
     pub node_id: PeerId,
-    pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, TxStateMachine>>>>,
+    pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, Result<TxStateMachine,String>>>>>,
     pub url: Multiaddr,
-    pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>>>,
-    pub wasm_pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<TxStateMachine>,16>>>,
+    pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>>>,
+    pub wasm_pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<Result<TxStateMachine, String>>,16>>>,
     pub current_req: VecDeque<SwarmMessage>,
 }
 
@@ -59,7 +59,7 @@ impl WasmP2pWorker {
         db_worker: Rc<OpfsRedbWorker>,
         port: u16,
         dns: String,
-        command_recv_channel: tokio_with_wasm::sync::mpsc::Receiver<NetworkCommand>,
+        command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,
     ) -> Result<Self, anyhow::Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
@@ -95,9 +95,7 @@ impl WasmP2pWorker {
                 webrtc_websys::Transport::new(webrtc_websys::Config::new(&key))
             })?
             .with_behaviour(|_| json_behaviour)?
-            .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(core::time::Duration::from_secs(30))
-            })
+            
             .build();
 
         Ok(Self {
@@ -111,9 +109,9 @@ impl WasmP2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<TxStateMachine>,16>>>,
-        events: SwarmEvent<Event<TxStateMachine, TxStateMachine>>,
-        sender: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
+        pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<Result<TxStateMachine, String>>,16>>>,
+        events: SwarmEvent<Event<TxStateMachine, Result<TxStateMachine, String>>>,
+        sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {
         match events {
             SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
@@ -146,10 +144,14 @@ impl WasmP2pWorker {
                             request_id,
                         } => {
                             let data = response;
+                            if let Ok(data) = data {
                             let resp_msg = SwarmMessage::WasmResponse {
-                                data,
-                                outbound_id: request_id,
-                            };
+                                    data,
+                                    outbound_id: request_id,
+                                };
+                            }else{
+                                error!("failed to get response data: {data:?}");
+                            }
                             if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
                                 error!("Failed to send message: {}", e);
                             }
@@ -228,7 +230,7 @@ impl WasmP2pWorker {
     pub async fn start_swarm(
         &mut self,
         sender_channel: Rc<
-            RefCell<tokio_with_wasm::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
+            RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
         >,
     ) -> Result<(), Error> {
         let multi_addr = &self.url;
@@ -250,7 +252,7 @@ impl WasmP2pWorker {
                 let mut swarm = swarm.borrow_mut();
                 let mut p2p_command_recv = p2p_command_recv.borrow_mut();
 
-                tokio_with_wasm::select! {
+                tokio_with_wasm::alias::select! {
                     event = swarm.next() => {
                         if let Some(event) = event {
                             Self::handle_swarm_events(pending_request, event, sender).await
@@ -314,14 +316,14 @@ impl WasmP2pWorker {
 
 #[derive(Clone)]
 pub struct P2pNetworkService {
-    pub p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
+    pub p2p_command_tx: Rc<tokio_with_wasm::alias::sync::mpsc::Sender<NetworkCommand>>,
     pub wasm_p2p_worker: WasmP2pWorker,
 }
 
 impl P2pNetworkService {
     
     pub fn new(
-        p2p_command_tx: Rc<tokio_with_wasm::sync::mpsc::Sender<NetworkCommand>>,
+        p2p_command_tx: Rc<tokio_with_wasm::alias::sync::mpsc::Sender<NetworkCommand>>,
         p2p_worker: WasmP2pWorker,
     ) -> Result<Self, Error> {
         Ok(Self {
@@ -398,7 +400,7 @@ impl P2pNetworkService {
             .ok_or(anyhow!("failed to get response channel"))?;
 
         let resp_command = NetworkCommand::WasmSendResponse {
-            response: txn_state,
+            response: Ok(txn_state),
             channel,
         };
         self.p2p_command_tx.send(resp_command).await?;

@@ -1,4 +1,5 @@
 #![no_std]
+
 extern crate alloc;
 extern crate core;
 
@@ -16,7 +17,7 @@ use codec::Decode;
 use core::str::FromStr;
 use hex_literal::hex;
 use primitives::data_structure::DbWorkerInterface;
-
+use serde_json::from_str;
 // -------------------------------- WASM ------------------------------ //
 use lib_wasm_imports::*;
 
@@ -59,10 +60,10 @@ pub struct WasmMainServiceWorker {
     // channels for layers communication
     /// sender channel to propagate transaction state to rpc layer
     /// this serve as an update channel to the user
-    pub rpc_sender_channel: Rc<RefCell<tokio_with_wasm::sync::mpsc::Sender<TxStateMachine>>>,
+    pub rpc_sender_channel: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<TxStateMachine>>>,
     /// receiver channel to handle the updates made by user from rpc
     pub user_rpc_update_recv_channel:
-        Rc<RefCell<tokio_with_wasm::sync::mpsc::Receiver<TxStateMachine>>>,
+        Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<TxStateMachine>>>,
     // moka cache
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>,
 }
@@ -72,13 +73,13 @@ impl WasmMainServiceWorker {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
-        let (rpc_sender_channel, rpc_recv_channel) = tokio_with_wasm::sync::mpsc::channel(10);
+        let (rpc_sender_channel, rpc_recv_channel) = tokio_with_wasm::alias::sync::mpsc::channel(10);
         let (user_rpc_update_sender_channel, user_rpc_update_recv_channel) =
-            tokio_with_wasm::sync::mpsc::channel(10);
+            tokio_with_wasm::alias::sync::mpsc::channel(10);
 
         // for p2p network commands
         let (p2p_command_tx, p2p_command_recv) =
-            tokio_with_wasm::sync::mpsc::channel::<NetworkCommand>(10);
+            tokio_with_wasm::alias::sync::mpsc::channel::<NetworkCommand>(10);
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
@@ -152,11 +153,11 @@ impl WasmMainServiceWorker {
     }
 
     pub fn start_swarm_handler(&self) -> Result<(), Error> {
-        let (sender_channel, mut recv_channel) = tokio_with_wasm::sync::mpsc::channel(256);
+        let (sender_channel, mut recv_channel) = tokio_with_wasm::alias::sync::mpsc::channel(256);
 
         // Start swarm and get it ready to send messages
         let p2p_worker_clone = self.p2p_worker.clone();
-        wasm_bindgen_futures::spawn_local(async move {
+        wasm_bindgen_futures::spawn_local(async move {  
             if let Err(e) = p2p_worker_clone
                 .borrow_mut()
                 .start_swarm(Rc::new(RefCell::new(sender_channel)))

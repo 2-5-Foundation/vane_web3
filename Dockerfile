@@ -37,20 +37,12 @@ RUN apt-get update && \
     libssl-dev \
     pkg-config
 
-# Set permissions for db directory
+# Set permissions for db directory and scripts
 RUN chmod -R 777 db/
+RUN chmod +x scripts/db_tests.sh
 
-# Check files before generation
-RUN echo "=== Files before Prisma generation ===" && \
-    ls -la db/src/
-
-# Run Prisma commands
-RUN cargo run -p prisma migrate dev --name initial_migration --create-only --schema="db/schema.prisma"
-RUN cargo run -p prisma generate --schema="db/schema.prisma"
-
-# Check files after generation
-RUN echo "=== Files after Prisma generation ===" && \
-    ls -la db/src/
+# Run database setup script
+RUN ./scripts/db_tests.sh
 
 RUN cargo build --release
 

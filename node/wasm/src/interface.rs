@@ -39,8 +39,8 @@ mod rpc_wasm_imports {
     pub use libp2p::PeerId;
     pub use lru::LruCache;
     pub use reqwasm::http::{Request, RequestMode};
-    pub use tokio_with_wasm::sync::mpsc::{Receiver, Sender};
-    pub use tokio_with_wasm::sync::{Mutex, MutexGuard};
+    pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
+    pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
     pub use wasm_bindgen::prelude::wasm_bindgen;
     pub use wasm_bindgen::JsValue;
     pub use sp_core::blake2_256;
@@ -132,6 +132,7 @@ impl PublicInterfaceWorker {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> Result<(), JsValue> {
         info!("initiated sending transaction");
         let token = token.as_str().into();
@@ -178,6 +179,8 @@ impl PublicInterfaceWorker {
                 inbound_req_id: None,
                 outbound_req_id: None,
                 tx_nonce: nonce,
+                token,
+                code_word,
             };
 
             // dry run the tx
@@ -306,8 +309,9 @@ impl PublicInterfaceWorkerJs {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> Result<(), JsValue> {
-        self.inner.borrow().initiate_transaction(sender, receiver, amount, token, network).await
+        self.inner.borrow().initiate_transaction(sender, receiver, amount, token, network, code_word).await
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]

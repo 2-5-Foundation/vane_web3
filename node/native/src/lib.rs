@@ -63,7 +63,7 @@ pub struct MainServiceWorker {
     /// receiver channel to handle the updates made by user from rpc
     pub user_rpc_update_recv_channel: Arc<Mutex<Receiver<Arc<Mutex<TxStateMachine>>>>>,
     // moka cache
-    pub moka_cache: AsyncCache<u64, TxStateMachine>,
+    pub moka_cache: AsyncCache<u64, TxStateMachine>
 }
 
 impl MainServiceWorker {

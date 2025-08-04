@@ -1,7 +1,7 @@
 [package]
 name = "primitives"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,10 +13,10 @@ log          = { workspace = true }
 serde_json   = { workspace = true }
 twox-hash    = { version = "2.1.0", features = ["alloc"] }
 sp-core      = { workspace = true, default-features = false }
-
+wasm-bindgen = { version = "0.2.99", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
 
 # Native dependencies
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libp2p       = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"] }
 dotenv       = "0.15"
 
@@ -31,4 +31,8 @@ e2e = []
 std = [
     "sp-core/std",
     "codec/std",
+]
+wasm = [
+    "wasm-bindgen",
+    "serde-wasm-bindgen",
 ]
