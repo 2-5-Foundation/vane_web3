@@ -15,7 +15,8 @@ hex                                     = { version = "0.4.3", features = ["allo
 aead                                    = { version = "0.5.2", features = ["alloc","bytes","arrayvec"]}
 aes-gcm                                 = { version = "0.10.3", features = ["aes","alloc","rand_core","arrayvec"]}
 # ========================================= Node ========================================
-libp2p                                  = { version = "0.53.2", default-features = false}
+libp2p                                  = { version = "0.56.0", default-features = false}
+libp2p-relay                            = { version = "0.21.0", default-features = false}
 alloy                                   = { version = "0.3"}
 alloy-primitives                        = "0.8.11"
 sp-runtime                              = { version = "39.0.0", default-features = false}

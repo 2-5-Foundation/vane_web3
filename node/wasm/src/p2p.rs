@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Error};
 pub use codec::Encode;
+use libp2p::core::transport::{upgrade, OrTransport};
 use core::pin::Pin;
 use core::str::FromStr;
+use std::collections::HashMap;
 use log::{debug, error, info, trace};
 
 // peer discovery
@@ -22,36 +24,63 @@ use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, Outb
 use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
+use libp2p::swarm::{NetworkBehaviour, derive_prelude};
 
-use p2p_wasm_imports::*;
+use alloc::rc::Rc;
+use core::cell::RefCell;
+use db_wasm::OpfsRedbWorker;
+use futures::StreamExt;
+use libp2p::request_response::json::Behaviour as JsonBehaviour;
+use libp2p::core::Transport as TransportTrait;
+use libp2p::core::transport::global_only::Transport;
+use libp2p::relay::client::Behaviour as RelayClientBehaviour;
+use libp2p_webtransport_websys;
+use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
+use web_sys::wasm_bindgen::JsCast;
+use alloc::collections::VecDeque;
+use alloc::string::String;
+use alloc::format;
+use alloc::boxed::Box;
 
-mod p2p_wasm_imports {
-    pub use alloc::rc::Rc;
-    pub use core::cell::RefCell;
-    pub use db_wasm::OpfsRedbWorker;
-    pub use futures::StreamExt;
-    pub use libp2p::request_response::json::Behaviour as JsonBehaviour;
-    pub use libp2p::core::Transport as TransportTrait;
-    pub use libp2p::core::transport::global_only::Transport;
-    pub use libp2p::webtransport_websys as webrtc_websys;
-
-    pub use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
-    pub use web_sys::wasm_bindgen::JsCast;
-    pub use heapless::FnvIndexMap;
-    pub use alloc::collections::VecDeque;
-    pub use alloc::string::String;
-    pub use alloc::format;
-    pub use alloc::boxed::Box;
-}
 
 #[derive(Clone)]
 pub struct WasmP2pWorker {
     pub node_id: PeerId,
-    pub wasm_swarm: Rc<RefCell<Swarm<JsonBehaviour<TxStateMachine, Result<TxStateMachine,String>>>>>,
+    pub wasm_swarm: Rc<RefCell<Swarm<WasmRelayBehaviour<TxStateMachine, Result<TxStateMachine, String>>>>>,
     pub url: Multiaddr,
     pub wasm_p2p_command_recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>>>,
-    pub wasm_pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<Result<TxStateMachine, String>>,16>>>,
+    pub wasm_pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, String>>>>>,
     pub current_req: VecDeque<SwarmMessage>,
+}
+
+#[derive(NetworkBehaviour)]
+#[behaviour(prelude = "libp2p::swarm::derive_prelude")]
+pub struct WasmRelayBehaviour<TReq, TResp> 
+where
+    TReq: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+    TResp: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+{
+    pub relay: libp2p::relay::client::Behaviour,
+    pub json: JsonBehaviour<TReq, TResp>,
+}
+
+impl<TReq, TResp> WasmRelayBehaviour<TReq, TResp>
+where
+    TReq: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+    TResp: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+{
+    pub fn new(
+        protocols: impl IntoIterator<Item = (StreamProtocol, libp2p::request_response::ProtocolSupport)>,
+        config: libp2p::request_response::Config,
+        relay_behaviour: libp2p::relay::client::Behaviour,
+    ) -> Self {
+        let json_behaviour = JsonBehaviour::new(protocols, config);
+        
+        Self {
+            relay: relay_behaviour,
+            json: json_behaviour,
+        }
+    }
 }
 
 impl WasmP2pWorker {
@@ -63,7 +92,7 @@ impl WasmP2pWorker {
     ) -> Result<Self, anyhow::Error> {
         let self_peer_id = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_peer_id.public().to_peer_id().to_base58();
-       
+        
         // TODO:
 
         let p2p_url = format!("/ip6/{}/tcp/{}/p2p/{}", dns, port, peer_id);
@@ -77,26 +106,35 @@ impl WasmP2pWorker {
         let peer_id: PeerId = PeerId::from_str(&peer_id)
             .map_err(|err| anyhow!("failed to convert PeerId, caused by: {err}"))?;
 
+        let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
 
         let request_response_config = libp2p::request_response::Config::default()
             .with_request_timeout(core::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
 
         let json_behaviour = JsonBehaviour::new(
             [(
-                StreamProtocol::new("/my-json-protocol"),
+                StreamProtocol::new("/wasm_relay_client_protocol"),
                 ProtocolSupport::Full,
             )],
             request_response_config,
         );
 
-        let wasm_swarm = SwarmBuilder::with_existing_identity(self_peer_id)
-            .with_wasm_bindgen()
-            .with_other_transport(|key| {
-                webrtc_websys::Transport::new(webrtc_websys::Config::new(&key))
-            })?
-            .with_behaviour(|_| json_behaviour)?
-            
-            .build();
+        let combined_behaviour = WasmRelayBehaviour {
+            relay: relay_behaviour,
+            json: json_behaviour,
+        };
+
+        let upgraded_transport = libp2p_webtransport_websys::Transport::new(
+                libp2p_webtransport_websys::Config::new(&self_peer_id)
+            )
+            .boxed();
+
+        let wasm_swarm = Swarm::new(
+            upgraded_transport,
+            combined_behaviour,
+            peer_id,
+            libp2p::swarm::Config::with_wasm_executor(),
+        );
 
         Ok(Self {
             node_id: peer_id,
@@ -109,7 +147,7 @@ impl WasmP2pWorker {
     }
 
     pub async fn handle_swarm_events(
-        pending_request: Rc<RefCell<FnvIndexMap<u64, ResponseChannel<Result<TxStateMachine, String>>,16>>>,
+        pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, String>>>>>,
         events: SwarmEvent<Event<TxStateMachine, Result<TxStateMachine, String>>>,
         sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {
@@ -149,13 +187,13 @@ impl WasmP2pWorker {
                                     data,
                                     outbound_id: request_id,
                                 };
-                            }else{
-                                error!("failed to get response data: {data:?}");
-                            }
                             if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
                                 error!("Failed to send message: {}", e);
                             }
                             info!(target: "p2p","propagating txn response msg to main service worker");
+                            }else{
+                                error!("failed to get response data: {data:?}");
+                            }
                         }
                     }
                 }
@@ -163,6 +201,7 @@ impl WasmP2pWorker {
                     error,
                     peer,
                     request_id,
+                    ..
                 } => {
                     let req_id_hash = request_id.get_hash_id();
                     error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
@@ -173,7 +212,7 @@ impl WasmP2pWorker {
                     let req_id_hash = request_id.get_hash_id();
                     error!("inbound error: {error} on req_id: {req_id_hash}")
                 }
-                Event::ResponseSent { peer, request_id } => {
+                Event::ResponseSent { peer, request_id, .. } => {
                     let req_id_hash = request_id.get_hash_id();
                     info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
                 }

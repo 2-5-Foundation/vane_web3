@@ -371,6 +371,7 @@ impl P2pWorker {
                     error,
                     peer,
                     request_id,
+                    ..
                 } => {
                     let req_id_hash = request_id.get_hash_id();
                     error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
@@ -381,7 +382,7 @@ impl P2pWorker {
                     let req_id_hash = request_id.get_hash_id();
                     error!("inbound error: {error} on req_id: {req_id_hash}")
                 }
-                Event::ResponseSent { peer, request_id } => {
+                Event::ResponseSent { peer, request_id, .. } => {
                     let req_id_hash = request_id.get_hash_id();
                     info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
                 }

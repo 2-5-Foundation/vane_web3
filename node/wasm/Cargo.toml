@@ -3,6 +3,7 @@ name = "wasm-node"
 version = "0.1.0"
 edition = "2024"
 
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -10,7 +11,9 @@ crate-type = ["cdylib", "rlib"]
 
 reqwasm                                     = {version = "0.5.0", default-features = true}
 tokio_with_wasm                             = { workspace = true }
-libp2p                                      = { workspace = true, features = ["wasm-bindgen","webtransport-websys","websocket-websys","json"]}
+libp2p                                      = { workspace = true, features = ["wasm-bindgen","webtransport-websys","json","relay","macros","tls"]}
+libp2p-webtransport-websys                  = { version = "0.5.1"}
+serde                                       = { workspace = true}
 async-stream                                = { version = "0.3.6"}
 futures                                     = { version = "0.3.31", features = ["alloc","async-await"]}
 lru                                         = "0.12.5"
