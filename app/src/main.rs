@@ -65,7 +65,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let accounts = parse_account_pairs(&args.accounts)
         .map_err(|e| anyhow!("Failed to parse accounts: {}", e))?;
 
-    node::MainServiceWorker::run(
+    native_node::MainServiceWorker::run(
         args.db_url,
         args.port,
         args.redis_url,

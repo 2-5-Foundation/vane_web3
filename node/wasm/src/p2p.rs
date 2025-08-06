@@ -25,6 +25,7 @@ use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 use libp2p::swarm::{NetworkBehaviour, derive_prelude};
+use libp2p::relay::client::Event as RelayClientEvent;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
@@ -60,8 +61,8 @@ where
     TReq: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
     TResp: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
 {
-    pub relay: libp2p::relay::client::Behaviour,
-    pub json: JsonBehaviour<TReq, TResp>,
+    pub relay_client: libp2p::relay::client::Behaviour,
+    pub app_json: JsonBehaviour<TReq, TResp>,
 }
 
 impl<TReq, TResp> WasmRelayBehaviour<TReq, TResp>
@@ -77,8 +78,8 @@ where
         let json_behaviour = JsonBehaviour::new(protocols, config);
         
         Self {
-            relay: relay_behaviour,
-            json: json_behaviour,
+            relay_client: relay_behaviour,
+            app_json: json_behaviour,
         }
     }
 }
@@ -120,8 +121,8 @@ impl WasmP2pWorker {
         );
 
         let combined_behaviour = WasmRelayBehaviour {
-            relay: relay_behaviour,
-            json: json_behaviour,
+            relay_client: relay_behaviour,
+            app_json: json_behaviour,
         };
 
         let upgraded_transport = libp2p_webtransport_websys::Transport::new(
@@ -148,73 +149,86 @@ impl WasmP2pWorker {
 
     pub async fn handle_swarm_events(
         pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, String>>>>>,
-        events: SwarmEvent<Event<TxStateMachine, Result<TxStateMachine, String>>>,
+        events: SwarmEvent<WasmRelayBehaviourEvent<TxStateMachine, Result<TxStateMachine, String>>>,
         sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>>,
     ) {
         match events {
-            SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
-                Event::Message { message, .. } => {
-                    info!(target: "p2p","received message: {message:?}");
-
-                    // update pending request for requests messages
-                    match message {
-                        Message::Request {
-                            channel,
-                            request_id,
-                            request,
-                        } => {
-                            let req_msg = SwarmMessage::WasmRequest {
-                                data: request,
-                                inbound_id: request_id,
-                            };
-
-                            let req_id_hash = request_id.get_hash_id();
-                            info!(target: "p2p","stored response channel, with key: {req_id_hash}");
-                            pending_request.borrow_mut().insert(req_id_hash, channel);
-
-                            if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
-                                error!("Failed to send message: {}", e);
-                            }
-                            info!(target: "p2p","propagating txn request msg to main service worker");
-                        }
-                        Message::Response {
-                            response,
-                            request_id,
-                        } => {
-                            let data = response;
-                            if let Ok(data) = data {
-                            let resp_msg = SwarmMessage::WasmResponse {
-                                    data,
-                                    outbound_id: request_id,
+            SwarmEvent::Behaviour(wasm_relay_behaviour) => match wasm_relay_behaviour {
+                WasmRelayBehaviourEvent::AppJson(app_json_event) => match app_json_event {
+                    Event::Message { message, .. } => {
+                        info!(target: "p2p","received message: {message:?}");
+    
+                        // update pending request for requests messages
+                        match message {
+                            Message::Request {
+                                channel,
+                                request_id,
+                                request,
+                            } => {
+                                let req_msg = SwarmMessage::WasmRequest {
+                                    data: request,
+                                    inbound_id: request_id,
                                 };
-                            if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
-                                error!("Failed to send message: {}", e);
+    
+                                let req_id_hash = request_id.get_hash_id();
+                                info!(target: "p2p","stored response channel, with key: {req_id_hash}");
+                                pending_request.borrow_mut().insert(req_id_hash, channel);
+    
+                                if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
+                                    error!("Failed to send message: {}", e);
+                                }
+                                info!(target: "p2p","propagating txn request msg to main service worker");
                             }
-                            info!(target: "p2p","propagating txn response msg to main service worker");
-                            }else{
-                                error!("failed to get response data: {data:?}");
+                            Message::Response {
+                                response,
+                                request_id,
+                            } => {
+                                let data = response;
+                                if let Ok(data) = data {
+                                let resp_msg = SwarmMessage::WasmResponse {
+                                        data,
+                                        outbound_id: request_id,
+                                    };
+                                if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
+                                    error!("Failed to send message: {}", e);
+                                }
+                                info!(target: "p2p","propagating txn response msg to main service worker");
+                                }else{
+                                    error!("failed to get response data: {data:?}");
+                                }
                             }
                         }
                     }
-                }
-                Event::OutboundFailure {
-                    error,
-                    peer,
-                    request_id,
-                    ..
-                } => {
-                    let req_id_hash = request_id.get_hash_id();
-                    error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
-                }
-                Event::InboundFailure {
-                    error, request_id, ..
-                } => {
-                    let req_id_hash = request_id.get_hash_id();
-                    error!("inbound error: {error} on req_id: {req_id_hash}")
-                }
-                Event::ResponseSent { peer, request_id, .. } => {
-                    let req_id_hash = request_id.get_hash_id();
-                    info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
+                    Event::OutboundFailure {
+                        error,
+                        peer,
+                        request_id,
+                        ..
+                    } => {
+                        let req_id_hash = request_id.get_hash_id();
+                        error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
+                    }
+                    Event::InboundFailure {
+                        error, request_id, ..
+                    } => {
+                        let req_id_hash = request_id.get_hash_id();
+                        error!("inbound error: {error} on req_id: {req_id_hash}")
+                    }
+                    Event::ResponseSent { peer, request_id, .. } => {
+                        let req_id_hash = request_id.get_hash_id();
+                        info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
+                    }
+                },
+                WasmRelayBehaviourEvent::RelayClient(relay_client_event) => match relay_client_event {
+                    RelayClientEvent::InboundCircuitEstablished { src_peer_id,..} => {
+                        info!(target: "p2p","inbound circuit established: {src_peer_id:?}")
+                    },
+                    RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
+                        info!(target: "p2p","outbound circuit established: {relay_peer_id:?}")
+                    },
+                    RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
+                        info!(target: "p2p","reservation request accepted: {relay_peer_id:?}")
+                    }
                 }
             },
             SwarmEvent::ConnectionEstablished {
@@ -303,7 +317,7 @@ impl WasmP2pWorker {
                         match cmd {
                             Some(NetworkCommand::WasmSendResponse {response,channel}) => {
                                 if channel.is_open() {
-                                    swarm.behaviour_mut().send_response(channel,response)
+                                    swarm.behaviour_mut().app_json.send_response(channel,response)
                                         .expect("failed to send response");
                                 } else {
                                     error!("response channel is closed");
@@ -311,12 +325,12 @@ impl WasmP2pWorker {
                             },
                             Some(NetworkCommand::WasmSendRequest {request,peer_id,target_multi_addr}) => {
                                 if swarm.is_connected(&peer_id) {
-                                    swarm.behaviour_mut().send_request(&peer_id,request);
+                                    swarm.behaviour_mut().app_json.send_request(&peer_id,request);
                                     info!("request sent to peer: {peer_id:?}");
                                 } else {
                                     info!("re dialing");
                                     swarm.dial(target_multi_addr).expect("failed to re dial");
-                                    swarm.behaviour_mut().send_request(&peer_id,request);
+                                    swarm.behaviour_mut().app_json.send_request(&peer_id,request);
                                     info!("request sent to peer: {peer_id:?}");
                                 }
                             },
