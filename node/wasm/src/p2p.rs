@@ -30,7 +30,7 @@ use libp2p::relay::client::Event as RelayClientEvent;
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use db_wasm::OpfsRedbWorker;
-use futures::StreamExt;
+use futures::{StreamExt, FutureExt};
 use libp2p::request_response::json::Behaviour as JsonBehaviour;
 use libp2p::core::Transport as TransportTrait;
 use libp2p::core::transport::global_only::Transport;
@@ -305,15 +305,15 @@ impl WasmP2pWorker {
                 let mut swarm = swarm.borrow_mut();
                 let mut p2p_command_recv = p2p_command_recv.borrow_mut();
 
-                tokio_with_wasm::alias::select! {
-                    event = swarm.next() => {
+                futures::select! {
+                    event = swarm.next().fuse() => {
                         if let Some(event) = event {
                             Self::handle_swarm_events(pending_request, event, sender).await
                         } else {
                             info!("no current swarm event")
                         }
                     },
-                    cmd = p2p_command_recv.recv() => {
+                    cmd = p2p_command_recv.recv().fuse() => {
                         match cmd {
                             Some(NetworkCommand::WasmSendResponse {response,channel}) => {
                                 if channel.is_open() {

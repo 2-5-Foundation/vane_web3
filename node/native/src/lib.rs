@@ -32,7 +32,6 @@ mod lib_imports {
     pub use std::hash::{DefaultHasher, Hash, Hasher};
     pub use std::net::SocketAddr;
     pub use tokio::sync::Mutex;
-    pub extern crate rcgen;
     pub use crate::p2p::P2pWorker;
     pub use crate::rpc::{RedisClient, TransactionRpcServer};
     pub use db::db::saved_peers::Data;
@@ -41,7 +40,6 @@ mod lib_imports {
     pub use libp2p::futures::{FutureExt, StreamExt};
     pub use local_ip_address::local_ip;
     pub use moka::future::Cache as AsyncCache;
-    pub use rcgen::{generate_simple_self_signed, CertifiedKey};
     pub use redis::AsyncCommands;
     pub use tokio::sync::mpsc::{Receiver, Sender};
     pub use std::sync::Arc;
