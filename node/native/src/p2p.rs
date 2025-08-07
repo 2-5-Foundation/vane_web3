@@ -449,7 +449,6 @@ impl P2pWorker {
         let mut p2p_command_recv = self.p2p_command_recv.lock().await;
 
         loop {
-            // Create futures before select to ensure they're polled fairly
             let next_event = swarm.next();
             let next_command = p2p_command_recv.recv();
 
