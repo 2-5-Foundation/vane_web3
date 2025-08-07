@@ -1,17 +1,16 @@
-
 extern crate alloc;
 extern crate core;
 
+pub mod cryptography;
 pub mod interface;
 pub mod p2p;
 pub mod tx_processing;
-pub mod cryptography;
 
 use crate::p2p::P2pNetworkService;
 
-use alloc::vec;
 use alloc::sync::Arc;
-use anyhow::{anyhow, Error};
+use alloc::vec;
+use anyhow::{Error, anyhow};
 use codec::Decode;
 use core::str::FromStr;
 use hex_literal::hex;
@@ -21,31 +20,32 @@ use serde_json::from_str;
 use lib_wasm_imports::*;
 
 mod lib_wasm_imports {
-    pub use crate::p2p::WasmP2pWorker;
     pub use crate::interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs};
+    pub use crate::p2p::WasmP2pWorker;
     pub use crate::tx_processing::WasmTxProcessingWorker;
+    pub use alloc::format;
     pub use alloc::rc::Rc;
+    pub use alloc::string::String;
+    pub use alloc::sync::Arc;
+    pub use anyhow::{Error, anyhow};
+    pub use codec::Decode;
     pub use core::cell::RefCell;
+    pub use core::str::FromStr;
     pub use db_wasm::OpfsRedbWorker;
     pub use futures::FutureExt;
-    pub use lru::LruCache;
-    pub use wasm_bindgen::prelude::wasm_bindgen;
-    pub use primitives::data_structure::DbWorkerInterface;
-    pub use primitives::data_structure::{ChainSupported, TxStateMachine, TxStatus, DbTxStateMachine, SwarmMessage};
-    pub use primitives::data_structure::HashId;
-    pub use alloc::sync::Arc;
-    pub use anyhow::{anyhow, Error};
-    pub use codec::Decode;
-    pub use core::str::FromStr;
-    pub use log::{error, info, warn};
-    pub use alloc::format;
-    pub use alloc::string::String;
-    pub use primitives::data_structure::NetworkCommand;
     pub use libp2p::Multiaddr;
     pub use libp2p::PeerId;
+    pub use log::{error, info, warn};
+    pub use lru::LruCache;
+    pub use primitives::data_structure::DbWorkerInterface;
+    pub use primitives::data_structure::HashId;
+    pub use primitives::data_structure::NetworkCommand;
+    pub use primitives::data_structure::{
+        ChainSupported, DbTxStateMachine, SwarmMessage, TxStateMachine, TxStatus,
+    };
     pub use wasm_bindgen::JsValue;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
 }
-
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
@@ -68,11 +68,16 @@ pub struct WasmMainServiceWorker {
 }
 
 impl WasmMainServiceWorker {
-    pub(crate) async fn new(db_url_path: Option<String>, p2p_port: u16, dns: String) -> Result<Self, anyhow::Error> {
+    pub(crate) async fn new(
+        db_url_path: Option<String>,
+        p2p_port: u16,
+        dns: String,
+    ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
-        let (rpc_sender_channel, rpc_recv_channel) = tokio_with_wasm::alias::sync::mpsc::channel(10);
+        let (rpc_sender_channel, rpc_recv_channel) =
+            tokio_with_wasm::alias::sync::mpsc::channel(10);
         let (user_rpc_update_sender_channel, user_rpc_update_recv_channel) =
             tokio_with_wasm::alias::sync::mpsc::channel(10);
 
@@ -106,13 +111,9 @@ impl WasmMainServiceWorker {
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
 
-        let p2p_worker = WasmP2pWorker::new(
-            db_worker.clone(),
-            p2p_port,
-            dns,
-            p2p_command_recv,
-        )
-        .await.map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
+        let p2p_worker = WasmP2pWorker::new(db_worker.clone(), p2p_port, dns, p2p_command_recv)
+            .await
+            .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
 
         let p2p_network_service =
             P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
@@ -127,7 +128,8 @@ impl WasmMainServiceWorker {
             p2p_worker.node_id,
             lru_cache.clone(),
         )
-        .await.map_err(|e| anyhow::anyhow!("Public interface worker creation failed: {:?}", e))?;
+        .await
+        .map_err(|e| anyhow::anyhow!("Public interface worker creation failed: {:?}", e))?;
 
         // TRANSACTION PROCESSING LAYER
         // ===================================================================================== //
@@ -156,7 +158,7 @@ impl WasmMainServiceWorker {
 
         // Start swarm and get it ready to send messages
         let p2p_worker_clone = self.p2p_worker.clone();
-        wasm_bindgen_futures::spawn_local(async move {  
+        wasm_bindgen_futures::spawn_local(async move {
             if let Err(e) = p2p_worker_clone
                 .borrow_mut()
                 .start_swarm(Rc::new(RefCell::new(sender_channel)))
@@ -308,7 +310,6 @@ impl WasmMainServiceWorker {
             }
             Err(_err) => {
                 // fetch from DHT
-
 
                 // info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote db");
 
@@ -493,7 +494,11 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn run(db_url: Option<String>, p2p_port: u16, dns: String) -> Result<PublicInterfaceWorker, anyhow::Error> {
+    pub async fn run(
+        db_url: Option<String>,
+        p2p_port: u16,
+        dns: String,
+    ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!(
             "\n🔥 =========== Vane Web3 =========== 🔥\n\
              A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
@@ -532,7 +537,11 @@ impl WasmMainServiceWorker {
 }
 
 #[wasm_bindgen]
-pub async fn start_vane_web3(db_url: Option<String>, p2p_port: u16, dns: String) -> Result<PublicInterfaceWorkerJs, JsValue> {
+pub async fn start_vane_web3(
+    db_url: Option<String>,
+    p2p_port: u16,
+    dns: String,
+) -> Result<PublicInterfaceWorkerJs, JsValue> {
     let worker = WasmMainServiceWorker::run(db_url, p2p_port, dns)
         .await
         .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;

@@ -3174,7 +3174,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "thiserror 1.0.69",
- "uint",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -3201,7 +3201,7 @@ dependencies = [
  "impl-rlp",
  "impl-serde",
  "primitive-types",
- "uint",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -5620,7 +5620,7 @@ dependencies = [
  "libp2p-dns 0.40.1",
  "libp2p-identify",
  "libp2p-identity",
- "libp2p-kad",
+ "libp2p-kad 0.44.6",
  "libp2p-mdns 0.44.0",
  "libp2p-metrics 0.13.1",
  "libp2p-noise 0.43.2",
@@ -5904,9 +5904,36 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
  "thiserror 1.0.69",
- "uint",
+ "uint 0.9.5",
  "unsigned-varint 0.7.2",
  "void",
+]
+
+[[package]]
+name = "libp2p-kad"
+version = "0.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13d3fd632a5872ec804d37e7413ceea20588f69d027a0fa3c46f82574f4dee60"
+dependencies = [
+ "asynchronous-codec 0.7.0",
+ "bytes",
+ "either",
+ "fnv",
+ "futures",
+ "futures-bounded 0.2.4",
+ "futures-timer",
+ "libp2p-core 0.43.1",
+ "libp2p-identity",
+ "libp2p-swarm 0.47.0",
+ "quick-protobuf",
+ "quick-protobuf-codec 0.3.1",
+ "rand 0.8.5",
+ "sha2 0.10.9",
+ "smallvec",
+ "thiserror 2.0.12",
+ "tracing",
+ "uint 0.10.0",
+ "web-time",
 ]
 
 [[package]]
@@ -5959,7 +5986,7 @@ dependencies = [
  "libp2p-core 0.40.1",
  "libp2p-identify",
  "libp2p-identity",
- "libp2p-kad",
+ "libp2p-kad 0.44.6",
  "libp2p-ping 0.43.1",
  "libp2p-swarm 0.43.7",
  "once_cell",
@@ -6641,7 +6668,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "trust-dns-resolver",
- "uint",
+ "uint 0.9.5",
  "unsigned-varint 0.8.0",
  "url",
  "webpki",
@@ -8369,7 +8396,7 @@ dependencies = [
  "impl-rlp",
  "impl-serde",
  "scale-info",
- "uint",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -9571,11 +9598,14 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 name = "relay-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "libp2p 0.56.0",
+ "libp2p-kad 0.48.0",
  "primitives",
  "serde",
  "sp-core",
  "sp-runtime",
+ "tokio",
 ]
 
 [[package]]
@@ -13709,6 +13739,18 @@ name = "uint"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76f64bba2c53b04fcab63c01a7d7427eadc821e3bc48c34dc9ba29c501164b52"
+dependencies = [
+ "byteorder",
+ "crunchy",
+ "hex",
+ "static_assertions",
+]
+
+[[package]]
+name = "uint"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "909988d098b2f738727b161a106cfc7cab00c539c2687a8836f8e565976fb53e"
 dependencies = [
  "byteorder",
  "crunchy",

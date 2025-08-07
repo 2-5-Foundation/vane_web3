@@ -18,40 +18,39 @@ use core::str::FromStr;
 use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
+use alloc::string::ToString;
 use primitives::data_structure::{
     AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
     UserAccount,
 };
-use alloc::string::ToString;
 use sp_runtime::traits::Zero;
 
-use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
-use alloc::string::String;
-use rpc_wasm_imports::*;
 use alloc::rc::Rc;
+use alloc::string::String;
+use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
+use rpc_wasm_imports::*;
 
 mod rpc_wasm_imports {
     pub use alloc::alloc;
     pub use async_stream::stream;
     pub use core::cell::RefCell;
+    pub use core::fmt;
     pub use db_wasm::OpfsRedbWorker;
     pub use futures::StreamExt;
     pub use libp2p::PeerId;
     pub use lru::LruCache;
     pub use reqwasm::http::{Request, RequestMode};
+    pub use serde_wasm_bindgen;
+    pub use sp_core::blake2_256;
+    pub use sp_runtime::Vec;
+    pub use sp_runtime::format;
     pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
     pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::prelude::wasm_bindgen;
     pub use wasm_bindgen::JsValue;
-    pub use sp_core::blake2_256;
-    pub use core::fmt;
-    pub use serde_wasm_bindgen;
-    pub use sp_runtime::format;
-    pub use sp_runtime::Vec;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
 }
 
 // ----------------------------------- WASM -------------------------------- //
-
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -68,8 +67,6 @@ pub struct PublicInterfaceWorker {
     //// tx pending store
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>, // initial fees, after dry running tx initialy without optimization
 }
-
-
 
 impl PublicInterfaceWorker {
     pub async fn new(
@@ -290,7 +287,6 @@ impl PublicInterfaceWorkerJs {
 
 #[wasm_bindgen]
 impl PublicInterfaceWorkerJs {
-
     #[wasm_bindgen(js_name = "registerVaneWeb3")]
     pub async fn register_vane_web3(
         &self,
@@ -298,7 +294,10 @@ impl PublicInterfaceWorkerJs {
         account_id: String,
         network: String,
     ) -> Result<(), JsValue> {
-        self.inner.borrow().register_vane_web3(name, account_id, network).await
+        self.inner
+            .borrow()
+            .register_vane_web3(name, account_id, network)
+            .await
     }
 
     #[wasm_bindgen(js_name = "initiateTransaction")]
@@ -311,7 +310,10 @@ impl PublicInterfaceWorkerJs {
         network: String,
         code_word: String,
     ) -> Result<(), JsValue> {
-        self.inner.borrow().initiate_transaction(sender, receiver, amount, token, network, code_word).await
+        self.inner
+            .borrow()
+            .initiate_transaction(sender, receiver, amount, token, network, code_word)
+            .await
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]
