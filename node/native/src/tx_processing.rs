@@ -1,13 +1,13 @@
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
+use primitives::data_structure::{ChainSupported, ETH_SIG_MSG_PREFIX, TxStateMachine};
+use sp_core::{ByteArray, H256};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256,
 };
-use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
 use std::collections::BTreeMap;
 
@@ -15,22 +15,21 @@ use std::collections::BTreeMap;
 pub use tx_std_imports::*;
 
 mod tx_std_imports {
-    pub use std::sync::Arc;
     pub use crate::rpc::Blake2Hasher;
     pub use alloy::consensus::{SignableTransaction, TxEip7702, TypedTransaction};
     pub use alloy::network::TransactionBuilder;
     pub use alloy::primitives::private::alloy_rlp::{Decodable, Encodable};
-    pub use alloy::primitives::{keccak256, U256};
     pub use alloy::primitives::{
-        Address, Signature as EcdsaSignature, Signature, SignatureError, B256,
+        Address, B256, Signature as EcdsaSignature, Signature, SignatureError,
     };
+    pub use alloy::primitives::{U256, keccak256};
     pub use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider};
     pub use alloy::rpc::types::TransactionRequest;
     pub use sp_core::Hasher;
-    pub use tokio::sync::mpsc::Receiver;
+    pub use std::sync::Arc;
     pub use tokio::sync::Mutex;
+    pub use tokio::sync::mpsc::Receiver;
 }
-
 
 #[derive(Clone)]
 pub struct TxProcessingWorker {
@@ -241,7 +240,9 @@ impl TxProcessingWorker {
                     .await
                     .map_err(|err| {
                         log::error!("Failed to get nonce from Ethereum RPC: {err}");
-                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction creation")
+                        anyhow!(
+                            "Ethereum RPC unavailable - cannot get nonce for transaction creation"
+                        )
                     })?;
 
                 let fee_estimate = self
@@ -380,7 +381,9 @@ impl TxProcessingWorker {
                     .await
                     .map_err(|err| {
                         log::error!("Failed to get nonce from Ethereum RPC: {err}");
-                        anyhow!("Ethereum RPC unavailable - cannot get nonce for transaction submission")
+                        anyhow!(
+                            "Ethereum RPC unavailable - cannot get nonce for transaction submission"
+                        )
                     })?;
 
                 let fee_estimate = self
@@ -421,7 +424,7 @@ impl TxProcessingWorker {
                     .into_signed(signature);
 
                 let to_submit_tx: TransactionRequest = signed_tx.tx().clone().into();
-                
+
                 let receipt = self
                     .eth_client
                     .send_transaction(to_submit_tx)

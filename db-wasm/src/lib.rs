@@ -1,8 +1,8 @@
-
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, PeerRecord, Ports, UserAccount, AccountInfo
+    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, PeerRecord, Ports,
+    UserAccount,
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};

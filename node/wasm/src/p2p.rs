@@ -111,13 +111,19 @@ impl WasmP2pWorker {
         let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(core::time::Duration::from_secs(600)); // 10 minutes waiting time for a response
+            .with_request_timeout(core::time::Duration::from_secs(300)); // 5 minutes waiting time for a response
 
         let json_behaviour = JsonBehaviour::new(
-            [(
-                StreamProtocol::new("/wasm_relay_client_protocol"),
-                ProtocolSupport::Full,
-            )],
+            [
+                (
+                    StreamProtocol::new("/wasm_relay_client_protocol"),
+                    ProtocolSupport::Full,
+                ),
+                (
+                    StreamProtocol::new("/dht_request_response_protocol"),
+                    ProtocolSupport::Full,
+                ),
+            ],
             request_response_config,
         );
 

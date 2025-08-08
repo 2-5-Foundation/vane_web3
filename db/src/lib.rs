@@ -10,20 +10,20 @@ use crate::db::read_filters::{BoolFilter, StringFilter};
 use crate::db::saved_peers::Data;
 use crate::db::transactions_data::{UniqueWhereParam, WhereParam};
 use crate::db::{
-    new_client_with_url, nonce, port,
+    PrismaClient, PrismaClientBuilder, UserPeerScalarFieldEnum, new_client_with_url, nonce, port,
     read_filters::{BigIntFilter, BytesFilter, IntFilter},
     saved_peer_account_info, saved_peers, transaction, transactions_data, user_account, user_peer,
-    user_peer_account_info, PrismaClient, PrismaClientBuilder, UserPeerScalarFieldEnum,
+    user_peer_account_info,
 };
 use alloc::sync::Arc;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use codec::{Decode, Encode};
 use hex;
 use log::{debug, error, info, trace, warn};
 use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, PeerRecord, UserAccount,
 };
-use prisma_client_rust::{query_core::RawQuery, BatchItem, Direction, PrismaValue, Raw};
+use prisma_client_rust::{BatchItem, Direction, PrismaValue, Raw, query_core::RawQuery};
 
 use primitives::data_structure::{DbWorkerInterface, Ports};
 use serde::{Deserialize, Serialize};
@@ -290,13 +290,16 @@ impl DbWorkerInterface for LocalDbWorker {
     ) -> Result<(), anyhow::Error> {
         println!("updating peer record: {:?}", &account);
         let client = &self.db;
-        client.user_peer_account_info().create(
-            account.account,
-            account.network.to_string(),
-            db::user_peer::UniqueWhereParam::IdEquals("MAIN_USER_ID".to_string()),
-            vec![],
-        )
-        .exec().await?;
+        client
+            .user_peer_account_info()
+            .create(
+                account.account,
+                account.network.to_string(),
+                db::user_peer::UniqueWhereParam::IdEquals("MAIN_USER_ID".to_string()),
+                vec![],
+            )
+            .exec()
+            .await?;
 
         Ok(())
     }

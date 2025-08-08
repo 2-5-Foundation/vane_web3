@@ -45,7 +45,7 @@ redis                                   = { version = "0.31.0", features = ["tok
 # ========================================= IntegrationTests ============================
 
 # ========================================= Shared ======================================
-tokio                                   = { version = "1.37.0",features = ["net"] }
+tokio                                   = { version = "1.37.0",features = ["full"] }
 anyhow                                  = "1.0.86"
 subxt                                   = { version = "0.30.1", default-features = false, features = [ "web"]}
 log                                     = { version = "0.4.21", default-features = false }

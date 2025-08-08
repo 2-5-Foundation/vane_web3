@@ -125,6 +125,16 @@ where
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct WasmDhtResponse {
+    pub peer_id: Option<PeerId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct WasmDhtRequest {
+    pub key: String,
+}
+
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
@@ -176,8 +186,10 @@ pub struct TxStateMachine {
 #[cfg(feature = "wasm")]
 impl TxStateMachine {
     pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsValue> {
-        let tx_state_machine: TxStateMachine = serde_wasm_bindgen::from_value(value)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize TxStateMachine: {:?}", e)))?;
+        let tx_state_machine: TxStateMachine =
+            serde_wasm_bindgen::from_value(value).map_err(|e| {
+                JsValue::from_str(&format!("Failed to deserialize TxStateMachine: {:?}", e))
+            })?;
         Ok(tx_state_machine)
     }
 }
@@ -253,7 +265,7 @@ pub enum NetworkCommand {
         peer_id: PeerId,
         target_multi_addr: Multiaddr,
     },
-    WasmSendResponse {  
+    WasmSendResponse {
         response: Result<TxStateMachine, String>,
         channel: ResponseChannel<Result<TxStateMachine, String>>,
     },
@@ -263,7 +275,7 @@ pub enum NetworkCommand {
     },
     Close {
         peer_id: PeerId,
-    }
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -409,7 +421,7 @@ impl ChainSupported {
             // Load .env file if it exists
             dotenv().ok();
         }
-        
+
         match self {
             ChainSupported::Polkadot => std::env::var("POLKADOT_RPC_URL")
                 .unwrap_or_else(|_| "wss://polkadot-rpc.dwellir.com".to_string()),

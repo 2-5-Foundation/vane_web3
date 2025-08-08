@@ -1,7 +1,7 @@
+use anyhow::{Result, anyhow};
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
-use anyhow::{anyhow, Result};
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
@@ -60,7 +60,7 @@ fn parse_account_pairs(s: &str) -> Result<Vec<(String, String)>, String> {
 async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
-    
+
     // Parse accounts string into Vec<(String, String)>
     let accounts = parse_account_pairs(&args.accounts)
         .map_err(|e| anyhow!("Failed to parse accounts: {}", e))?;

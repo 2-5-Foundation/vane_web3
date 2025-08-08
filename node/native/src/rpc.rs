@@ -16,13 +16,12 @@ use sp_runtime::traits::Zero;
 use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
 
 mod std_imports {
-    pub use std::sync::Arc;
     pub use db::LocalDbWorker;
     pub use jsonrpsee::core::Error;
     pub use jsonrpsee::{
-        core::{async_trait, RpcResult, SubscriptionResult},
-        proc_macros::rpc,
         PendingSubscriptionSink, SubscriptionMessage,
+        core::{RpcResult, SubscriptionResult, async_trait},
+        proc_macros::rpc,
     };
     pub use libp2p::PeerId;
     pub use local_ip_address;
@@ -32,6 +31,7 @@ mod std_imports {
     pub use reqwest::{ClientBuilder, Url};
     pub use sp_core::Blake2Hasher;
     pub use sp_core::Hasher;
+    pub use std::sync::Arc;
     pub use tokio::sync::mpsc::{Receiver, Sender};
     pub use tokio::sync::{Mutex, MutexGuard};
 }
@@ -233,7 +233,9 @@ impl TransactionRpcServer for TransactionRpcWorker {
             //let fees = self::dry_run_tx().map_err(|err|anyhow!("{}",err))?;
 
             // save to the cache
-            self.moka_cache.insert(tx_state_machine.tx_nonce.into(), tx_state_machine.clone()).await;
+            self.moka_cache
+                .insert(tx_state_machine.tx_nonce.into(), tx_state_machine.clone())
+                .await;
 
             // propagate the tx to lower layer (Main service worker layer)
             let sender_channel = self.user_rpc_update_sender_channel.lock().await;
@@ -366,16 +368,21 @@ impl TransactionRpcServer for TransactionRpcWorker {
 
         // Create a receiver for this subscription
         let (error_sender, mut error_receiver) = tokio::sync::mpsc::channel::<NodeError>(100);
-        
+
         // Clone the main error sender to send errors to this subscription
         let main_error_sender = self.error_sender.clone();
-        
+
         // Spawn a task to forward errors to this subscription
         tokio::spawn(async move {
             while let Some(error) = error_receiver.recv().await {
-                let subscription_msg = SubscriptionMessage::from_json(&error)
-                    .unwrap_or_else(|_| SubscriptionMessage::from_json(&serde_json::json!({"error": "Failed to serialize error"})).unwrap());
-                
+                let subscription_msg =
+                    SubscriptionMessage::from_json(&error).unwrap_or_else(|_| {
+                        SubscriptionMessage::from_json(
+                            &serde_json::json!({"error": "Failed to serialize error"}),
+                        )
+                        .unwrap()
+                    });
+
                 if let Err(e) = sink.send(subscription_msg).await {
                     log::warn!("Failed to send error to subscription: {}", e);
                     break;

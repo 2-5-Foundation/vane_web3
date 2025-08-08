@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
@@ -28,8 +28,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub type BoxStream<I> = Pin<Box<dyn Stream<Item = Result<I, anyhow::Error>>>>;
 // ------------------
-
-
 
 #[derive(Debug, Clone)]
 #[doc(hidden)] // Needs to be public in order to satisfy the Rust compiler.
@@ -101,7 +99,7 @@ impl Codec for GenericCodec {
             Err(unsigned_varint::io::ReadError::Io(err))
                 if matches!(err.kind(), io::ErrorKind::UnexpectedEof) =>
             {
-                return Ok(Err(anyhow!("failed to get response length")))
+                return Ok(Err(anyhow!("failed to get response length")));
             }
             Err(err) => return Err(io::Error::new(io::ErrorKind::InvalidInput, err)),
         };
@@ -193,8 +191,8 @@ mod p2p_std_imports {
     pub use tokio::select;
     pub use tokio::sync::mpsc::{Receiver, Sender};
     pub use tokio::sync::{Mutex, MutexGuard};
-    pub use tokio_stream::wrappers::ReceiverStream;
     pub use tokio_stream::StreamExt;
+    pub use tokio_stream::wrappers::ReceiverStream;
 }
 
 #[derive(Clone)]
@@ -382,7 +380,9 @@ impl P2pWorker {
                     let req_id_hash = request_id.get_hash_id();
                     error!("inbound error: {error} on req_id: {req_id_hash}")
                 }
-                Event::ResponseSent { peer, request_id, .. } => {
+                Event::ResponseSent {
+                    peer, request_id, ..
+                } => {
                     let req_id_hash = request_id.get_hash_id();
                     info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
                 }
@@ -581,7 +581,6 @@ impl P2pNetworkService {
         trace!(target: "p2p","\nsending request command to the swarm thread ");
         Ok(())
     }
-   
 
     pub async fn send_response(
         &mut self,
