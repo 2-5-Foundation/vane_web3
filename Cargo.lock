@@ -9604,6 +9604,7 @@ name = "relay-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jsonrpsee 0.17.1",
  "libp2p 0.56.0",
  "libp2p-kad 0.48.0",
  "log",
