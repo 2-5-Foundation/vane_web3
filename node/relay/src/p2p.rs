@@ -51,7 +51,8 @@ impl<TStore> RelayServerBehaviour<TStore> {
 
 pub struct RelayP2pWorker {
     pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>>,
-    pub multi_addr: Multiaddr,
+    pub external_multi_addr: Multiaddr,
+    pub listening_addr: Multiaddr,
     pub response_channel: HashMap<QueryId, (ResponseChannel<WasmDhtResponse>, String)>,
     /// Metrics counters for tracking statistics
     metrics_counters: Arc<MetricsCounters>,
@@ -60,14 +61,19 @@ pub struct RelayP2pWorker {
 }
 
 impl RelayP2pWorker {
-    pub fn new(dns: String, port: u16) -> Result<Self, anyhow::Error> {
+    pub fn new(dns: String, port: u16, metrics_counters: Arc<MetricsCounters>) -> Result<Self, anyhow::Error> {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(self_keypair.public());
 
         let url = format!("/dns/{}/tcp/{}/p2p/{}", dns, port, peer_id);
-        let multi_addr = url
+        let external_multi_addr = url
             .parse()
             .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
+
+        let listening_addr = format!("/ip6/::/tcp/{}", port);
+        let listening_multi_addr = listening_addr
+            .parse()
+            .map_err(|err| anyhow!("failed to parse listening addr, caused by: {err}"))?;
 
         let request_response_config = libp2p::request_response::Config::default()
             .with_request_timeout(core::time::Duration::from_secs(60)); // 1 minute waiting time for a response
@@ -114,17 +120,18 @@ impl RelayP2pWorker {
 
         Ok(Self {
             swarm: Arc::new(Mutex::new(swarm)),
-            multi_addr,
+            external_multi_addr,
+            listening_addr: listening_multi_addr,
             response_channel: HashMap::new(),
-            metrics_counters: Arc::new(MetricsCounters::default()),
+            metrics_counters,
             start_time: Instant::now(),
         })
     }
 
     pub async fn start_swarm(&mut self) -> Result<(), anyhow::Error> {
-        let multi_addr = &self.multi_addr;
-        let _listening_id = self.swarm.lock().await.listen_on(multi_addr.clone())?;
-        trace!(target:"p2p","relay server listening to: {:?}",multi_addr);
+        let listening_addr = &self.listening_addr;
+        let _listening_id = self.swarm.lock().await.listen_on(listening_addr.clone())?;
+        trace!(target:"p2p","relay server listening to: {:?}",listening_addr);
 
         loop {
             // Get the next event from the swarm
@@ -322,92 +329,9 @@ impl RelayP2pWorker {
         }
     }
 
-    pub async fn get_network_info(&self) -> Result<NetworkInfo, anyhow::Error> {
-        let swarm = self.swarm.lock().await;
-        let network_info = swarm.network_info();
-        Ok(network_info)
-    }
-
-    /// Collect current metrics from all counters
-    pub async fn collect_metrics(&self) -> RelayServerMetrics {
-        let network_info = self.get_network_info().await.ok();
-        
-        let mut metrics = RelayServerMetrics::new();
-        
-        // Collect network metrics
-        let counters = &self.metrics_counters;
-        let active_connections = counters.active_connections.load(Ordering::Relaxed);
-        let successful_connections = counters.successful_connections.load(Ordering::Relaxed);
-        let failed_connections = counters.failed_connections.load(Ordering::Relaxed);
-        let total_connections = successful_connections + failed_connections;
-        
-        metrics.network = NetworkMetrics {
-            peers: network_info.map(|info| info.num_peers()).unwrap_or(0),
-            connections: active_connections,
-            success_rate: if total_connections > 0 {
-                (successful_connections as f64 / total_connections as f64) * 100.0
-            } else {
-                0.0
-            },
-        };
-
-        // Collect DHT metrics
-        let successful_queries = counters.successful_queries.load(Ordering::Relaxed);
-        let failed_queries = counters.failed_queries.load(Ordering::Relaxed);
-        let total_queries = successful_queries + failed_queries;
-        
-        metrics.dht = DhtMetrics {
-            records: counters.total_records.load(Ordering::Relaxed),
-            query_success_rate: if total_queries > 0 {
-                (successful_queries as f64 / total_queries as f64) * 100.0
-            } else {
-                0.0
-            },
-            pending_queries: counters.pending_queries.load(Ordering::Relaxed),
-        };
-
-        // Collect relay metrics
-        let total_circuits_created = counters.total_circuits_created.load(Ordering::Relaxed);
-        let total_circuits_closed = counters.total_circuits_closed.load(Ordering::Relaxed);
-        let total_circuits = total_circuits_created + total_circuits_closed;
-        
-        metrics.relay = RelayMetrics {
-            active_circuits: counters.active_circuits.load(Ordering::Relaxed),
-            circuit_success_rate: if total_circuits > 0 {
-                (total_circuits_created as f64 / total_circuits as f64) * 100.0
-            } else {
-                0.0
-            },
-            reservations: counters.active_reservations.load(Ordering::Relaxed),
-        };
-
-        // Collect system metrics
-        metrics.system = SystemMetrics {
-            uptime: self.start_time.elapsed().as_secs(),
-            memory_mb: 0, // TODO: Implement memory tracking
-            cpu_percent: 0.0, // TODO: Implement CPU tracking
-        };
-
-        metrics
-    }
-
-    /// Start continuous metrics collection and send to channel
-    pub async fn start_metrics_collection(
-        self: Arc<Self>,
-        metrics_tx: mpsc::Sender<RelayServerMetrics>,
-    ) {
-        let mut interval = interval(Duration::from_secs(30)); // 30 second interval
-        
-        loop {
-            interval.tick().await;
-            
-            let metrics = self.collect_metrics().await;
-            
-            if let Err(e) = metrics_tx.send(metrics).await {
-                error!(target: "p2p", "Failed to send metrics: {:?}", e);
-                break;
-            }
-        }
+    /// Get a reference to the swarm for telemetry worker
+    pub fn get_swarm(&self) -> Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>> {
+        self.swarm.clone()
     }
 
     /// Get a reference to metrics counters for external updates

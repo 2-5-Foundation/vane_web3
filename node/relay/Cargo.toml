@@ -21,4 +21,5 @@ anyhow                              = { workspace = true}
 tokio                               = { workspace = true}
 log                                 = { workspace = true}
 jsonrpsee                           = { workspace = true}
+sc-service                          = { workspace = true}
 

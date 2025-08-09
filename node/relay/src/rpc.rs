@@ -24,9 +24,9 @@ pub struct RelayServerRpcWorker {
 }
 
 impl RelayServerRpcWorker {
-    pub fn new(relay_server_metrics: Receiver<RelayServerMetrics>) -> Self {
+    pub fn new(relay_server_metrics_channel: Receiver<RelayServerMetrics>) -> Self {
         Self { 
-            relay_server_metrics: Arc::new(Mutex::new(relay_server_metrics))
+            relay_server_metrics: Arc::new(Mutex::new(relay_server_metrics_channel))
         }
     }
 }

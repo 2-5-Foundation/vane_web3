@@ -847,8 +847,6 @@ impl MainServiceWorker {
 
         // --------------------------- TLS CERT---------------------------------- //
         let url_names = vec!["197.168.1.177".to_string(), "localhost".to_string()];
-        // let CertifiedKey { cert, key_pair } = generate_simple_self_signed(url_names)
-        //     .map_err(|err| anyhow!("failed to generate tsl cert; {err:?}"))?;
 
         let url = self.tx_rpc_worker.lock().await.rpc_url.clone();
         let rpc_handler = self.tx_rpc_worker.clone().lock().await.clone();
