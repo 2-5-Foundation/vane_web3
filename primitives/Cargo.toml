@@ -17,13 +17,13 @@ wasm-bindgen = { version = "0.2.99", optional = true }
 serde-wasm-bindgen = { version = "0.6.5", optional = true }
 
 # Native dependencies
-libp2p       = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "ping", "macros","tokio","ecdsa","ed25519"] }
+libp2p       = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "macros","tokio","ecdsa","ed25519","serde"] }
 dotenv       = "0.15"
 
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-libp2p      = { workspace = true, default-features = false, features = ["wasm-bindgen", "websocket","request-response"] }
+libp2p      = { workspace = true, default-features = false, features = ["wasm-bindgen", "websocket","request-response","serde"] }
 
 [features]
 default = []

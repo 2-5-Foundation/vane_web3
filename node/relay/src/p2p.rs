@@ -1,50 +1,41 @@
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, StreamExt};
 use libp2p::relay::Behaviour as RelayBehaviour;
-use libp2p::request_response::json::Behaviour as JsonBehaviour;
-use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
-use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::{derive_prelude, NetworkBehaviour};
 use libp2p::swarm::{NetworkInfo, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
 use libp2p_kad::{
-    Behaviour as DhtBehaviour, GetRecordError, GetRecordOk, GetRecordResult, QueryId, QueryResult, K_VALUE
+    Behaviour as DhtBehaviour, K_VALUE
 };
 
 use libp2p::relay::Event as RelayServerEvent;
-use libp2p::request_response::Event as JsonEvent;
 use libp2p_kad::Event as DhtEvent;
 
 use anyhow::anyhow;
 use log::{error, info, trace};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 use std::time::Instant;
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::{Duration, interval};
 
-use primitives::data_structure::{WasmDhtRequest, WasmDhtResponse};
-use crate::telemetry::{RelayServerMetrics, NetworkMetrics, DhtMetrics, RelayMetrics, SystemMetrics, MetricsCounters};
+use crate::telemetry::{RelayServerMetrics, NetworkMetrics, RelayMetrics, SystemMetrics, MetricsCounters};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
 pub struct RelayServerBehaviour<TStore> {
-    pub relay_client: libp2p::relay::Behaviour,
+    pub relay_server: libp2p::relay::Behaviour,
     pub dht: DhtBehaviour<TStore>,
-    pub dht_app_json: JsonBehaviour<WasmDhtRequest, WasmDhtResponse>,
 }
 
 impl<TStore> RelayServerBehaviour<TStore> {
     pub fn new(
         relay_behaviour: libp2p::relay::Behaviour,
         dht: DhtBehaviour<TStore>,
-        dht_app_json: JsonBehaviour<WasmDhtRequest, WasmDhtResponse>,
     ) -> Self {
         Self {
-            relay_client: relay_behaviour,
-            dht,
-            dht_app_json,
+            relay_server: relay_behaviour,
+            dht
         }
     }
 }
@@ -53,7 +44,6 @@ pub struct RelayP2pWorker {
     pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>>,
     pub external_multi_addr: Multiaddr,
     pub listening_addr: Multiaddr,
-    pub response_channel: HashMap<QueryId, (ResponseChannel<WasmDhtResponse>, String)>,
     /// Metrics counters for tracking statistics
     metrics_counters: Arc<MetricsCounters>,
     /// Start time for uptime calculation
@@ -75,32 +65,21 @@ impl RelayP2pWorker {
             .parse()
             .map_err(|err| anyhow!("failed to parse listening addr, caused by: {err}"))?;
 
-        let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(core::time::Duration::from_secs(60)); // 1 minute waiting time for a response
-
-        let json_behaviour = JsonBehaviour::new(
-            [(
-                StreamProtocol::new("/dht_request_response_protocol"),
-                ProtocolSupport::Full,
-            )],
-            request_response_config,
+        let dht_behaviour = DhtBehaviour::<MemoryStore>::new(
+            peer_id,
+            MemoryStore::with_config(
+                peer_id,
+                MemoryStoreConfig {
+                    max_records: 10_000,
+                    max_value_bytes: 50,
+                    max_provided_keys: 10_000,
+                    max_providers_per_key: K_VALUE.get(),
+                },
+            ),
         );
-
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
             libp2p::relay::Behaviour::new(peer_id, libp2p::relay::Config::default()),
-            DhtBehaviour::<MemoryStore>::new(
-                peer_id,
-                MemoryStore::with_config(
-                    peer_id,
-                    MemoryStoreConfig {
-                        max_records: 10_000,
-                        max_value_bytes: 50,
-                        max_provided_keys: 10_000,
-                        max_providers_per_key: K_VALUE.get(),
-                    },
-                ),
-            ),
-            json_behaviour,
+            dht_behaviour
         );
 
         let transport_tcp = libp2p::tcp::Config::new().nodelay(true).port_reuse(true);
@@ -122,7 +101,6 @@ impl RelayP2pWorker {
             swarm: Arc::new(Mutex::new(swarm)),
             external_multi_addr,
             listening_addr: listening_multi_addr,
-            response_channel: HashMap::new(),
             metrics_counters,
             start_time: Instant::now(),
         })
@@ -145,11 +123,8 @@ impl RelayP2pWorker {
                     RelayServerBehaviourEvent::Dht(dht_event) => {
                         self.handle_dht_event(dht_event).await?;
                     }
-                    RelayServerBehaviourEvent::RelayClient(relay_event) => {
+                    RelayServerBehaviourEvent::RelayServer(relay_event) => {
                         self.handle_relay_event(relay_event).await;
-                    }
-                    RelayServerBehaviourEvent::DhtAppJson(dht_app_json_event) => {
-                        self.handle_dht_app_json_event(dht_app_json_event).await;
                     }
                 },
                 SwarmEvent::ConnectionEstablished {
@@ -176,51 +151,11 @@ impl RelayP2pWorker {
         }
     }
 
-    async fn get_peer_from_dht(&self, address: &String) -> QueryId {
-        let mut swarm = self.swarm.lock().await;
-        let query_id = swarm.behaviour_mut().dht.get_record(address.as_bytes().to_vec().into());
-        query_id
-    }
-
     async fn handle_dht_event(&mut self, event: DhtEvent) -> Result<(), anyhow::Error> {
         match event {
             DhtEvent::InboundRequest { request } => {
                 info!(target:"p2p","dht inbound request: {:?}",request);
             }
-            DhtEvent::OutboundQueryProgressed {
-                result, stats, id, ..
-            } => match result {
-                QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(record))) => {
-                    self.metrics_counters.successful_queries.fetch_add(1, Ordering::Relaxed);
-                    self.metrics_counters.pending_queries.fetch_sub(1, Ordering::Relaxed);
-                    if let Some((channel, key)) = self.response_channel.remove(&id) {
-                        let peer_id = if key.as_bytes() == record.record.key.to_vec().as_slice() {
-                            let peer_id = PeerId::from_bytes(record.record.value.as_slice()).expect("failed to parse peer id");
-                            Some(peer_id)
-                        } else {
-                            error!(target:"p2p","dht key mismatch: {:?}, {:?}",key,record.record.key);
-                            None
-                        };
-                        let response = WasmDhtResponse {
-                            peer_id
-                        };
-                        self.swarm
-                                .lock()
-                                .await
-                                .behaviour_mut()
-                                .dht_app_json
-                                .send_response(channel, response).map_err(|e| anyhow!("failed to send response: {:?}",e))?;
-                        self.metrics_counters.successful_responses.fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        error!("response channel not found for query id: {:?}", id);
-                    }
-                }
-                QueryResult::GetRecord(GetRecordResult::Err(GetRecordError::NotFound { .. })) => {
-                    self.metrics_counters.failed_queries.fetch_add(1, Ordering::Relaxed);
-                    self.metrics_counters.pending_queries.fetch_sub(1, Ordering::Relaxed);
-                }
-                _ => {}
-            },
             DhtEvent::RoutingUpdated {
                 peer,
                 addresses,
@@ -241,6 +176,7 @@ impl RelayP2pWorker {
             DhtEvent::PendingRoutablePeer { peer, address } => {
                 info!(target:"p2p","dht pending routable peer: {:?}",address);
             }
+            _ => {}
         }
         Ok(())
     }
@@ -296,35 +232,6 @@ impl RelayP2pWorker {
             }
             _ => {
                 trace!(target:"p2p","relay message: {:?}",event);
-            }
-        }
-    }
-
-    async fn handle_dht_app_json_event(&mut self, event: JsonEvent<WasmDhtRequest, WasmDhtResponse>) {
-        match event {
-            JsonEvent::Message { peer, message, .. } => match message {
-                Message::<WasmDhtRequest, WasmDhtResponse>::Request {
-                    request_id,
-                    request,
-                    channel,
-                } => {
-                    info!(target:"p2p","dht app fetching peerId for address: {:?}",&request.key);
-                    self.metrics_counters.total_requests_received.fetch_add(1, Ordering::Relaxed);
-                    self.metrics_counters.pending_queries.fetch_add(1, Ordering::Relaxed);
-                    let query_id = self.get_peer_from_dht(&request.key).await;
-                    self.response_channel
-                        .insert(query_id, (channel, request.key));
-                }
-                _ => {}
-            },
-            JsonEvent::ResponseSent { peer, .. } => {
-                trace!(target:"p2p","dht app json response sent to {:?}",peer);
-            }
-            JsonEvent::InboundFailure { peer, error, .. } => {
-                info!(target:"p2p","dht app json inbound failure: {:?}, {:?}",peer,error);
-            }
-            JsonEvent::OutboundFailure { peer, error, .. } => {
-                info!(target:"p2p","dht app json outbound failure: {:?}, {:?}",peer,error);
             }
         }
     }

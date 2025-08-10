@@ -16,8 +16,6 @@ use crate::p2p::RelayServerBehaviour;
 pub struct RelayServerMetrics {
     /// Network metrics
     pub network: NetworkMetrics,
-    /// DHT metrics
-    pub dht: DhtMetrics,
     /// Relay metrics
     pub relay: RelayMetrics,
     /// System metrics
@@ -35,17 +33,6 @@ pub struct NetworkMetrics {
     pub connections: usize,
     /// Connection success rate (%)
     pub success_rate: f64,
-}
-
-/// Simplified DHT metrics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DhtMetrics {
-    /// Total records stored
-    pub records: usize,
-    /// Query success rate (%)
-    pub query_success_rate: f64,
-    /// Pending queries
-    pub pending_queries: usize,
 }
 
 /// Simplified relay metrics
@@ -76,7 +63,6 @@ impl RelayServerMetrics {
     pub fn new() -> Self {
         Self {
             network: NetworkMetrics::default(),
-            dht: DhtMetrics::default(),
             relay: RelayMetrics::default(),
             system: SystemMetrics::default(),
             timestamp: SystemTime::now()
@@ -93,16 +79,6 @@ impl Default for NetworkMetrics {
             peers: 0,
             connections: 0,
             success_rate: 0.0,
-        }
-    }
-}
-
-impl Default for DhtMetrics {
-    fn default() -> Self {
-        Self {
-            records: 0,
-            query_success_rate: 0.0,
-            pending_queries: 0,
         }
     }
 }
@@ -137,10 +113,6 @@ pub struct MetricsCounters {
     pub successful_connections: AtomicUsize,
     
     // DHT metrics
-    pub successful_queries: AtomicUsize,
-    pub failed_queries: AtomicUsize,
-    pub pending_queries: AtomicUsize,
-    pub total_records: AtomicUsize,
     
     // Relay metrics
     pub active_circuits: AtomicUsize,
@@ -154,7 +126,6 @@ pub struct MetricsCounters {
     
     // Request/Response metrics
     pub total_requests_received: AtomicUsize,
-    pub successful_responses: AtomicUsize,
     pub failed_responses: AtomicUsize,
 }
 
@@ -165,10 +136,6 @@ impl Default for MetricsCounters {
             total_connections: AtomicUsize::new(0),
             failed_connections: AtomicUsize::new(0),
             successful_connections: AtomicUsize::new(0),
-            successful_queries: AtomicUsize::new(0),
-            failed_queries: AtomicUsize::new(0),
-            pending_queries: AtomicUsize::new(0),
-            total_records: AtomicUsize::new(0),
             active_circuits: AtomicUsize::new(0),
             total_circuits_created: AtomicUsize::new(0),
             total_circuits_closed: AtomicUsize::new(0),
@@ -178,7 +145,6 @@ impl Default for MetricsCounters {
             circuit_errors: AtomicUsize::new(0),
             reservation_denials: AtomicUsize::new(0),
             total_requests_received: AtomicUsize::new(0),
-            successful_responses: AtomicUsize::new(0),
             failed_responses: AtomicUsize::new(0),
         }
     }
@@ -229,21 +195,6 @@ impl TelemetryWorker {
             } else {
                 0.0
             },
-        };
-
-        // Collect DHT metrics
-        let successful_queries = counters.successful_queries.load(Ordering::Relaxed);
-        let failed_queries = counters.failed_queries.load(Ordering::Relaxed);
-        let total_queries = successful_queries + failed_queries;
-        
-        metrics.dht = DhtMetrics {
-            records: counters.total_records.load(Ordering::Relaxed),
-            query_success_rate: if total_queries > 0 {
-                (successful_queries as f64 / total_queries as f64) * 100.0
-            } else {
-                0.0
-            },
-            pending_queries: counters.pending_queries.load(Ordering::Relaxed),
         };
 
         // Collect relay metrics

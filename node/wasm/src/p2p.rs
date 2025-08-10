@@ -3,6 +3,7 @@ pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
 use libp2p::core::transport::{OrTransport, upgrade};
+use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
 use log::{debug, error, info, trace};
 use std::collections::HashMap;
 
@@ -39,6 +40,8 @@ use libp2p::core::Transport as TransportTrait;
 use libp2p::core::transport::global_only::Transport;
 use libp2p::relay::client::Behaviour as RelayClientBehaviour;
 use libp2p::request_response::json::Behaviour as JsonBehaviour;
+use libp2p_kad::Behaviour as DhtBehaviour;
+use libp2p_kad::Event as DhtEvent;
 use libp2p_webtransport_websys;
 use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
@@ -65,6 +68,7 @@ where
 {
     pub relay_client: libp2p::relay::client::Behaviour,
     pub app_json: JsonBehaviour<TReq, TResp>,
+    pub app_client_dht: DhtBehaviour<MemoryStore>,
 }
 
 impl<TReq, TResp> WasmRelayBehaviour<TReq, TResp>
@@ -76,12 +80,14 @@ where
         protocols: impl IntoIterator<Item = (StreamProtocol, libp2p::request_response::ProtocolSupport)>,
         config: libp2p::request_response::Config,
         relay_behaviour: libp2p::relay::client::Behaviour,
+        dht_behaviour: DhtBehaviour<MemoryStore>,
     ) -> Self {
         let json_behaviour = JsonBehaviour::new(protocols, config);
 
         Self {
             relay_client: relay_behaviour,
             app_json: json_behaviour,
+            app_client_dht: dht_behaviour,
         }
     }
 }
@@ -118,18 +124,29 @@ impl WasmP2pWorker {
                 (
                     StreamProtocol::new("/wasm_relay_client_protocol"),
                     ProtocolSupport::Full,
-                ),
-                (
-                    StreamProtocol::new("/dht_request_response_protocol"),
-                    ProtocolSupport::Full,
-                ),
+                )
             ],
             request_response_config,
+        );
+
+        let dht_behaviour = DhtBehaviour::with_config(
+            peer_id.clone(),
+            MemoryStore::with_config(
+                peer_id.clone(),
+                MemoryStoreConfig {
+                    max_records: 1000,
+                    max_value_bytes: 50,
+                    max_providers_per_key: 1024,
+                    max_provided_keys: 10,
+                },
+            ),
+            Default::default(),
         );
 
         let combined_behaviour = WasmRelayBehaviour {
             relay_client: relay_behaviour,
             app_json: json_behaviour,
+            app_client_dht: dht_behaviour,
         };
 
         let upgraded_transport = libp2p_webtransport_websys::Transport::new(
@@ -163,88 +180,19 @@ impl WasmP2pWorker {
         >,
     ) {
         match events {
+            // Custom events from the wasm relay behaviour
             SwarmEvent::Behaviour(wasm_relay_behaviour) => match wasm_relay_behaviour {
-                WasmRelayBehaviourEvent::AppJson(app_json_event) => match app_json_event {
-                    Event::Message { message, .. } => {
-                        info!(target: "p2p","received message: {message:?}");
-
-                        // update pending request for requests messages
-                        match message {
-                            Message::Request {
-                                channel,
-                                request_id,
-                                request,
-                            } => {
-                                let req_msg = SwarmMessage::WasmRequest {
-                                    data: request,
-                                    inbound_id: request_id,
-                                };
-
-                                let req_id_hash = request_id.get_hash_id();
-                                info!(target: "p2p","stored response channel, with key: {req_id_hash}");
-                                pending_request.borrow_mut().insert(req_id_hash, channel);
-
-                                if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
-                                    error!("Failed to send message: {}", e);
-                                }
-                                info!(target: "p2p","propagating txn request msg to main service worker");
-                            }
-                            Message::Response {
-                                response,
-                                request_id,
-                            } => {
-                                let data = response;
-                                if let Ok(data) = data {
-                                    let resp_msg = SwarmMessage::WasmResponse {
-                                        data,
-                                        outbound_id: request_id,
-                                    };
-                                    if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
-                                        error!("Failed to send message: {}", e);
-                                    }
-                                    info!(target: "p2p","propagating txn response msg to main service worker");
-                                } else {
-                                    error!("failed to get response data: {data:?}");
-                                }
-                            }
-                        }
-                    }
-                    Event::OutboundFailure {
-                        error,
-                        peer,
-                        request_id,
-                        ..
-                    } => {
-                        let req_id_hash = request_id.get_hash_id();
-                        error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
-                    }
-                    Event::InboundFailure {
-                        error, request_id, ..
-                    } => {
-                        let req_id_hash = request_id.get_hash_id();
-                        error!("inbound error: {error} on req_id: {req_id_hash}")
-                    }
-                    Event::ResponseSent {
-                        peer, request_id, ..
-                    } => {
-                        let req_id_hash = request_id.get_hash_id();
-                        info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
-                    }
+                WasmRelayBehaviourEvent::AppJson(app_json_event){
+                    Self::handle_app_json_events(app_json_event).await;
                 },
                 WasmRelayBehaviourEvent::RelayClient(relay_client_event) => {
-                    match relay_client_event {
-                        RelayClientEvent::InboundCircuitEstablished { src_peer_id, .. } => {
-                            info!(target: "p2p","inbound circuit established: {src_peer_id:?}")
-                        }
-                        RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
-                            info!(target: "p2p","outbound circuit established: {relay_peer_id:?}")
-                        }
-                        RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
-                            info!(target: "p2p","reservation request accepted: {relay_peer_id:?}")
-                        }
-                    }
+                    Self::handle_relay_events(relay_client_event).await;
+                }
+                WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
+                    Self::handle_dht_events(app_client_dht_event).await;
                 }
             },
+            // Generic swarm events
             SwarmEvent::ConnectionEstablished {
                 peer_id,
                 endpoint,
@@ -293,6 +241,99 @@ impl WasmP2pWorker {
             _ => info!(target:"p2p","unhandled event"),
         }
     }
+
+    async fn handle_dht_events(&self, dht_event: DhtEvent) {
+        match dht_event {
+            DhtEvent::InboundRequest { request, .. } => {
+                info!(target: "p2p","dht request: {request:?}")
+            }
+            _ => info!(target: "p2p","unhandled dht event"),
+        }
+    }
+
+    async fn handle_relay_events(&self, relay_client_event: RelayClientEvent) {
+        match relay_client_event {
+            RelayClientEvent::InboundCircuitEstablished { src_peer_id, .. } => {
+                info!(target: "p2p","inbound circuit established: {src_peer_id:?}")
+            }
+            RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
+                info!(target: "p2p","outbound circuit established: {relay_peer_id:?}")
+            }
+            RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
+                info!(target: "p2p","reservation request accepted: {relay_peer_id:?}")
+            }
+        }
+    }
+
+    async fn handle_app_json_events(&self, app_json_event: Event<TxStateMachine, Result<TxStateMachine, String>>){
+        match app_json_event {
+            Event::Message { message, .. } => {
+                info!(target: "p2p","received message: {message:?}");
+
+                // update pending request for requests messages
+                match message {
+                    Message::Request {
+                        channel,
+                        request_id,
+                        request,
+                    } => {
+                        let req_msg = SwarmMessage::WasmRequest {
+                            data: request,
+                            inbound_id: request_id,
+                        };
+
+                        let req_id_hash = request_id.get_hash_id();
+                        info!(target: "p2p","stored response channel, with key: {req_id_hash}");
+                        pending_request.borrow_mut().insert(req_id_hash, channel);
+
+                        if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
+                            error!("Failed to send message: {}", e);
+                        }
+                        info!(target: "p2p","propagating txn request msg to main service worker");
+                    }
+                    Message::Response {
+                        response,
+                        request_id,
+                    } => {
+                        let data = response;
+                        if let Ok(data) = data {
+                            let resp_msg = SwarmMessage::WasmResponse {
+                                data,
+                                outbound_id: request_id,
+                            };
+                            if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
+                                error!("Failed to send message: {}", e);
+                            }
+                            info!(target: "p2p","propagating txn response msg to main service worker");
+                        } else {
+                            error!("failed to get response data: {data:?}");
+                        }
+                    }
+                }
+            }
+            Event::OutboundFailure {
+                error,
+                peer,
+                request_id,
+                ..
+            } => {
+                let req_id_hash = request_id.get_hash_id();
+                error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
+            }
+            Event::InboundFailure {
+                error, request_id, ..
+            } => {
+                let req_id_hash = request_id.get_hash_id();
+                error!("inbound error: {error} on req_id: {req_id_hash}")
+            }
+            Event::ResponseSent {
+                peer, request_id, ..
+            } => {
+                let req_id_hash = request_id.get_hash_id();
+                info!(target: "p2p","response sent to: {peer:?}: req_id: {req_id_hash}")
+            }
+        }
+    } 
 
     pub async fn start_swarm(
         &mut self,
