@@ -21,7 +21,7 @@ use crate::cryptography::verify_public_bytes;
 use crate::p2p::WasmP2pWorker;
 use alloc::string::ToString;
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount,
+    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
 };
 use sp_runtime::traits::Zero;
 
@@ -251,6 +251,22 @@ impl PublicInterfaceWorker {
 
             Ok(())
         }
+    }
+
+    // user metrics
+    pub async fn get_user_metrics(&self) -> Result<JsValue, JsValue> {
+        let user_account = self.db_worker.get_user_account().await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+        let total_success_txns = self.db_worker.get_success_txs().await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+        let total_failed_txns = self.db_worker.get_failed_txs().await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+        let saved_target_peers = self.db_worker.get_all_saved_peers().await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+        
+        let user_metrics = UserMetrics {
+            user_account,
+            total_success_txns,
+            total_failed_txns,
+            saved_target_peers,
+        };
+        serde_wasm_bindgen::to_value(&user_metrics).map_err(|e| JsValue::from_str(&format!("Serialization error: {:?}", e)))
     }
 }
 

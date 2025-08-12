@@ -298,8 +298,16 @@ pub enum SwarmMessage {
     },
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UserMetrics {
+    pub user_account: UserAccount,
+    pub total_success_txns: Vec<DbTxStateMachine>,
+    pub total_failed_txns: Vec<DbTxStateMachine>,
+    pub saved_target_peers: (Vec<String>, String),
+}
+
 /// Transaction data structure to store in the db
-#[derive(Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct DbTxStateMachine {
     // Tx hash based on the chain hashing algorithm
     pub tx_hash: Vec<u8>,
@@ -442,7 +450,7 @@ impl std::fmt::Display for ChainSupported {
 }
 
 /// User account
-#[derive(Clone, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Eq, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct UserAccount {
     pub multi_addr: String,
     pub accounts: Vec<(String, ChainSupported)>,
