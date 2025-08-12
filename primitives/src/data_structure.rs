@@ -497,7 +497,7 @@ pub trait DbWorkerInterface: Sized {
         &self,
         account_id: String,
         network: ChainSupported,
-    ) -> Result<(), anyhow::Error>;
+    ) -> Result<UserAccount, anyhow::Error>;
 
     async fn get_nonce(&self) -> Result<u32, anyhow::Error>;
 

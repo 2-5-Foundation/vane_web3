@@ -118,6 +118,7 @@ impl WasmMainServiceWorker {
 
         let public_interface_worker = PublicInterfaceWorker::new(
             db_worker.clone(),
+            Rc::new(p2p_worker.clone()),
             Rc::new(RefCell::new(rpc_recv_channel)),
             Rc::new(RefCell::new(user_rpc_update_sender_channel)),
             p2p_worker.node_id,
@@ -322,10 +323,8 @@ impl WasmMainServiceWorker {
                     .insert(query_id, (txn.clone(), target_id.clone()));
 
                 
-                // Use Rc<RefCell<Option<()>>> for simple shared state timeout handling
                 let timeout_flag = Rc::new(RefCell::new(None));
                 
-                // Spawn timeout handler
                 let timeout_flag_clone = timeout_flag.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     TimeoutFuture::new(60_000).await;
@@ -333,7 +332,6 @@ impl WasmMainServiceWorker {
                     *timeout_flag_clone.borrow_mut() = Some(());
                 });
                 
-                // Spawn result handler
                 let result_flag = timeout_flag.clone();
                 let dht_query_result_channel = self.dht_query_result_channel.clone();
                 let dht_query_context = self.dht_query_context.clone();
@@ -346,7 +344,6 @@ impl WasmMainServiceWorker {
                 
                 wasm_bindgen_futures::spawn_local(async move {
                     loop {
-                        // Check for immediate results first (non-blocking)
                         if let Ok((multi_addr_opt, query_id)) = dht_query_result_channel.borrow_mut().try_recv() {
                             if let Some(multi_addr) = multi_addr_opt {
                                 let peer_id = multi_addr.clone()
@@ -386,7 +383,6 @@ impl WasmMainServiceWorker {
                                     error!("Failed to send request: {:?}", e);
                                 }
                                 
-                                // Success! Set result flag
                                 *result_flag.borrow_mut() = Some(());
                                 break;
                             } else {

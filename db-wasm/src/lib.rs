@@ -80,9 +80,9 @@ impl DbWorkerInterface for OpfsRedbWorker {
         &self,
         account_id: String,
         network: ChainSupported,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<UserAccount, anyhow::Error> {
         let write_txn = self.db.begin_write()?;
-        {
+        let user_account = {
             let mut table = write_txn.open_table(USER_ACCOUNT_TABLE)?;
             let mut user_account = table
                 .get(USER_ACC_KEY)?
@@ -95,9 +95,10 @@ impl DbWorkerInterface for OpfsRedbWorker {
                 .ok_or_else(|| anyhow!("user account not found"))?;
             user_account.accounts.push((account_id, network));
             table.insert(USER_ACC_KEY, &user_account.encode())?;
-        }
+            user_account
+        };
         write_txn.commit()?;
-        Ok(())
+        Ok(user_account)
     }
 
     async fn get_nonce(&self) -> Result<u32, anyhow::Error> {

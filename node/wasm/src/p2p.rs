@@ -394,6 +394,25 @@ impl WasmP2pWorker {
         Ok(dht_behaviour.get_record(target_acc_id.as_bytes().to_vec().into()))
     }
 
+    pub async fn add_account_to_dht(&self, account_id: String, value: String) -> Result<(), Error> {
+        let mut swarm = self.wasm_swarm.borrow_mut();
+        let mut dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
+        
+        let record = libp2p_kad::Record::new(
+            account_id.as_bytes().to_vec(),
+            value.as_bytes().to_vec(),
+        );
+        
+        let query_id = dht_behaviour.put_record(record.clone(), libp2p_kad::Quorum::Majority);
+        
+        dht_behaviour.start_providing(record.key)
+            .map_err(|e| anyhow!("Failed to start providing key: {}", e))?;
+        
+        info!(target: "p2p", "Added account record to DHT: account_id={}, query_id={:?}", account_id, query_id);
+        
+        Ok(())
+    }
+
     fn announce_dht(&mut self) -> Result<(), anyhow::Error> {
         let relay_peer_id = self
             .relay_multi_addr
@@ -430,7 +449,8 @@ impl WasmP2pWorker {
             self.user_account_id.as_bytes().to_vec(),
             self.user_circuit_multi_addr.to_vec(),
         );
-        dht.put_record(record, libp2p_kad::Quorum::Majority)?;
+        dht.put_record(record.clone(), libp2p_kad::Quorum::Majority)?;
+        dht.start_providing(record.key)?;
 
         Ok(())
     }

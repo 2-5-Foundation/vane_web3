@@ -18,6 +18,7 @@ use core::str::FromStr;
 use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
+use crate::p2p::WasmP2pWorker;
 use alloc::string::ToString;
 use primitives::data_structure::{
     AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount,
@@ -55,6 +56,8 @@ mod rpc_wasm_imports {
 pub struct PublicInterfaceWorker {
     /// local database worker
     pub db_worker: Rc<OpfsRedbWorker>,
+    // p2pworker
+    pub p2p_worker: Rc<WasmP2pWorker>,
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
     pub rpc_receiver_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
     /// sender channel when user updates the transaction state, propagating to main service worker
@@ -70,6 +73,7 @@ pub struct PublicInterfaceWorker {
 impl PublicInterfaceWorker {
     pub async fn new(
         db_worker: Rc<OpfsRedbWorker>,
+        p2p_worker: Rc<WasmP2pWorker>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
@@ -77,6 +81,7 @@ impl PublicInterfaceWorker {
     ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
+            p2p_worker,
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
@@ -89,10 +94,12 @@ impl PublicInterfaceWorker {
     pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
         let network = network.as_str().into();
 
-        self.db_worker
-            .update_user_account(account_id, network)
+        let user_account = self.db_worker
+            .update_user_account(account_id.clone(), network)
             .await
             .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+
+       self.p2p_worker.add_account_to_dht(account_id,user_account.multi_addr).await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
         Ok(())
     }
