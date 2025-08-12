@@ -13,7 +13,7 @@ use serde_json::Value;
 use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
 #[cfg(feature = "wasm")]
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsError, JsValue};
 
 use dotenv::dotenv;
 // Ethereum signature preimage prefix according to EIP-191
@@ -185,10 +185,10 @@ pub struct TxStateMachine {
 
 #[cfg(feature = "wasm")]
 impl TxStateMachine {
-    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsValue> {
+    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsError> {
         let tx_state_machine: TxStateMachine =
             serde_wasm_bindgen::from_value(value).map_err(|e| {
-                JsValue::from_str(&format!("Failed to deserialize TxStateMachine: {:?}", e))
+                JsError::new(&format!("Failed to deserialize TxStateMachine: {:?}", e))
             })?;
         Ok(tx_state_machine)
     }
