@@ -5,7 +5,7 @@ pub mod tx_processing;
 
 use crate::p2p::P2pNetworkService;
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use codec::Decode;
 use core::str::FromStr;
 use hex_literal::hex;
@@ -22,29 +22,25 @@ pub use rand::Rng;
 
 /// Main thread to be spawned by the application
 /// this encompasses all node's logic and processing flow
-
-
 pub use lib_imports::*;
 
 mod lib_imports {
-    pub use crate::rpc::TransactionRpcWorker;
-    pub use crate::tx_processing::TxProcessingWorker;
-    pub use std::hash::{DefaultHasher, Hash, Hasher};
-    pub use std::net::SocketAddr;
-    pub use tokio::sync::Mutex;
-    pub extern crate rcgen;
     pub use crate::p2p::P2pWorker;
+    pub use crate::rpc::TransactionRpcWorker;
     pub use crate::rpc::{RedisClient, TransactionRpcServer};
-    pub use db::db::saved_peers::Data;
+    pub use crate::tx_processing::TxProcessingWorker;
     pub use db::LocalDbWorker;
+    pub use db::db::saved_peers::Data;
     pub use jsonrpsee::server::ServerBuilder;
     pub use libp2p::futures::{FutureExt, StreamExt};
     pub use local_ip_address::local_ip;
     pub use moka::future::Cache as AsyncCache;
-    pub use rcgen::{generate_simple_self_signed, CertifiedKey};
     pub use redis::AsyncCommands;
-    pub use tokio::sync::mpsc::{Receiver, Sender};
+    pub use std::hash::{DefaultHasher, Hash, Hasher};
+    pub use std::net::SocketAddr;
     pub use std::sync::Arc;
+    pub use tokio::sync::Mutex;
+    pub use tokio::sync::mpsc::{Receiver, Sender};
 }
 
 #[derive(Clone)]
@@ -213,18 +209,24 @@ impl MainServiceWorker {
                             decoded_req.inbound_req_id = Some(inbound_req_id);
                             // ===================================================================== //
                             // propagate transaction state to rpc layer for user updating (receiver updating)
-                            if let Err(e) = self.rpc_sender_channel
+                            if let Err(e) = self
+                                .rpc_sender_channel
                                 .lock()
                                 .await
                                 .send(decoded_req.clone())
-                                .await {
-                                    error!("failed to send to rpc channel: {e}");
-                                    self.tx_rpc_worker.lock().await.send_error(
+                                .await
+                            {
+                                error!("failed to send to rpc channel: {e}");
+                                self.tx_rpc_worker
+                                    .lock()
+                                    .await
+                                    .send_error(
                                         "channel",
                                         "Failed to send to RPC channel",
-                                        Some(&e.to_string())
-                                    ).await;
-                                }
+                                        Some(&e.to_string()),
+                                    )
+                                    .await;
+                            }
 
                             self.moka_cache
                                 .insert(decoded_req.tx_nonce.into(), decoded_req.clone())
@@ -250,14 +252,19 @@ impl MainServiceWorker {
                                     // create a signable tx for sender to sign upon confirmation
                                     let mut tx_processing =
                                         self.tx_processing_worker.lock().await.clone();
-                                    
-                                    if let Err(e) = tx_processing.create_tx(&mut decoded_resp).await {
+
+                                    if let Err(e) = tx_processing.create_tx(&mut decoded_resp).await
+                                    {
                                         error!("failed to create tx: {e}");
-                                        self.tx_rpc_worker.lock().await.send_error(
-                                            "execution",
-                                            "Failed to create transaction",
-                                            Some(&e.to_string())
-                                        ).await;
+                                        self.tx_rpc_worker
+                                            .lock()
+                                            .await
+                                            .send_error(
+                                                "execution",
+                                                "Failed to create transaction",
+                                                Some(&e.to_string()),
+                                            )
+                                            .await;
                                     }
 
                                     info!(target:"MainServiceWorker","created a signable transaction");
@@ -265,14 +272,18 @@ impl MainServiceWorker {
                                 Err(err) => {
                                     decoded_resp.recv_confirmation_failed();
                                     error!(target:"MainServiceWorker","receiver confirmation failed, reason: {err}");
-                                    
+
                                     // Add error to RPC worker for user reporting
-                                    self.tx_rpc_worker.lock().await.send_error(
-                                        "execution",
-                                        "Receiver confirmation failed",
-                                        Some(&err.to_string())
-                                    ).await;
-                                    
+                                    self.tx_rpc_worker
+                                        .lock()
+                                        .await
+                                        .send_error(
+                                            "execution",
+                                            "Receiver confirmation failed",
+                                            Some(&err.to_string()),
+                                        )
+                                        .await;
+
                                     // record failed txn in local db
                                     let db_tx = DbTxStateMachine {
                                         tx_hash: vec![],
@@ -286,18 +297,24 @@ impl MainServiceWorker {
                             }
 
                             // propagate transaction state to rpc layer for user updating ( this time sender verification)
-                            if let Err(e) = self.rpc_sender_channel
+                            if let Err(e) = self
+                                .rpc_sender_channel
                                 .lock()
                                 .await
                                 .send(decoded_resp.clone())
-                                .await {
-                                    error!("failed to send to rpc channel: {e}");
-                                    self.tx_rpc_worker.lock().await.send_error(
+                                .await
+                            {
+                                error!("failed to send to rpc channel: {e}");
+                                self.tx_rpc_worker
+                                    .lock()
+                                    .await
+                                    .send_error(
                                         "channel",
                                         "Failed to send to RPC channel",
-                                        Some(&e.to_string())
-                                    ).await;
-                                }
+                                        Some(&e.to_string()),
+                                    )
+                                    .await;
+                            }
 
                             self.moka_cache
                                 .insert(decoded_resp.tx_nonce.into(), decoded_resp.clone())
@@ -357,14 +374,19 @@ impl MainServiceWorker {
                 {
                     if let Err(e) = p2p_network_service
                         .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                        .await {
-                            error!("failed to dial to peer id: {e}");
-                            self.tx_rpc_worker.lock().await.send_error(
+                        .await
+                    {
+                        error!("failed to dial to peer id: {e}");
+                        self.tx_rpc_worker
+                            .lock()
+                            .await
+                            .send_error(
                                 "p2p network service",
                                 "Failed to dial to peer id",
-                                Some(&e.to_string())
-                            ).await;
-                        }
+                                Some(&e.to_string()),
+                            )
+                            .await;
+                    }
                 }
 
                 // wait for dialing to complete
@@ -373,24 +395,33 @@ impl MainServiceWorker {
                 {
                     if let Err(e) = p2p_network_service
                         .send_request(txn.clone(), peer_id, multi_addr)
-                        .await {
-                            error!("failed to send request to peer id: {e}");
-                            self.tx_rpc_worker.lock().await.send_error(
+                        .await
+                    {
+                        error!("failed to send request to peer id: {e}");
+                        self.tx_rpc_worker
+                            .lock()
+                            .await
+                            .send_error(
                                 "p2p network service",
                                 "Failed to send request to peer id",
-                                Some(&e.to_string())
-                            ).await;
-                        }
+                                Some(&e.to_string()),
+                            )
+                            .await;
+                    }
                 }
             }
             Err(_err) => {
                 // Add database error to RPC worker
-                self.tx_rpc_worker.lock().await.send_error(
-                    "database",
-                    "Failed to find target peer in local database",
-                    Some(&_err.to_string())
-                ).await;
-                
+                self.tx_rpc_worker
+                    .lock()
+                    .await
+                    .send_error(
+                        "database",
+                        "Failed to find target peer in local database",
+                        Some(&_err.to_string()),
+                    )
+                    .await;
+
                 // fetch from remote db
                 info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote redis db");
                 let target_id_addr = {
@@ -399,18 +430,25 @@ impl MainServiceWorker {
                 };
 
                 let target_user_profile: Option<RedisAccountProfile> = {
-                    let mut redis_conn = match self.redis_client.get_multiplexed_async_connection().await {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            self.tx_rpc_worker.lock().await.send_error(
-                                "database",
-                                "Failed to connect to Redis",
-                                Some(&err.to_string())
-                            ).await;
-                            return Err(anyhow!("failed to connect to redis, caused by: {err}"));
-                        }
-                    };
-                    
+                    let mut redis_conn =
+                        match self.redis_client.get_multiplexed_async_connection().await {
+                            Ok(conn) => conn,
+                            Err(err) => {
+                                self.tx_rpc_worker
+                                    .lock()
+                                    .await
+                                    .send_error(
+                                        "database",
+                                        "Failed to connect to Redis",
+                                        Some(&err.to_string()),
+                                    )
+                                    .await;
+                                return Err(anyhow!(
+                                    "failed to connect to redis, caused by: {err}"
+                                ));
+                            }
+                        };
+
                     match redis_conn
                         .hget::<String, String, String>("ACCOUNT_LINK".to_string(), target_id_addr)
                         .await
@@ -425,34 +463,50 @@ impl MainServiceWorker {
                                 .await
                             {
                                 Ok(target_user_profile) => {
-                                    match serde_json::from_str::<RedisAccountProfile>(&target_user_profile) {
+                                    match serde_json::from_str::<RedisAccountProfile>(
+                                        &target_user_profile,
+                                    ) {
                                         Ok(profile) => Some(profile),
                                         Err(err) => {
-                                            self.tx_rpc_worker.lock().await.send_error(
-                                                "database",
-                                                "Failed to parse Redis user profile",
-                                                Some(&err.to_string())
-                                            ).await;
-                                            return Err(anyhow!("failed to parse target user profile, caused by: {err}"));
+                                            self.tx_rpc_worker
+                                                .lock()
+                                                .await
+                                                .send_error(
+                                                    "database",
+                                                    "Failed to parse Redis user profile",
+                                                    Some(&err.to_string()),
+                                                )
+                                                .await;
+                                            return Err(anyhow!(
+                                                "failed to parse target user profile, caused by: {err}"
+                                            ));
                                         }
                                     }
                                 }
                                 Err(err) => {
-                                    self.tx_rpc_worker.lock().await.send_error(
-                                        "database",
-                                        "Failed to get user profile from Redis",
-                                        Some(&err.to_string())
-                                    ).await;
+                                    self.tx_rpc_worker
+                                        .lock()
+                                        .await
+                                        .send_error(
+                                            "database",
+                                            "Failed to get user profile from Redis",
+                                            Some(&err.to_string()),
+                                        )
+                                        .await;
                                     None
                                 }
                             }
                         }
                         Err(err) => {
-                            self.tx_rpc_worker.lock().await.send_error(
-                                "database",
-                                "Failed to get user hash ID from Redis",
-                                Some(&err.to_string())
-                            ).await;
+                            self.tx_rpc_worker
+                                .lock()
+                                .await
+                                .send_error(
+                                    "database",
+                                    "Failed to get user hash ID from Redis",
+                                    Some(&err.to_string()),
+                                )
+                                .await;
                             None
                         }
                     }
@@ -487,14 +541,19 @@ impl MainServiceWorker {
                     {
                         if let Err(e) = p2p_network_service
                             .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                            .await {
-                                error!("failed to dial to peer id: {e}");
-                                self.tx_rpc_worker.lock().await.send_error(
+                            .await
+                        {
+                            error!("failed to dial to peer id: {e}");
+                            self.tx_rpc_worker
+                                .lock()
+                                .await
+                                .send_error(
                                     "p2p network service",
                                     "Failed to dial to peer id",
-                                    Some(&e.to_string())
-                                ).await;
-                            }
+                                    Some(&e.to_string()),
+                                )
+                                .await;
+                        }
                     }
 
                     // wait for dialing to complete
@@ -503,44 +562,53 @@ impl MainServiceWorker {
                     {
                         if let Err(e) = p2p_network_service
                             .send_request(txn.clone(), peer_id, multi_addr)
-                            .await {
-                                error!("failed to send request to peer id: {e}");
-                                self.tx_rpc_worker.lock().await.send_error(
+                            .await
+                        {
+                            error!("failed to send request to peer id: {e}");
+                            self.tx_rpc_worker
+                                .lock()
+                                .await
+                                .send_error(
                                     "p2p network service",
                                     "Failed to send request to peer id",
-                                    Some(&e.to_string())
-                                ).await;
-                            }
+                                    Some(&e.to_string()),
+                                )
+                                .await;
+                        }
                     }
-                                    } else {
-                        // Add network error to RPC worker
-                        self.tx_rpc_worker.lock().await.send_error(
+                } else {
+                    // Add network error to RPC worker
+                    self.tx_rpc_worker
+                        .lock()
+                        .await
+                        .send_error(
                             "network",
                             "Target peer not found in remote database",
-                            Some("User is missing out on safety transaction")
-                        ).await;
-                        
-                        // return tx state as error on sender rpc
-                        let mut txn = txn.lock().await.clone();
-                        txn.recv_not_registered();
+                            Some("User is missing out on safety transaction"),
+                        )
+                        .await;
 
-                        if let Err(e) = self.rpc_sender_channel
+                    // return tx state as error on sender rpc
+                    let mut txn = txn.lock().await.clone();
+                    txn.recv_not_registered();
+
+                    if let Err(e) = self.rpc_sender_channel.lock().await.send(txn.clone()).await {
+                        error!("failed to send to rpc channel: {e}");
+                        self.tx_rpc_worker
                             .lock()
                             .await
-                            .send(txn.clone())
-                            .await {
-                                error!("failed to send to rpc channel: {e}");
-                                self.tx_rpc_worker.lock().await.send_error(
-                                    "channel",
-                                    "Failed to send to RPC channel",
-                                    Some(&e.to_string())
-                                ).await;
-                            }
-
-                        self.moka_cache.insert(txn.tx_nonce.into(), txn).await;
-
-                        warn!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
+                            .send_error(
+                                "channel",
+                                "Failed to send to RPC channel",
+                                Some(&e.to_string()),
+                            )
+                            .await;
                     }
+
+                    self.moka_cache.insert(txn.tx_nonce.into(), txn).await;
+
+                    warn!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
+                }
             }
         }
         Ok(())
@@ -553,18 +621,24 @@ impl MainServiceWorker {
         id: u64,
         txn: Arc<Mutex<TxStateMachine>>,
     ) -> Result<(), Error> {
-        if let Err(e) = self.p2p_network_service
+        if let Err(e) = self
+            .p2p_network_service
             .lock()
             .await
             .send_response(id, txn)
-            .await {
-                error!("failed to send response to peer id: {e}");
-                self.tx_rpc_worker.lock().await.send_error(
+            .await
+        {
+            error!("failed to send response to peer id: {e}");
+            self.tx_rpc_worker
+                .lock()
+                .await
+                .send_error(
                     "p2p network service",
                     "Failed to send response to peer id",
-                    Some(&e.to_string())
-                ).await;
-            }
+                    Some(&e.to_string()),
+                )
+                .await;
+        }
         Ok(())
     }
 
@@ -577,17 +651,23 @@ impl MainServiceWorker {
         let mut txn_inner = txn.lock().await.clone();
 
         // verify sender
-        if let Err(e) = self.tx_processing_worker
+        if let Err(e) = self
+            .tx_processing_worker
             .lock()
             .await
-            .validate_receiver_sender_address(&txn_inner, "Sender") {
-                error!("failed to validate receiver sender address: {e}");
-                self.tx_rpc_worker.lock().await.send_error(
+            .validate_receiver_sender_address(&txn_inner, "Sender")
+        {
+            error!("failed to validate receiver sender address: {e}");
+            self.tx_rpc_worker
+                .lock()
+                .await
+                .send_error(
                     "tx processing worker",
                     "Failed to validate receiver sender address",
-                    Some(&e.to_string())
-                ).await;
-            }
+                    Some(&e.to_string()),
+                )
+                .await;
+        }
 
         log::info!(target: "MainServiceWorker","sender verification passed");
         // verify multi id
@@ -612,18 +692,24 @@ impl MainServiceWorker {
                     // update user via rpc on tx success
                     txn_inner.tx_submission_passed(tx_hash);
 
-                    if let Err(e) = self.rpc_sender_channel
+                    if let Err(e) = self
+                        .rpc_sender_channel
                         .lock()
                         .await
                         .send(txn_inner.clone())
-                        .await {
-                            error!("failed to send to rpc channel: {e}");
-                            self.tx_rpc_worker.lock().await.send_error(
+                        .await
+                    {
+                        error!("failed to send to rpc channel: {e}");
+                        self.tx_rpc_worker
+                            .lock()
+                            .await
+                            .send_error(
                                 "channel",
                                 "Failed to send to RPC channel",
-                                Some(&e.to_string())
-                            ).await;
-                        }
+                                Some(&e.to_string()),
+                            )
+                            .await;
+                    }
 
                     // update local db on success tx
                     let db_tx = DbTxStateMachine {
@@ -640,18 +726,24 @@ impl MainServiceWorker {
                     txn_inner.tx_submission_failed(format!(
                         "{err:?}: the tx will be resubmitted rest assured"
                     ));
-                    if let Err(e) = self.rpc_sender_channel
+                    if let Err(e) = self
+                        .rpc_sender_channel
                         .lock()
                         .await
                         .send(txn_inner.clone())
-                        .await {
-                            error!("failed to send to rpc channel: {e}");
-                            self.tx_rpc_worker.lock().await.send_error(
+                        .await
+                    {
+                        error!("failed to send to rpc channel: {e}");
+                        self.tx_rpc_worker
+                            .lock()
+                            .await
+                            .send_error(
                                 "channel",
                                 "Failed to send to RPC channel",
-                                Some(&e.to_string())
-                            ).await;
-                        }
+                                Some(&e.to_string()),
+                            )
+                            .await;
+                    }
                 }
             }
         } else {
@@ -659,28 +751,31 @@ impl MainServiceWorker {
             txn_inner.sender_confirmation_failed();
             error!(target: "MainServiceWorker","Non original sender signed");
 
-            if let Err(e) = self.rpc_sender_channel
+            if let Err(e) = self
+                .rpc_sender_channel
                 .lock()
                 .await
                 .send(txn_inner.clone())
-                .await {
-                    error!("failed to send to rpc channel: {e}");
-                    self.tx_rpc_worker.lock().await.send_error(
+                .await
+            {
+                error!("failed to send to rpc channel: {e}");
+                self.tx_rpc_worker
+                    .lock()
+                    .await
+                    .send_error(
                         "channel",
                         "Failed to send to RPC channel",
-                        Some(&e.to_string())
-                    ).await;
-                }
+                        Some(&e.to_string()),
+                    )
+                    .await;
+            }
         }
 
         Ok(())
     }
 
     /// this for now is same as `handle_addr_confirmed_tx_state`
-    pub(crate) async fn handle_net_confirmed_tx_state(
-        &self,
-
-    ) -> Result<(), anyhow::Error> {
+    pub(crate) async fn handle_net_confirmed_tx_state(&self) -> Result<(), anyhow::Error> {
         todo!()
     }
 
@@ -752,8 +847,6 @@ impl MainServiceWorker {
 
         // --------------------------- TLS CERT---------------------------------- //
         let url_names = vec!["197.168.1.177".to_string(), "localhost".to_string()];
-        // let CertifiedKey { cert, key_pair } = generate_simple_self_signed(url_names)
-        //     .map_err(|err| anyhow!("failed to generate tsl cert; {err:?}"))?;
 
         let url = self.tx_rpc_worker.lock().await.rpc_url.clone();
         let rpc_handler = self.tx_rpc_worker.clone().lock().await.clone();

@@ -18,45 +18,46 @@ use core::str::FromStr;
 use log::{info, trace};
 
 use crate::cryptography::verify_public_bytes;
-use primitives::data_structure::{
-    AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
-    UserAccount,
-};
+use crate::p2p::WasmP2pWorker;
 use alloc::string::ToString;
+use primitives::data_structure::{
+    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount,
+};
 use sp_runtime::traits::Zero;
 
-use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
-use alloc::string::String;
-use rpc_wasm_imports::*;
 use alloc::rc::Rc;
+use alloc::string::String;
+use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
+use rpc_wasm_imports::*;
 
 mod rpc_wasm_imports {
     pub use alloc::alloc;
     pub use async_stream::stream;
     pub use core::cell::RefCell;
+    pub use core::fmt;
     pub use db_wasm::OpfsRedbWorker;
     pub use futures::StreamExt;
     pub use libp2p::PeerId;
     pub use lru::LruCache;
     pub use reqwasm::http::{Request, RequestMode};
-    pub use tokio_with_wasm::sync::mpsc::{Receiver, Sender};
-    pub use tokio_with_wasm::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::prelude::wasm_bindgen;
-    pub use wasm_bindgen::JsValue;
-    pub use sp_core::blake2_256;
-    pub use core::fmt;
     pub use serde_wasm_bindgen;
-    pub use sp_runtime::format;
+    pub use sp_core::blake2_256;
     pub use sp_runtime::Vec;
+    pub use sp_runtime::format;
+    pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
+    pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
+    pub use wasm_bindgen::JsValue;
+    pub use wasm_bindgen::prelude::wasm_bindgen;
 }
 
 // ----------------------------------- WASM -------------------------------- //
-
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
     /// local database worker
     pub db_worker: Rc<OpfsRedbWorker>,
+    // p2pworker
+    pub p2p_worker: Rc<WasmP2pWorker>,
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
     pub rpc_receiver_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
     /// sender channel when user updates the transaction state, propagating to main service worker
@@ -69,11 +70,10 @@ pub struct PublicInterfaceWorker {
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>, // initial fees, after dry running tx initialy without optimization
 }
 
-
-
 impl PublicInterfaceWorker {
     pub async fn new(
         db_worker: Rc<OpfsRedbWorker>,
+        p2p_worker: Rc<WasmP2pWorker>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
@@ -81,6 +81,7 @@ impl PublicInterfaceWorker {
     ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
+            p2p_worker,
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
@@ -90,37 +91,15 @@ impl PublicInterfaceWorker {
 }
 
 impl PublicInterfaceWorker {
-    pub async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-    ) -> Result<(), JsValue> {
-        // TODO verify the account id as it belongs to the registerer
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
         let network = network.as_str().into();
-        let user_account = UserAccount {
-            user_name: name,
-            account_id: account_id.clone(),
-            network,
-        };
 
-        self.db_worker
-            .set_user_account(user_account)
+        let user_account = self.db_worker
+            .update_user_account(account_id.clone(), network)
             .await
             .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
-        // NOTE: the peer-record is already registered, the following is only updating account details of the record
-        // update: account address related to peer id
-        // ========================================================================================//
-
-        // fetch the record
-        let record = self
-            .db_worker
-            .get_user_peer_id(None, Some(self.peer_id.to_string()))
-            .await
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-
-        // TODO:
+       self.p2p_worker.add_account_to_dht(account_id,user_account.multi_addr).await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
         Ok(())
     }
@@ -132,6 +111,7 @@ impl PublicInterfaceWorker {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> Result<(), JsValue> {
         info!("initiated sending transaction");
         let token = token.as_str().into();
@@ -178,6 +158,8 @@ impl PublicInterfaceWorker {
                 inbound_req_id: None,
                 outbound_req_id: None,
                 tx_nonce: nonce,
+                token,
+                code_word,
             };
 
             // dry run the tx
@@ -287,15 +269,9 @@ impl PublicInterfaceWorkerJs {
 
 #[wasm_bindgen]
 impl PublicInterfaceWorkerJs {
-
-    #[wasm_bindgen(js_name = "registerVaneWeb3")]
-    pub async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-    ) -> Result<(), JsValue> {
-        self.inner.borrow().register_vane_web3(name, account_id, network).await
+    #[wasm_bindgen(js_name = "addAccount")]
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
+        self.inner.borrow().add_account(account_id, network).await
     }
 
     #[wasm_bindgen(js_name = "initiateTransaction")]
@@ -306,8 +282,12 @@ impl PublicInterfaceWorkerJs {
         amount: u128,
         token: String,
         network: String,
+        code_word: String,
     ) -> Result<(), JsValue> {
-        self.inner.borrow().initiate_transaction(sender, receiver, amount, token, network).await
+        self.inner
+            .borrow()
+            .initiate_transaction(sender, receiver, amount, token, network, code_word)
+            .await
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]

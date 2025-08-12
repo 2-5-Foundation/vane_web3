@@ -10,27 +10,27 @@ use alloc::sync::Arc;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
+use primitives::data_structure::{ChainSupported, ETH_SIG_MSG_PREFIX, TxStateMachine};
+use sp_core::{ByteArray, H256};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256,
 };
-use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
 
 use tx_wasm_imports::*;
 
 mod tx_wasm_imports {
-    pub use alloc::rc::Rc;
-    pub use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
-    pub use core::cell::RefCell;
-    pub use web3::transports;
-    pub use web3::Web3;
-    pub use log::info;
-    pub use alloc::vec::Vec;
-    pub use alloc::collections::BTreeMap;
     pub use crate::alloc::string::ToString;
+    pub use alloc::collections::BTreeMap;
+    pub use alloc::rc::Rc;
+    pub use alloc::vec::Vec;
+    pub use alloy::primitives::{Address, B256, Signature as EcdsaSignature, SignatureError};
+    pub use core::cell::RefCell;
+    pub use log::info;
+    pub use web3::Web3;
+    pub use web3::transports;
     //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
 }
 
@@ -173,4 +173,3 @@ impl WasmTxProcessingWorker {
         Ok(())
     }
 }
-
