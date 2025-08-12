@@ -8,44 +8,35 @@ pub mod tx_processing;
 
 use crate::p2p::P2pNetworkService;
 
+use crate::interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs};
+use crate::p2p::WasmP2pWorker;
+use crate::tx_processing::WasmTxProcessingWorker;
+use alloc::format;
+use alloc::rc::Rc;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
 use anyhow::{Error, anyhow};
 use codec::Decode;
+use core::cell::RefCell;
 use core::str::FromStr;
-use hex_literal::hex;
-use primitives::data_structure::DbWorkerInterface;
-use serde_json::from_str;
-// -------------------------------- WASM ------------------------------ //
-use lib_wasm_imports::*;
-
-mod lib_wasm_imports {
-    pub use crate::interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs};
-    pub use crate::p2p::WasmP2pWorker;
-    pub use crate::tx_processing::WasmTxProcessingWorker;
-    pub use alloc::format;
-    pub use alloc::rc::Rc;
-    pub use alloc::string::String;
-    pub use alloc::sync::Arc;
-    pub use anyhow::{Error, anyhow};
-    pub use codec::Decode;
-    pub use core::cell::RefCell;
-    pub use core::str::FromStr;
-    pub use db_wasm::OpfsRedbWorker;
-    pub use futures::FutureExt;
-    pub use libp2p::Multiaddr;
-    pub use libp2p::PeerId;
-    pub use log::{error, info, warn};
-    pub use lru::LruCache;
-    pub use primitives::data_structure::DbWorkerInterface;
-    pub use primitives::data_structure::HashId;
-    pub use primitives::data_structure::NetworkCommand;
-    pub use primitives::data_structure::{
-        ChainSupported, DbTxStateMachine, SwarmMessage, TxStateMachine, TxStatus,
-    };
-    pub use wasm_bindgen::JsValue;
-    pub use wasm_bindgen::prelude::wasm_bindgen;
-}
+use db_wasm::OpfsRedbWorker;
+use futures::FutureExt;
+use libp2p::Multiaddr;
+use libp2p::PeerId;
+use libp2p::multiaddr::Protocol;
+use libp2p_kad::QueryId;
+use log::{error, info, warn};
+use lru::LruCache;
+use primitives::data_structure::{
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
+    TxStateMachine, TxStatus, UserAccount,
+};
+use std::collections::HashMap;
+use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_timer::TryFutureExt;
+use gloo_timers::future::TimeoutFuture;
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
@@ -63,15 +54,20 @@ pub struct WasmMainServiceWorker {
     /// receiver channel to handle the updates made by user from rpc
     pub user_rpc_update_recv_channel:
         Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<TxStateMachine>>>,
+    /// channel to handle dht query results
+    pub dht_query_result_channel:
+        Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<(Option<Multiaddr>, QueryId)>>>,
+    // query id -> (txn, target_id)
+    pub dht_query_context: Rc<RefCell<HashMap<QueryId, (Rc<RefCell<TxStateMachine>>, String)>>>,
     // moka cache
     pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>,
 }
 
 impl WasmMainServiceWorker {
     pub(crate) async fn new(
-        db_url_path: Option<String>,
-        p2p_port: u16,
-        dns: String,
+        relay_node_multi_addr: String,
+        account: String,
+        network: String,
     ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
@@ -85,25 +81,12 @@ impl WasmMainServiceWorker {
         let (p2p_command_tx, p2p_command_recv) =
             tokio_with_wasm::alias::sync::mpsc::channel::<NetworkCommand>(10);
 
+        let (dht_query_result_tx, dht_query_result_recv) =
+            tokio_with_wasm::alias::sync::mpsc::channel::<(Option<Multiaddr>, QueryId)>(10);
+
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
-        let mut db_url = String::new();
-        if let Some(url) = db_url_path {
-            db_url = url
-        } else {
-            db_url = String::from("db/dev.db")
-        }
-        let db = OpfsRedbWorker::initialize_db_client(db_url.as_str()).await?;
-
-        let mut p2p_port: u16 = 0;
-
-        let returned_pots = db.get_ports().await?;
-        if let Some(ports) = returned_pots {
-            p2p_port = ports.p_2_p_port as u16;
-        } else {
-            p2p_port = p2p_port
-        }
-
+        let db = OpfsRedbWorker::initialize_db_client("vane.db").await?;
         let db_worker = Rc::new(db);
 
         let lru_cache: LruCache<u64, TxStateMachine> = LruCache::unbounded();
@@ -111,12 +94,24 @@ impl WasmMainServiceWorker {
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
 
-        let p2p_worker = WasmP2pWorker::new(db_worker.clone(), p2p_port, dns, p2p_command_recv)
-            .await
-            .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
+        let p2p_worker = WasmP2pWorker::new(
+            db_worker.clone(),
+            relay_node_multi_addr,
+            account.clone(),
+            p2p_command_recv,
+            dht_query_result_tx,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
 
         let p2p_network_service =
             P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
+
+        let user_account = UserAccount {
+            multi_addr: p2p_worker.user_circuit_multi_addr.to_string(),
+            accounts: vec![(account, ChainSupported::from(network.as_str()))],
+        };
+        db_worker.set_user_account(user_account).await?;
 
         // TRANSACTION RPC WORKER / PUBLIC INTERFACE
         // ===================================================================================== //
@@ -150,6 +145,8 @@ impl WasmMainServiceWorker {
             rpc_sender_channel: Rc::new(RefCell::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Rc::new(RefCell::new(user_rpc_update_recv_channel)),
             lru_cache: RefCell::new(lru_cache),
+            dht_query_result_channel: Rc::new(RefCell::new(dht_query_result_recv)),
+            dht_query_context: Rc::new(RefCell::new(HashMap::new())),
         })
     }
 
@@ -273,7 +270,7 @@ impl WasmMainServiceWorker {
     }
 
     pub async fn handle_genesis_tx_state(
-        &self,
+        &mut self,
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
         // dial to target peer id from tx receiver
@@ -289,15 +286,19 @@ impl WasmMainServiceWorker {
         match target_peer_result {
             Ok(acc) => {
                 info!(target:"MainServiceWorker","target peer found in local db");
-                // dial the target
-                let multi_addr = acc
-                    .multi_addr
-                    .expect("multi addr is not found")
-                    .parse::<Multiaddr>()?;
+                let mut multi_addr = acc
+                    .parse::<Multiaddr>()
+                    .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
-                let peer_id = PeerId::from_str(&acc.peer_id.expect("peer id not found"))?;
+                let peer_id = {
+                    match multi_addr.pop().expect("peer id not found") {
+                        Protocol::P2p(id) => id,
+                        _ => {
+                            return Err(anyhow!("peer id not found"));
+                        }
+                    }
+                };
 
-                // ========================================================================= //
                 self.p2p_network_service
                     .borrow_mut()
                     .dial_to_peer_id(multi_addr.clone(), &peer_id)
@@ -310,78 +311,140 @@ impl WasmMainServiceWorker {
             }
             Err(_err) => {
                 // fetch from DHT
+                info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote dht");
+                let query_id = self
+                    .p2p_worker
+                    .borrow_mut()
+                    .get_dht_target_peer(target_id.clone())
+                    .await?;
+                self.dht_query_context
+                    .borrow_mut()
+                    .insert(query_id, (txn.clone(), target_id.clone()));
 
-                // info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote db");
+                
+                // Use Rc<RefCell<Option<()>>> for simple shared state timeout handling
+                let timeout_flag = Rc::new(RefCell::new(None));
+                
+                // Spawn timeout handler
+                let timeout_flag_clone = timeout_flag.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    TimeoutFuture::new(60_000).await;
+                    // Set timeout flag after 60 seconds
+                    *timeout_flag_clone.borrow_mut() = Some(());
+                });
+                
+                // Spawn result handler
+                let result_flag = timeout_flag.clone();
+                let dht_query_result_channel = self.dht_query_result_channel.clone();
+                let dht_query_context = self.dht_query_context.clone();
+                let db_worker = self.db_worker.clone();
+                let p2p_network_service = self.p2p_network_service.clone();
+                let rpc_sender_channel = self.rpc_sender_channel.clone();
+                let lru_cache = self.lru_cache.clone();
+                let txn_clone = txn.clone();
+                let target_id_clone = target_id.clone();
+                
+                wasm_bindgen_futures::spawn_local(async move {
+                    loop {
+                        // Check for immediate results first (non-blocking)
+                        if let Ok((multi_addr_opt, query_id)) = dht_query_result_channel.borrow_mut().try_recv() {
+                            if let Some(multi_addr) = multi_addr_opt {
+                                let peer_id = multi_addr.clone()
+                                    .pop()
+                                    .and_then(|p| {
+                                        if let Protocol::P2p(peer_id) = p {
+                                            Some(peer_id)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .ok_or_else(|| anyhow!("relay_multi_addr missing PeerId"))
+                                    .expect("Failed to extract peer ID");
 
-                // let acc_ids = self.airtable_client.list_all_peers().await?;
+                                let (txn, target_id) = dht_query_context
+                                    .borrow_mut()
+                                    .remove(&query_id)
+                                    .expect("dht query context not found");
+                                
+                                if let Err(e) = db_worker
+                                    .record_saved_user_peers(target_id, multi_addr.to_string())
+                                    .await {
+                                    error!("Failed to record user peers: {:?}", e);
+                                }
 
-                // let target_id_addr = txn.borrow().receiver_address.clone();
+                                if let Err(e) = p2p_network_service
+                                    .borrow_mut()
+                                    .dial_to_peer_id(multi_addr.clone(), &peer_id)
+                                    .await {
+                                    error!("Failed to dial peer: {:?}", e);
+                                }
+                                
+                                if let Err(e) = p2p_network_service
+                                    .borrow_mut()
+                                    .wasm_send_request(txn.clone(), peer_id, multi_addr)
+                                    .await {
+                                    error!("Failed to send request: {:?}", e);
+                                }
+                                
+                                // Success! Set result flag
+                                *result_flag.borrow_mut() = Some(());
+                                break;
+                            } else {
+                                // Handle failed DHT lookup
+                                let (txn, _target_id) = dht_query_context
+                                    .borrow_mut()
+                                    .remove(&query_id)
+                                    .expect("dht query context not found");
+                                
+                                let mut txn = txn.borrow_mut().clone();
+                                txn.recv_not_registered();
+                                
+                                if let Err(e) = rpc_sender_channel
+                                    .borrow_mut()
+                                    .send(txn.clone())
+                                    .await {
+                                    error!("Failed to send RPC: {:?}", e);
+                                }
 
-                // if !acc_ids.is_empty() {
-                //     let result_peer = acc_ids.into_iter().find_map(|discovery| {
-                //         match discovery
-                //             .clone()
-                //             .account_ids
-                //             .into_iter()
-                //             .find(|addr| addr == &target_id_addr)
-                //         {
-                //             Some(_) => {
-                //                 let peer_record: PeerRecord = discovery.clone().into();
-                //                 Some((discovery.peer_id, discovery.multi_addr, peer_record))
-                //             }
-                //             None => None,
-                //         }
-                //     });
+                                lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
+                                error!(target: "MainServiceWorker","target peer not found in remote dht 😔");
+                                
+                                // Failed lookup, set result flag
+                                *result_flag.borrow_mut() = Some(());
+                                break;
+                            }
+                        }
+                        
+                        // Small delay to prevent busy-waiting and allow other tasks to run
+                        // Using gloo_timers for better WASM compatibility
+                        TimeoutFuture::new(100).await;
+                    }
+                });
+                
+                // Simple loop checking the timeout flag
+                loop {
+                    if let Some(_) = timeout_flag.borrow().as_ref() {
+                        // Either success, failure, or timeout occurred
+                        break;
+                    }
+                    
+                    // Small delay to prevent busy-waiting
+                    TimeoutFuture::new(100).await;
+                }
+                
+                // Handle timeout if no result was found
+                if let Some(_) = timeout_flag.borrow().as_ref() {
+                    // Check if we need to handle timeout (this is a simplified check)
+                    let mut txn = txn.borrow_mut().clone();
+                    txn.recv_not_registered();
+                    self.rpc_sender_channel
+                        .borrow_mut()
+                        .send(txn.clone())
+                        .await?;
 
-                //     if result_peer.is_some() {
-                //         // dial the target
-                //         info!(target:"MainServiceWorker","target peer found in remote db: {result_peer:?} \n");
-                //         let multi_addr = result_peer
-                //             .clone()
-                //             .expect("failed to get multi addr")
-                //             .1
-                //             .unwrap()
-                //             .parse::<Multiaddr>()
-                //             .map_err(|err| {
-                //                 anyhow!("failed to parse multi addr, caused by: {err}")
-                //             })?;
-                //         let peer_id = PeerId::from_str(
-                //             &*result_peer
-                //                 .clone()
-                //                 .expect("failed to parse peer id")
-                //                 .0
-                //                 .expect("failed to parse peerId"),
-                //         )?;
-
-                //         // save the target peer id to local db
-                //         let peer_record = result_peer.clone().unwrap().2;
-                //         info!(target: "MainServiceWorker","recording target peer id to local db");
-
-                //         // ========================================================================= //
-                //         self.db_worker.record_saved_user_peers(peer_record).await?;
-
-                //         // ========================================================================= //
-                //         self.p2p_network_service
-                //             .borrow_mut()
-                //             .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                //             .await?;
-                //         self.p2p_network_service
-                //             .borrow_mut()
-                //             .wasm_send_request(txn.clone(), peer_id, multi_addr)
-                //             .await?;
-                //     } else {
-                //         // return tx state as error on sender rpc
-                //         let mut txn = txn.borrow_mut().clone();
-                //         txn.recv_not_registered();
-                //         self.rpc_sender_channel
-                //             .borrow_mut()
-                //             .send(txn.clone())
-                //             .await?;
-                //         self.lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
-
-                //         error!(target: "MainServiceWorker","target peer not found in remote db,tell the user is missing out on safety transaction");
-                //     }
-                // }
+                    self.lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
+                    error!(target: "MainServiceWorker","DHT query timeout after 60 seconds for target: {}", target_id);
+                }
             }
         }
         Ok(())
@@ -456,8 +519,11 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
-    pub async fn handle_public_interface_tx_updates(&self) -> Result<(), anyhow::Error> {
-        while let Some(txn) = self.user_rpc_update_recv_channel.borrow_mut().recv().await {
+    pub async fn handle_public_interface_tx_updates(&mut self) -> Result<(), anyhow::Error> {
+        while let Some(txn) = {
+            let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
+            receiver.recv().await
+        } {
             // handle the incoming transaction per its state
             let status = txn.status.clone();
             match status {
@@ -495,56 +561,85 @@ impl WasmMainServiceWorker {
     }
 
     pub async fn run(
-        db_url: Option<String>,
-        p2p_port: u16,
-        dns: String,
+        relay_node_multi_addr: String,
+        account: String,
+        network: String,
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
-        info!(
-            "\n🔥 =========== Vane Web3 =========== 🔥\n\
-             A safety layer for web3 transactions, allows you to feel secure when sending and receiving \n\
-             tokens without the fear of selecting the wrong address or network. \n\
-             It provides a safety net, giving you room to make mistakes without losing all your funds.\n"
-        );
+        info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let main_worker = Self::new(db_url, p2p_port, dns).await?;
+        let mut main_worker = Self::new(relay_node_multi_addr, account, network).await?;
 
         // ====================================================================================== //
 
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
-
+        
         // ====================================================================================== //
 
+        // Clone necessary parts to avoid borrow conflicts while keeping concurrent execution
+        let user_rpc_update_recv_channel = main_worker.user_rpc_update_recv_channel.clone();
+        let rpc_sender_channel = main_worker.rpc_sender_channel.clone();
+        let dht_query_result_channel = main_worker.dht_query_result_channel.clone();
+        let dht_query_context = main_worker.dht_query_context.clone();
+        let lru_cache = main_worker.lru_cache.clone();
+        let db_worker = main_worker.db_worker.clone();
+        let wasm_tx_processing_worker = main_worker.wasm_tx_processing_worker.clone();
+        let p2p_worker = main_worker.p2p_worker.clone();
+        let p2p_network_service = main_worker.p2p_network_service.clone();
+        let public_interface_worker = main_worker.public_interface_worker.clone();
+
+        let tx_update_future = async move {
+            // Create a temporary worker with cloned data for tx updates
+            let mut temp_worker = WasmMainServiceWorker {
+                user_rpc_update_recv_channel,
+                rpc_sender_channel,
+                dht_query_result_channel,
+                dht_query_context,
+                lru_cache,
+                db_worker,
+                wasm_tx_processing_worker,
+                p2p_worker,
+                p2p_network_service,
+                public_interface_worker,
+            };
+            temp_worker.handle_public_interface_tx_updates().await
+        };
+
+        // Extract public_interface_worker before moving main_worker into futures
+        let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
+
+        let swarm_handler_future = async move {
+            main_worker.start_swarm_handler()
+        };
+
         futures::select! {
-            tx_watch_result = main_worker.handle_public_interface_tx_updates().fuse() => {
+            tx_watch_result = tx_update_future.fuse() => {
                 if let Err(err) = tx_watch_result {
                     error!("tx watch handle error: {err}");
                 }
             },
-            swarm_result = async {
-                main_worker.start_swarm_handler()
-            }.fuse() => {
+            swarm_result = swarm_handler_future.fuse() => {
                 if let Err(err) = swarm_result {
                     error!("swarm handle error: {err}");
                 }
             }
         }
 
-        let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
         Ok(public_interface_worker)
     }
 }
 
 #[wasm_bindgen]
 pub async fn start_vane_web3(
-    db_url: Option<String>,
-    p2p_port: u16,
-    dns: String,
+    relay_node_multi_addr: String,
+    account: String,
+    network: String,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
-    let worker = WasmMainServiceWorker::run(db_url, p2p_port, dns)
+    let worker = WasmMainServiceWorker::run(relay_node_multi_addr, account, network)
         .await
         .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
     let public_interface_worker_js = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(worker)));
     Ok(public_interface_worker_js)
 }
+

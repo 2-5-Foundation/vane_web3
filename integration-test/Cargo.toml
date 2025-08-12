@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-native-node                               = { workspace = true, features = ["e2e"]}
+#native-node                               = { workspace = true, features = ["e2e"]}
 anyhow                                      = { workspace = true}
 tokio                                       = { workspace = true}
-db                                          = { workspace = true}
+#db                                          = { workspace = true}
 libp2p                                      = { workspace = true}
 subxt-signer                                = { version = "0.37.0", features = ["sr25519","ecdsa"], default-features = false}
 simplelog                                   = "^0.12.0"

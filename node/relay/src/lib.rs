@@ -2,35 +2,35 @@ mod p2p;
 mod rpc;
 mod telemetry;
 
-use std::sync::Arc;
-use jsonrpsee::server::ServerBuilder;
-pub use std::net::SocketAddr;
-use log::{info, error};
-use tokio::sync::Mutex;
 use crate::p2p::RelayP2pWorker;
-use crate::rpc::RelayServerRpcWorker;
 use crate::rpc::RelayServerRpcServer;
-use libp2p::futures::FutureExt;
-use crate::telemetry::{RelayServerMetrics, TelemetryWorker, MetricsCounters};
+use crate::rpc::RelayServerRpcWorker;
+use crate::telemetry::{MetricsCounters, RelayServerMetrics, TelemetryWorker};
 use anyhow::anyhow;
+use jsonrpsee::server::ServerBuilder;
+use libp2p::futures::FutureExt;
+use log::{error, info};
+pub use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct MainRelayServerService {}
 
 impl MainRelayServerService {
     pub async fn run(dns: String, port: u16) -> Result<Self, anyhow::Error> {
         info!(" 🦀...vane relay server starting...🚀 ");
-        
-        let (relay_metrics_sender_channel, relay_metrics_recv_channel) = 
+
+        let (relay_metrics_sender_channel, relay_metrics_recv_channel) =
             tokio::sync::mpsc::channel::<RelayServerMetrics>(10);
 
         let metrics_counters = Arc::new(MetricsCounters::default());
-        
-        let p2p_worker = RelayP2pWorker::new(dns, port, metrics_counters.clone())?;  
+
+        let p2p_worker = RelayP2pWorker::new(dns, port, metrics_counters.clone())?;
         let p2p_worker = Arc::new(Mutex::new(p2p_worker));
-        
-        let mut telemetry_worker = TelemetryWorker::new(metrics_counters); 
+
+        let mut telemetry_worker = TelemetryWorker::new(metrics_counters);
         telemetry_worker.set_swarm(p2p_worker.lock().await.get_swarm());
-        
+
         let rpc_worker = RelayServerRpcWorker::new(relay_metrics_recv_channel);
 
         let tokio_handle = tokio::runtime::Handle::current();
@@ -69,8 +69,10 @@ impl MainRelayServerService {
         Ok(Self {})
     }
 
-    pub async fn start_rpc_server(rpc_worker: RelayServerRpcWorker) -> Result<SocketAddr, anyhow::Error> {
-        let server_builder = ServerBuilder::new();        
+    pub async fn start_rpc_server(
+        rpc_worker: RelayServerRpcWorker,
+    ) -> Result<SocketAddr, anyhow::Error> {
+        let server_builder = ServerBuilder::new();
         let url = "[::1]:9944".to_string();
 
         let server = server_builder.build(url).await?;

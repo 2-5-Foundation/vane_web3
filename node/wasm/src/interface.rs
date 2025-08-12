@@ -20,8 +20,7 @@ use log::{info, trace};
 use crate::cryptography::verify_public_bytes;
 use alloc::string::ToString;
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, Discovery, PeerRecord, Token, TxStateMachine, TxStatus,
-    UserAccount,
+    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount,
 };
 use sp_runtime::traits::Zero;
 
@@ -87,37 +86,13 @@ impl PublicInterfaceWorker {
 }
 
 impl PublicInterfaceWorker {
-    pub async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-    ) -> Result<(), JsValue> {
-        // TODO verify the account id as it belongs to the registerer
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
         let network = network.as_str().into();
-        let user_account = UserAccount {
-            user_name: name,
-            account_id: account_id.clone(),
-            network,
-        };
 
         self.db_worker
-            .set_user_account(user_account)
+            .update_user_account(account_id, network)
             .await
             .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-
-        // NOTE: the peer-record is already registered, the following is only updating account details of the record
-        // update: account address related to peer id
-        // ========================================================================================//
-
-        // fetch the record
-        let record = self
-            .db_worker
-            .get_user_peer_id(None, Some(self.peer_id.to_string()))
-            .await
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-
-        // TODO:
 
         Ok(())
     }
@@ -287,17 +262,9 @@ impl PublicInterfaceWorkerJs {
 
 #[wasm_bindgen]
 impl PublicInterfaceWorkerJs {
-    #[wasm_bindgen(js_name = "registerVaneWeb3")]
-    pub async fn register_vane_web3(
-        &self,
-        name: String,
-        account_id: String,
-        network: String,
-    ) -> Result<(), JsValue> {
-        self.inner
-            .borrow()
-            .register_vane_web3(name, account_id, network)
-            .await
+    #[wasm_bindgen(js_name = "addAccount")]
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
+        self.inner.borrow().add_account(account_id, network).await
     }
 
     #[wasm_bindgen(js_name = "initiateTransaction")]

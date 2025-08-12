@@ -1,14 +1,13 @@
-
-use jsonrpsee::{
-    PendingSubscriptionSink, SubscriptionMessage,
-    core::{RpcResult, SubscriptionResult, async_trait},
-    proc_macros::rpc,
-};
-use tokio::sync::mpsc::Receiver;
 use crate::telemetry::RelayServerMetrics;
-use log::trace;
 use anyhow::anyhow;
+use jsonrpsee::{
+    core::{async_trait, RpcResult, SubscriptionResult},
+    proc_macros::rpc,
+    PendingSubscriptionSink, SubscriptionMessage,
+};
+use log::trace;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 
 #[rpc(server, client)]
@@ -16,7 +15,6 @@ pub trait RelayServerRpc {
     /// watch relay network status
     #[subscription(name ="subscribeRelayNetworkStatus",item = RelayServerMetrics )]
     async fn watch_relay_network_status(&self) -> SubscriptionResult;
-
 }
 
 pub struct RelayServerRpcWorker {
@@ -25,15 +23,18 @@ pub struct RelayServerRpcWorker {
 
 impl RelayServerRpcWorker {
     pub fn new(relay_server_metrics_channel: Receiver<RelayServerMetrics>) -> Self {
-        Self { 
-            relay_server_metrics: Arc::new(Mutex::new(relay_server_metrics_channel))
+        Self {
+            relay_server_metrics: Arc::new(Mutex::new(relay_server_metrics_channel)),
         }
     }
 }
 
 #[async_trait]
 impl RelayServerRpcServer for RelayServerRpcWorker {
-    async fn watch_relay_network_status(&self, subscription_sink: PendingSubscriptionSink) -> SubscriptionResult {
+    async fn watch_relay_network_status(
+        &self,
+        subscription_sink: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
         let sink = subscription_sink
             .accept()
             .await

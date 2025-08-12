@@ -444,18 +444,8 @@ impl std::fmt::Display for ChainSupported {
 /// User account
 #[derive(Clone, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub struct UserAccount {
-    pub user_name: String,
-    pub account_id: String,
-    pub network: ChainSupported,
-}
-
-/// Vane peer record
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
-pub struct PeerRecord {
-    pub peer_id: Option<String>, // IDEALLY this should be just account address and it will be converted to libp2p::PeerId,
-    pub accounts: Vec<AccountInfo>,
-    pub multi_addr: Option<String>,
-    pub keypair: Option<Vec<u8>>, // encrypted
+    pub multi_addr: String,
+    pub accounts: Vec<(String, ChainSupported)>,
 }
 
 /// p2p config
@@ -483,37 +473,8 @@ pub const BEP20: [u8; 20] = [
     168, 67, 211, 99, 66, 69, 233, 17, 113, 99, 2, 94, 99, 58, 184, 246, 198, 102, 225, 111,
 ];
 
-// airtable db or peer discovery
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Discovery {
-    pub id: String,
-    pub peer_id: Option<String>,
-    pub multi_addr: Option<String>,
-    pub account_ids: Vec<AccountInfo>,
-    pub rpc: Option<String>,
-}
-
-impl From<RedisAccountProfile> for PeerRecord {
-    fn from(value: RedisAccountProfile) -> Self {
-        Self {
-            peer_id: Some(value.peer_id),
-            multi_addr: Some(value.multi_addr),
-            keypair: None,
-            accounts: value.accounts,
-        }
-    }
-}
 //  --------------------------- REMOTE DB ------------------------------------------------------------ //
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct RedisAccountProfile {
-    #[serde(rename = "peerId")]
-    pub peer_id: String,
-    #[serde(rename = "multiAddr")]
-    pub multi_addr: String,
-    pub accounts: Vec<AccountInfo>,
-    pub rpc: String,
-}
 // ----------------------- DB related ---------------------------------------------------------- //
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Ports {
@@ -532,14 +493,16 @@ pub trait DbWorkerInterface: Sized {
     async fn initialize_db_client(file_url: &str) -> Result<Self, anyhow::Error>;
 
     async fn set_user_account(&self, user: UserAccount) -> Result<(), anyhow::Error>;
+    async fn update_user_account(
+        &self,
+        account_id: String,
+        network: ChainSupported,
+    ) -> Result<(), anyhow::Error>;
 
     async fn get_nonce(&self) -> Result<u32, anyhow::Error>;
 
     // get all related network id accounts
-    async fn get_user_accounts(
-        &self,
-        network: ChainSupported,
-    ) -> Result<Vec<UserAccount>, anyhow::Error>;
+    async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error>;
 
     async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
 
@@ -549,33 +512,27 @@ pub trait DbWorkerInterface: Sized {
     async fn get_total_value_success(&self) -> Result<u64, anyhow::Error>;
     async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error>;
 
-    async fn record_user_peer_id(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error>;
-
-    async fn update_user_peer_id_account_ids(
-        &self,
-        account: AccountInfo,
-    ) -> Result<(), anyhow::Error>;
+    // record the user of this app
 
     async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
 
-    // get peer by account id by either account id or peerId
-    async fn get_user_peer_id(
-        &self,
-        account_id: Option<String>,
-        peer_id: Option<String>,
-    ) -> Result<PeerRecord, anyhow::Error>;
-
     async fn increment_nonce(&self) -> Result<(), anyhow::Error>;
-    // set port ids {
-    async fn set_ports(&self, rpc: u16, p2p: u16) -> Result<(), anyhow::Error>;
-    // get port ids
-    async fn get_ports(&self) -> Result<Option<Ports>, anyhow::Error>;
 
     // saved peers interacted with
-    async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error>;
+    async fn record_saved_user_peers(
+        &self,
+        acc_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error>;
 
     // get saved peers
-    async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, anyhow::Error>;
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error>;
+
+    // get all saved peers
+    async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), anyhow::Error>;
+
+    // delete a specific saved peer
+    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error>;
 }
 
 /// Node error reporting structure

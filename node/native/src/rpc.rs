@@ -36,7 +36,6 @@ mod std_imports {
     pub use tokio::sync::{Mutex, MutexGuard};
 }
 
-
 #[rpc(server, client)]
 pub trait TransactionRpc {
     /// add crypto address account

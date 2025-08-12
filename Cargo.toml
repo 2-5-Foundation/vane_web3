@@ -1,5 +1,9 @@
 [workspace]
-members =[ "app", "db", "integration-test", "primitives","db/prisma", "db-wasm", "node/relay", "node/native", "node/wasm"]
+members =[ "app", "integration-test", "primitives","db/prisma", "db-wasm", "node/relay", "node/wasm"]
+exclude = [
+    "db",
+    "node/native"
+]
 resolver = "2"
 
 # Members for wasm builds
@@ -55,10 +59,10 @@ simple_logger                           = "5.0.0"
 sp-core                                 = { version = "34.0.0", default-features = false}
 # ========================================= Local Dependencies ==========================
 
-db                                      = { path = "db" }
+#db                                      = { path = "db" }
 db-wasm                                 = { path = "db-wasm"}
 integration-test                        = { path = "integration-test" }
-native-node                             = { path = "node/native" }
+#native-node                             = { path = "node/native" }
 wasm-node                               = { path = "node/wasm" }
 relay-node                              = { path = "node/relay" }
 primitives                              = { path = "primitives" }

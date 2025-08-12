@@ -1,15 +1,15 @@
-use libp2p_kad::store::MemoryStore;
-use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::{Duration, interval};
-use log::{error, info};
+use crate::p2p::RelayServerBehaviour;
 use anyhow::anyhow;
 use libp2p::swarm::NetworkInfo;
 use libp2p::swarm::Swarm;
-use crate::p2p::RelayServerBehaviour;
+use libp2p_kad::store::MemoryStore;
+use log::{error, info};
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::{mpsc, Mutex};
+use tokio::time::{interval, Duration};
 
 /// Simplified metrics for relay P2P server monitoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,8 +56,6 @@ pub struct SystemMetrics {
     /// CPU usage (%)
     pub cpu_percent: f64,
 }
-
-
 
 impl RelayServerMetrics {
     pub fn new() -> Self {
@@ -111,9 +109,9 @@ pub struct MetricsCounters {
     pub total_connections: AtomicUsize,
     pub failed_connections: AtomicUsize,
     pub successful_connections: AtomicUsize,
-    
+
     // DHT metrics
-    
+
     // Relay metrics
     pub active_circuits: AtomicUsize,
     pub total_circuits_created: AtomicUsize,
@@ -123,7 +121,7 @@ pub struct MetricsCounters {
     pub total_reservations_expired: AtomicUsize,
     pub circuit_errors: AtomicUsize,
     pub reservation_denials: AtomicUsize,
-    
+
     // Request/Response metrics
     pub total_requests_received: AtomicUsize,
     pub failed_responses: AtomicUsize,
@@ -177,16 +175,16 @@ impl TelemetryWorker {
     /// Collect current metrics from all counters
     pub async fn collect_metrics(&self) -> RelayServerMetrics {
         let network_info = self.get_network_info().await.ok();
-        
+
         let mut metrics = RelayServerMetrics::new();
-        
+
         // Collect network metrics
         let counters = &self.metrics_counters;
         let active_connections = counters.active_connections.load(Ordering::Relaxed);
         let successful_connections = counters.successful_connections.load(Ordering::Relaxed);
         let failed_connections = counters.failed_connections.load(Ordering::Relaxed);
         let total_connections = successful_connections + failed_connections;
-        
+
         metrics.network = NetworkMetrics {
             peers: network_info.map(|info| info.num_peers()).unwrap_or(0),
             connections: active_connections,
@@ -201,7 +199,7 @@ impl TelemetryWorker {
         let total_circuits_created = counters.total_circuits_created.load(Ordering::Relaxed);
         let total_circuits_closed = counters.total_circuits_closed.load(Ordering::Relaxed);
         let total_circuits = total_circuits_created + total_circuits_closed;
-        
+
         metrics.relay = RelayMetrics {
             active_circuits: counters.active_circuits.load(Ordering::Relaxed),
             circuit_success_rate: if total_circuits > 0 {
@@ -215,7 +213,7 @@ impl TelemetryWorker {
         // Collect system metrics
         metrics.system = SystemMetrics {
             uptime: self.start_time.elapsed().as_secs(),
-            memory_mb: 0, // TODO: Implement memory tracking
+            memory_mb: 0,     // TODO: Implement memory tracking
             cpu_percent: 0.0, // TODO: Implement CPU tracking
         };
 
@@ -228,8 +226,10 @@ impl TelemetryWorker {
             // Use timeout to avoid deadlocks
             let swarm_guard = match tokio::time::timeout(
                 Duration::from_millis(100), // 100ms timeout
-                swarm.lock()
-            ).await {
+                swarm.lock(),
+            )
+            .await
+            {
                 Ok(guard) => guard,
                 Err(_) => {
                     return Err(anyhow!("Failed to acquire swarm lock within timeout"));
@@ -248,14 +248,14 @@ impl TelemetryWorker {
         metrics_tx: mpsc::Sender<RelayServerMetrics>,
     ) {
         let mut interval = interval(Duration::from_secs(30)); // 30 second interval
-        
+
         info!("Starting telemetry metrics collection...");
-        
+
         loop {
             interval.tick().await;
-            
+
             let metrics = self.collect_metrics().await;
-            
+
             if let Err(e) = metrics_tx.send(metrics).await {
                 error!(target: "telemetry", "Failed to send metrics: {:?}", e);
                 break;

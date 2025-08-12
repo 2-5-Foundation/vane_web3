@@ -393,7 +393,7 @@ impl DbWorkerInterface for LocalDbWorker {
     }
 
     // get saved peers
-    async fn get_saved_user_peers(&self, account_id: String) -> Result<PeerRecord, anyhow::Error> {
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error> {
         let peer_data = self
             .db
             .saved_peers()
@@ -403,7 +403,173 @@ impl DbWorkerInterface for LocalDbWorker {
             .exec()
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
-        Ok(peer_data.into())
+
+        Ok(peer_data.node_id)
+    }
+
+    // get all saved peers
+    async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), anyhow::Error> {
+        let peers = self.db.saved_peers().find_many(vec![]).exec().await?;
+
+        if peers.is_empty() {
+            return Err(anyhow!("No saved peers found"));
+        }
+
+        // Verify all peers have the same node_id (peer_id)
+        let first_peer_id = &peers[0].node_id;
+        for peer in &peers {
+            if peer.node_id != *first_peer_id {
+                return Err(anyhow!(
+                    "Inconsistent peer ID mapping: expected {}, got {}",
+                    first_peer_id,
+                    peer.node_id
+                ));
+            }
+        }
+
+        // Collect all account IDs from all peers
+        let mut all_account_ids = Vec::new();
+        for peer_data in peers {
+            let account_infos = self
+                .db
+                .saved_peer_account_info()
+                .find_many(vec![saved_peer_account_info::WhereParam::SavedPeerId(
+                    StringFilter::Equals(peer_data.id),
+                )])
+                .exec()
+                .await?;
+
+            for acc in account_infos {
+                all_account_ids.push(acc.account_id);
+            }
+        }
+
+        Ok((all_account_ids, first_peer_id.clone()))
+    }
+
+    // delete a specific saved peer
+    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
+        // First find the peer to get its ID
+        let peer = self
+            .db
+            .saved_peers()
+            .find_first(vec![saved_peers::WhereParam::NodeId(StringFilter::Equals(
+                peer_id.to_string(),
+            ))])
+            .exec()
+            .await?
+            .ok_or_else(|| anyhow!("Peer not found with peer_id: {}", peer_id))?;
+
+        // Delete the peer (this should cascade to related account info records)
+        self.db
+            .saved_peers()
+            .delete(saved_peers::UniqueWhereParam::IdEquals(peer.id))
+            .exec()
+            .await?;
+
+        Ok(())
+    }
+
+    // get a saved peer directly by peer_id
+    async fn get_saved_peer_by_id(&self, peer_id: &str) -> Result<Option<String>, anyhow::Error> {
+        let peer = self
+            .db
+            .saved_peers()
+            .find_first(vec![saved_peers::WhereParam::NodeId(StringFilter::Equals(
+                peer_id.to_string(),
+            ))])
+            .exec()
+            .await?;
+
+        Ok(peer.map(|p| p.node_id))
+    }
+
+    // update an existing saved peer
+    async fn update_saved_peer(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+        let client = &self.db;
+
+        client
+            ._transaction()
+            .run(|tx| async move {
+                // First, find the existing peer
+                let peer_id = peer_record
+                    .peer_id
+                    .ok_or_else(|| anyhow!("PeerRecord must have a peer_id"))?;
+
+                let existing_peer = tx
+                    .saved_peers()
+                    .find_unique(saved_peers::UniqueWhereParam::NodeIdEquals(peer_id.clone()))
+                    .exec()
+                    .await?
+                    .ok_or_else(|| anyhow!("Peer not found for update"))?;
+
+                // Update the peer information
+                tx.saved_peers()
+                    .update(
+                        saved_peers::UniqueWhereParam::IdEquals(existing_peer.id),
+                        vec![saved_peers::multi_addr::set(
+                            peer_record.multi_addr.unwrap_or_default(),
+                        )],
+                    )
+                    .exec()
+                    .await?;
+
+                // Delete existing account info records
+                tx.saved_peer_account_info()
+                    .delete_many(vec![saved_peer_account_info::WhereParam::SavedPeerId(
+                        StringFilter::Equals(existing_peer.id),
+                    )])
+                    .exec()
+                    .await?;
+
+                // Create new account info records
+                for account_info in peer_record.accounts {
+                    tx.saved_peer_account_info()
+                        .create(
+                            account_info.account,
+                            account_info.network.to_string(),
+                            db::saved_peers::UniqueWhereParam::IdEquals(existing_peer.id.clone()),
+                            vec![],
+                        )
+                        .exec()
+                        .await?;
+                }
+
+                Ok(())
+            })
+            .await
+    }
+
+    // get all account IDs that are mapped to a specific peer ID
+    async fn get_account_ids_by_peer_id(
+        &self,
+        peer_id: &str,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        let peer = self
+            .db
+            .saved_peers()
+            .find_first(vec![saved_peers::WhereParam::NodeId(StringFilter::Equals(
+                peer_id.to_string(),
+            ))])
+            .exec()
+            .await?
+            .ok_or_else(|| anyhow!("Peer not found with peer_id: {}", peer_id))?;
+
+        let account_infos = self
+            .db
+            .saved_peer_account_info()
+            .find_many(vec![saved_peer_account_info::WhereParam::SavedPeerId(
+                StringFilter::Equals(peer.id),
+            )])
+            .exec()
+            .await?;
+
+        let account_ids: Vec<String> = account_infos
+            .into_iter()
+            .map(|acc| acc.account_id)
+            .collect();
+
+        Ok(account_ids)
     }
 }
 
