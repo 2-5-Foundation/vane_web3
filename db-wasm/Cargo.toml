@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-redb                        = "2.3.0"
+redb                        = "2.6.2"
 web-sys = { version = "0.3.76", features = [
     "StorageManager",
     "FileSystemDirectoryHandle",
