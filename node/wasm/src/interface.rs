@@ -21,7 +21,7 @@ use crate::cryptography::verify_public_bytes;
 use crate::p2p::WasmP2pWorker;
 use alloc::string::ToString;
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount,
+    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
 };
 use sp_runtime::traits::Zero;
 
@@ -46,7 +46,7 @@ mod rpc_wasm_imports {
     pub use sp_runtime::format;
     pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
     pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::JsValue;
+    pub use wasm_bindgen::{JsValue, JsError};
     pub use wasm_bindgen::prelude::wasm_bindgen;
 }
 
@@ -91,15 +91,15 @@ impl PublicInterfaceWorker {
 }
 
 impl PublicInterfaceWorker {
-    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsError> {
         let network = network.as_str().into();
 
         let user_account = self.db_worker
             .update_user_account(account_id.clone(), network)
             .await
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
-       self.p2p_worker.add_account_to_dht(account_id,user_account.multi_addr).await.map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+       self.p2p_worker.add_account_to_dht(account_id,user_account.multi_addr).await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
         Ok(())
     }
@@ -112,7 +112,7 @@ impl PublicInterfaceWorker {
         token: String,
         network: String,
         code_word: String,
-    ) -> Result<(), JsValue> {
+    ) -> Result<(), JsError> {
         info!("initiated sending transaction");
         let token = token.as_str().into();
 
@@ -123,7 +123,7 @@ impl PublicInterfaceWorker {
         ) {
             if net_sender != net_recv {
                 Err(anyhow!("sender and receiver should be same network"))
-                    .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             }
 
             info!("successfully initially verified sender and receiver and related network bytes");
@@ -137,13 +137,13 @@ impl PublicInterfaceWorker {
                 .db_worker
                 .get_nonce()
                 .await
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?
                 + 1;
             // update the db on nonce
             self.db_worker
                 .increment_nonce()
                 .await
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
             let tx_state_machine = TxStateMachine {
                 sender_address: sender,
@@ -172,18 +172,18 @@ impl PublicInterfaceWorker {
                 .send(tx_state_machine)
                 .await
                 .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
             Err(anyhow!(
                 "sender and receiver should be correct accounts for the specified token"
             ))
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         }
         Ok(())
     }
 
-    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
@@ -191,7 +191,7 @@ impl PublicInterfaceWorker {
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -206,16 +206,16 @@ impl PublicInterfaceWorker {
                 .map_err(|_| {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         }
         Ok(())
     }
 
-    pub async fn watch_tx_updates(&self) -> Result<(), JsValue> {
+    pub async fn watch_tx_updates(&self) -> Result<(), JsError> {
         Ok(())
     }
 
-    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
+    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
         let tx_updates = self
             .lru_cache
             .borrow()
@@ -225,16 +225,16 @@ impl PublicInterfaceWorker {
         info!("lru: {tx_updates:?}");
 
         serde_wasm_bindgen::to_value(&tx_updates)
-            .map_err(|e| JsValue::from_str(&format!("Serialization error: {:?}", e)))
+            .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
 
-    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
+    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
@@ -247,10 +247,26 @@ impl PublicInterfaceWorker {
                 .send(tx)
                 .await
                 .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
-                .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
             Ok(())
         }
+    }
+
+    // user metrics
+    pub async fn get_user_metrics(&self) -> Result<JsValue, JsError> {
+        let user_account = self.db_worker.get_user_account().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let total_success_txns = self.db_worker.get_success_txs().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let total_failed_txns = self.db_worker.get_failed_txs().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let saved_target_peers = self.db_worker.get_all_saved_peers().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        
+        let user_metrics = UserMetrics {
+            user_account,
+            total_success_txns,
+            total_failed_txns,
+            saved_target_peers,
+        };
+        serde_wasm_bindgen::to_value(&user_metrics).map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
 }
 
@@ -270,8 +286,9 @@ impl PublicInterfaceWorkerJs {
 #[wasm_bindgen]
 impl PublicInterfaceWorkerJs {
     #[wasm_bindgen(js_name = "addAccount")]
-    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsValue> {
-        self.inner.borrow().add_account(account_id, network).await
+    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsError> {
+        self.inner.borrow().add_account(account_id, network).await?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "initiateTransaction")]
@@ -283,30 +300,41 @@ impl PublicInterfaceWorkerJs {
         token: String,
         network: String,
         code_word: String,
-    ) -> Result<(), JsValue> {
+    ) -> Result<(), JsError> {
         self.inner
             .borrow()
             .initiate_transaction(sender, receiver, amount, token, network, code_word)
-            .await
+            .await?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]
-    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
-        self.inner.borrow().sender_confirm(tx).await
+    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().sender_confirm(tx).await?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "watchTxUpdates")]
-    pub async fn watch_tx_updates(&self) -> Result<(), JsValue> {
-        self.inner.borrow().watch_tx_updates().await
+    pub async fn watch_tx_updates(&self) -> Result<(), JsError> {
+        self.inner.borrow().watch_tx_updates().await?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]
-    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsValue> {
-        self.inner.borrow().fetch_pending_tx_updates().await
+    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
+        let tx_updates = self.inner.borrow().fetch_pending_tx_updates().await?;
+        Ok(tx_updates)
     }
 
     #[wasm_bindgen(js_name = "receiverConfirm")]
-    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsValue> {
-        self.inner.borrow().receiver_confirm(tx).await
+    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().receiver_confirm(tx).await?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "getMetrics")]
+    pub async fn get_metrics(&self) -> Result<JsValue, JsError> {
+        let metrics = self.inner.borrow().get_user_metrics().await?;
+        Ok(metrics)
     }
 }

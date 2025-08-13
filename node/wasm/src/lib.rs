@@ -274,13 +274,8 @@ impl WasmMainServiceWorker {
         &mut self,
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
-        // dial to target peer id from tx receiver
         let target_id = txn.borrow().receiver_address.clone();
-
-        // check if the acc is present in local db
-        // First try local DB
         let target_peer_result = {
-            // Release DB lock immediately after query
             self.db_worker.get_saved_user_peers(target_id.clone()).await
         };
 
