@@ -1,0 +1,11 @@
+{
+  "name": "vane_host_functions",
+  "module": "main.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "^1.2.20"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
