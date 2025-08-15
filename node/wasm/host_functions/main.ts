@@ -1,2 +1,7 @@
-import * as cryptography from "./cryptography";
-import * as networking from "./networking";
+import { hostCryptography } from "./cryptography";
+import { hostNetworking } from "./networking";
+
+export const hostFunctions = {
+    hostNetworking: hostNetworking,
+    hostCryptography: hostCryptography,
+}
