@@ -1,9 +1,3 @@
-// receives tx from rpc
-// Tx State machine updating
-// Db updates
-// Send and receive tx update events from p2p swarm
-// send to designated chain network
-
 extern crate alloc;
 
 use alloc::sync::Arc;
@@ -19,19 +13,25 @@ use sp_core::{
 };
 use sp_runtime::traits::Verify;
 
-use tx_wasm_imports::*;
+use alloc::string::ToString;
+use alloc::collections::BTreeMap;
+use alloc::rc::Rc;
+use alloc::vec::Vec;
+use alloy::primitives::{Address, B256, Signature as EcdsaSignature, SignatureError};
+use core::cell::RefCell;
+use log::info;
+use web3::Web3;
+use web3::transports;
+use wasm_bindgen::prelude::*;
+use serde_wasm_bindgen::{from_value, to_value};
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
+    async fn submitTx(tx: JsValue) -> JsValue;
 
-mod tx_wasm_imports {
-    pub use crate::alloc::string::ToString;
-    pub use alloc::collections::BTreeMap;
-    pub use alloc::rc::Rc;
-    pub use alloc::vec::Vec;
-    pub use alloy::primitives::{Address, B256, Signature as EcdsaSignature, SignatureError};
-    pub use core::cell::RefCell;
-    pub use log::info;
-    pub use web3::Web3;
-    pub use web3::transports;
-    //pub use alloy::providers::{ ProviderBuilder, ReqwestProvider};
+    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
+    async fn createTx(tx: JsValue) -> JsValue;
+
 }
 
 #[derive(Clone)]
@@ -164,12 +164,21 @@ impl WasmTxProcessingWorker {
     }
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
-        // TODO
-        Ok([0u8; 32])
+        let tx_hash = unsafe { 
+            let tx_value = to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+            let res:JsValue = submitTx(tx_value).await;
+            from_value::<[u8; 32]>(res).map_err(|e| anyhow!("failed to convert tx hash to bytes"))?
+        };
+        Ok(tx_hash)
     }
 
     pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
-        // TODO
+        let unsigned_tx_call = unsafe { 
+            let tx_value = to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+            let res:JsValue = createTx(tx_value).await;
+            from_value::<[u8; 32]>(res).map_err(|e| anyhow!("failed to convert unsigned tx call to bytes"))?
+        };
+        tx.call_payload = Some(unsigned_tx_call);
         Ok(())
     }
 }
