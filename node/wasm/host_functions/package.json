@@ -7,5 +7,10 @@
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.4.4",
+    "@solana/web3.js": "^1.98.4",
+    "viem": "^2.33.3"
   }
 }
