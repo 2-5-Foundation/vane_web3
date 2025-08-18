@@ -4,26 +4,26 @@ use alloc::sync::Arc;
 use anyhow::anyhow;
 use core::str::FromStr;
 use log::error;
-use primitives::data_structure::{ChainSupported, ETH_SIG_MSG_PREFIX, TxStateMachine};
-use sp_core::{ByteArray, H256};
+use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256,
 };
+use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
 
-use alloc::string::ToString;
 use alloc::collections::BTreeMap;
 use alloc::rc::Rc;
+use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloy::primitives::{Address, B256, Signature as EcdsaSignature, SignatureError};
+use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
 use core::cell::RefCell;
 use log::info;
-use web3::Web3;
-use web3::transports;
-use wasm_bindgen::prelude::*;
 use serde_wasm_bindgen::{from_value, to_value};
+use wasm_bindgen::prelude::*;
+use web3::transports;
+use web3::Web3;
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
@@ -164,19 +164,23 @@ impl WasmTxProcessingWorker {
     }
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
-        let tx_hash = unsafe { 
-            let tx_value = to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
-            let res:JsValue = submitTx(tx_value).await;
-            from_value::<[u8; 32]>(res).map_err(|e| anyhow!("failed to convert tx hash to bytes"))?
+        let tx_hash = unsafe {
+            let tx_value =
+                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+            let res: JsValue = submitTx(tx_value).await;
+            from_value::<[u8; 32]>(res)
+                .map_err(|e| anyhow!("failed to convert tx hash to bytes"))?
         };
         Ok(tx_hash)
     }
 
     pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
-        let unsigned_tx_call = unsafe { 
-            let tx_value = to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
-            let res:JsValue = createTx(tx_value).await;
-            from_value::<[u8; 32]>(res).map_err(|e| anyhow!("failed to convert unsigned tx call to bytes"))?
+        let unsigned_tx_call = unsafe {
+            let tx_value =
+                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+            let res: JsValue = createTx(tx_value).await;
+            from_value::<[u8; 32]>(res)
+                .map_err(|e| anyhow!("failed to convert unsigned tx call to bytes"))?
         };
         tx.call_payload = Some(unsigned_tx_call);
         Ok(())

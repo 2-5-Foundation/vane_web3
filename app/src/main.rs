@@ -40,25 +40,10 @@ enum Commands {
         /// P2P port for network communication
         #[arg(short, long, default_value = "30333")]
         port: u16,
-    },
-    /// Run a WASM node for browser and lightweight environments
-    WasmNode {
-        /// Database URL path
-        #[arg(short, long)]
-        db_url: Option<String>,
-        /// Relay node multi-address for P2P connection
-        #[arg(short, long)]
-        relay_node_multi_addr: String,
-        /// Account identifier
-        #[arg(short, long)]
-        account: String,
-        /// Network identifier
-        #[arg(short, long)]
-        network: String,
+        #[arg(short, long, default_value = "true")]
+        live: bool,
     },
 }
-
-
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -66,16 +51,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
 
     match args.command {
-        Commands::RelayNode { dns, port } => {
-            relay_node::MainRelayServerService::run(dns, port).await?;
-        }
-        Commands::WasmNode {
-            db_url,
-            relay_node_multi_addr,
-            account,
-            network,
-        } => {
-            wasm_node::WasmMainServiceWorker::run(relay_node_multi_addr, account, network).await?;
+        Commands::RelayNode { dns, port, live } => {
+            relay_node::MainRelayServerService::run(dns, port, live).await?;
         }
     }
 

@@ -42,12 +42,12 @@ mod rpc_wasm_imports {
     pub use reqwasm::http::{Request, RequestMode};
     pub use serde_wasm_bindgen;
     pub use sp_core::blake2_256;
-    pub use sp_runtime::Vec;
     pub use sp_runtime::format;
+    pub use sp_runtime::Vec;
     pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
     pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::{JsValue, JsError};
     pub use wasm_bindgen::prelude::wasm_bindgen;
+    pub use wasm_bindgen::{JsError, JsValue};
 }
 
 // ----------------------------------- WASM -------------------------------- //
@@ -94,12 +94,16 @@ impl PublicInterfaceWorker {
     pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsError> {
         let network = network.as_str().into();
 
-        let user_account = self.db_worker
+        let user_account = self
+            .db_worker
             .update_user_account(account_id.clone(), network)
             .await
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
-       self.p2p_worker.add_account_to_dht(account_id,user_account.multi_addr).await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        self.p2p_worker
+            .add_account_to_dht(account_id, user_account.multi_addr)
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
         Ok(())
     }
@@ -255,18 +259,35 @@ impl PublicInterfaceWorker {
 
     // user metrics
     pub async fn get_user_metrics(&self) -> Result<JsValue, JsError> {
-        let user_account = self.db_worker.get_user_account().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let total_success_txns = self.db_worker.get_success_txs().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let total_failed_txns = self.db_worker.get_failed_txs().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let saved_target_peers = self.db_worker.get_all_saved_peers().await.map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        
+        let user_account = self
+            .db_worker
+            .get_user_account()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let total_success_txns = self
+            .db_worker
+            .get_success_txs()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let total_failed_txns = self
+            .db_worker
+            .get_failed_txs()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        let saved_target_peers = self
+            .db_worker
+            .get_all_saved_peers()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+
         let user_metrics = UserMetrics {
             user_account,
             total_success_txns,
             total_failed_txns,
             saved_target_peers,
         };
-        serde_wasm_bindgen::to_value(&user_metrics).map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
+        serde_wasm_bindgen::to_value(&user_metrics)
+            .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
 }
 

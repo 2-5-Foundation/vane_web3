@@ -52,13 +52,18 @@ impl RelayP2pWorker {
     pub fn new(
         dns: String,
         port: u16,
+        live: bool,
         metrics_counters: Arc<MetricsCounters>,
     ) -> Result<Self, anyhow::Error> {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(self_keypair.public());
 
-        let url = format!("/dns/{}/tcp/{}/p2p/{}", dns, port, peer_id);
-        let external_multi_addr:Multiaddr = url
+        let url = if live {
+            format!("/dns/{}/tcp/{}/p2p/{}", dns, port, peer_id)
+        } else {
+            format!("/ip6/::/tcp/{}/p2p/{}", port, peer_id)
+        };
+        let external_multi_addr: Multiaddr = url
             .parse()
             .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 

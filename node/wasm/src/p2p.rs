@@ -1,8 +1,8 @@
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
-use libp2p::core::transport::{OrTransport, upgrade};
+use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::multiaddr::Protocol;
 use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
 use log::{debug, error, info, trace};
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use primitives::data_structure::{NetworkCommand, SwarmMessage, TxStateMachine, HashId};
+use primitives::data_structure::{HashId, NetworkCommand, SwarmMessage, TxStateMachine};
 
 // ---------------------- libp2p common --------------------- //
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
@@ -19,7 +19,7 @@ use libp2p::relay::client::Event as RelayClientEvent;
 use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
 use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
-use libp2p::swarm::{NetworkBehaviour, derive_prelude};
+use libp2p::swarm::{derive_prelude, NetworkBehaviour};
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 
 use alloc::boxed::Box;
@@ -30,8 +30,8 @@ use alloc::string::String;
 use core::cell::RefCell;
 use db_wasm::OpfsRedbWorker;
 use futures::{FutureExt, StreamExt};
-use libp2p::core::Transport as TransportTrait;
 use libp2p::core::transport::global_only::Transport;
+use libp2p::core::Transport as TransportTrait;
 use libp2p::relay::client::Behaviour as RelayClientBehaviour;
 use libp2p::request_response::json::Behaviour as JsonBehaviour;
 use libp2p_kad::{
@@ -99,7 +99,10 @@ impl WasmP2pWorker {
         relay_node_multi_addr: String,
         user_account_id: String,
         command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,
-        dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, QueryId)>,
+        dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(
+            Option<Multiaddr>,
+            QueryId,
+        )>,
     ) -> Result<Self, anyhow::Error> {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = self_keypair.public().to_peer_id().to_base58();
@@ -258,7 +261,8 @@ impl WasmP2pWorker {
                     PeerRecord { record, .. },
                 ))) = result
                 {
-                    let multi_addr = Multiaddr::try_from(record.value).expect("failed to parse multiaddr");
+                    let multi_addr =
+                        Multiaddr::try_from(record.value).expect("failed to parse multiaddr");
                     self.dht_channel_query
                         .borrow_mut()
                         .send((Some(multi_addr), id))
@@ -397,19 +401,18 @@ impl WasmP2pWorker {
     pub async fn add_account_to_dht(&self, account_id: String, value: String) -> Result<(), Error> {
         let mut swarm = self.wasm_swarm.borrow_mut();
         let mut dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
-        
-        let record = libp2p_kad::Record::new(
-            account_id.as_bytes().to_vec(),
-            value.as_bytes().to_vec(),
-        );
-        
+
+        let record =
+            libp2p_kad::Record::new(account_id.as_bytes().to_vec(), value.as_bytes().to_vec());
+
         let query_id = dht_behaviour.put_record(record.clone(), libp2p_kad::Quorum::Majority);
-        
-        dht_behaviour.start_providing(record.key)
+
+        dht_behaviour
+            .start_providing(record.key)
             .map_err(|e| anyhow!("Failed to start providing key: {}", e))?;
-        
+
         info!(target: "p2p", "Added account record to DHT: account_id={}, query_id={:?}", account_id, query_id);
-        
+
         Ok(())
     }
 
@@ -485,7 +488,7 @@ impl WasmP2pWorker {
 
             // Clone self_clone before the async block to avoid consuming it
             let self_clone_for_async = self_clone.clone();
-            
+
             wasm_bindgen_futures::spawn_local(async move {
                 let mut swarm = swarm.borrow_mut();
                 let mut p2p_command_recv = p2p_command_recv.borrow_mut();

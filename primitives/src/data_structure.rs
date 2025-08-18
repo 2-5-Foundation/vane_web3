@@ -186,10 +186,8 @@ pub struct TxStateMachine {
 #[cfg(feature = "wasm")]
 impl TxStateMachine {
     pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsError> {
-        let tx_state_machine: TxStateMachine =
-            serde_wasm_bindgen::from_value(value).map_err(|e| {
-                JsError::new(&format!("Failed to deserialize TxStateMachine: {:?}", e))
-            })?;
+        let tx_state_machine: TxStateMachine = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsError::new(&format!("Failed to deserialize TxStateMachine: {:?}", e)))?;
         Ok(tx_state_machine)
     }
 }

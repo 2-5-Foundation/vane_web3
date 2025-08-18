@@ -256,9 +256,22 @@ impl TelemetryWorker {
 
             let metrics = self.collect_metrics().await;
 
-            if let Err(e) = metrics_tx.send(metrics).await {
-                error!(target: "telemetry", "Failed to send metrics: {:?}", e);
-                break;
+            // Handle send failures gracefully - metrics collection should continue
+            // even if no RPC subscribers are consuming the metrics
+            match metrics_tx.try_send(metrics) {
+                Ok(_) => {
+                    // Successfully sent metrics
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                    // Channel is full - this is expected when no subscribers are consuming
+                    // Just continue collecting metrics without logging as error
+                    info!(target: "telemetry", "Metrics channel full - no active subscribers consuming metrics");
+                }
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                    // Channel is closed - receiver has been dropped
+                    info!(target: "telemetry", "Metrics channel closed - receiver dropped. Continuing metrics collection...");
+                    // Continue the loop instead of breaking - we want metrics collection to persist
+                }
             }
         }
     }

@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 pub struct MainRelayServerService {}
 
 impl MainRelayServerService {
-    pub async fn run(dns: String, port: u16) -> Result<Self, anyhow::Error> {
+    pub async fn run(dns: String, port: u16, live: bool) -> Result<Self, anyhow::Error> {
         info!(" 🦀...vane relay server starting...🚀 ");
 
         let (relay_metrics_sender_channel, relay_metrics_recv_channel) =
@@ -25,7 +25,7 @@ impl MainRelayServerService {
 
         let metrics_counters = Arc::new(MetricsCounters::default());
 
-        let p2p_worker = RelayP2pWorker::new(dns, port, metrics_counters.clone())?;
+        let p2p_worker = RelayP2pWorker::new(dns, port, live, metrics_counters.clone())?;
         let p2p_worker = Arc::new(Mutex::new(p2p_worker));
 
         let mut telemetry_worker = TelemetryWorker::new(metrics_counters);
@@ -66,6 +66,8 @@ impl MainRelayServerService {
         }
 
         Self::start_rpc_server(rpc_worker).await;
+
+        task_manager.future().await?;
         Ok(Self {})
     }
 
@@ -87,8 +89,3 @@ impl MainRelayServerService {
         Ok(address)
     }
 }
-// Rate Limiting logic
-
-// Discovery logic
-
-// Relay logic

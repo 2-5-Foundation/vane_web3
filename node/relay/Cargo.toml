@@ -3,11 +3,7 @@ name = "relay-node"
 version = "0.1.0"
 edition = "2021"
 description = "Native-only relay node implementation for Vane Web3"
-authors = ["Vane Web3 Team"]
 
-
-[lib]
-crate-type = ["rlib"]
 
 [dependencies]
 

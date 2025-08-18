@@ -689,3 +689,7 @@
 //         Ok(())
 //     }
 // }
+
+const WASM_NODE_PATH: &str = std::env::var("WASM_NODE_PATH").expect("WASM_NODE_PATH must be set");
+
+fn setup_wasm_node() {}

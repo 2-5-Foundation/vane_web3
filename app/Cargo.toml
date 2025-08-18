@@ -7,7 +7,6 @@ edition = "2024"
 
 [dependencies]
 #native-node                                 = { workspace = true}
-wasm-node                                   = { workspace = true}
 relay-node                                  = { workspace = true}
 tokio                                       = { workspace = true}
 anyhow                                      = { workspace = true}

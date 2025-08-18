@@ -16,15 +16,16 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 use codec::Decode;
 use core::cell::RefCell;
 use core::str::FromStr;
 use db_wasm::OpfsRedbWorker;
 use futures::FutureExt;
+use gloo_timers::future::TimeoutFuture;
+use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use libp2p::PeerId;
-use libp2p::multiaddr::Protocol;
 use libp2p_kad::QueryId;
 use log::{error, info, warn};
 use lru::LruCache;
@@ -33,10 +34,9 @@ use primitives::data_structure::{
     TxStateMachine, TxStatus, UserAccount,
 };
 use std::collections::HashMap;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 use wasm_timer::TryFutureExt;
-use gloo_timers::future::TimeoutFuture;
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
@@ -275,9 +275,7 @@ impl WasmMainServiceWorker {
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
         let target_id = txn.borrow().receiver_address.clone();
-        let target_peer_result = {
-            self.db_worker.get_saved_user_peers(target_id.clone()).await
-        };
+        let target_peer_result = { self.db_worker.get_saved_user_peers(target_id.clone()).await };
 
         match target_peer_result {
             Ok(acc) => {
@@ -317,16 +315,15 @@ impl WasmMainServiceWorker {
                     .borrow_mut()
                     .insert(query_id, (txn.clone(), target_id.clone()));
 
-                
                 let timeout_flag = Rc::new(RefCell::new(None));
-                
+
                 let timeout_flag_clone = timeout_flag.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     TimeoutFuture::new(60_000).await;
                     // Set timeout flag after 60 seconds
                     *timeout_flag_clone.borrow_mut() = Some(());
                 });
-                
+
                 let result_flag = timeout_flag.clone();
                 let dht_query_result_channel = self.dht_query_result_channel.clone();
                 let dht_query_context = self.dht_query_context.clone();
@@ -336,12 +333,15 @@ impl WasmMainServiceWorker {
                 let lru_cache = self.lru_cache.clone();
                 let txn_clone = txn.clone();
                 let target_id_clone = target_id.clone();
-                
+
                 wasm_bindgen_futures::spawn_local(async move {
                     loop {
-                        if let Ok((multi_addr_opt, query_id)) = dht_query_result_channel.borrow_mut().try_recv() {
+                        if let Ok((multi_addr_opt, query_id)) =
+                            dht_query_result_channel.borrow_mut().try_recv()
+                        {
                             if let Some(multi_addr) = multi_addr_opt {
-                                let peer_id = multi_addr.clone()
+                                let peer_id = multi_addr
+                                    .clone()
                                     .pop()
                                     .and_then(|p| {
                                         if let Protocol::P2p(peer_id) = p {
@@ -357,27 +357,30 @@ impl WasmMainServiceWorker {
                                     .borrow_mut()
                                     .remove(&query_id)
                                     .expect("dht query context not found");
-                                
+
                                 if let Err(e) = db_worker
                                     .record_saved_user_peers(target_id, multi_addr.to_string())
-                                    .await {
+                                    .await
+                                {
                                     error!("Failed to record user peers: {:?}", e);
                                 }
 
                                 if let Err(e) = p2p_network_service
                                     .borrow_mut()
                                     .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                                    .await {
+                                    .await
+                                {
                                     error!("Failed to dial peer: {:?}", e);
                                 }
-                                
+
                                 if let Err(e) = p2p_network_service
                                     .borrow_mut()
                                     .wasm_send_request(txn.clone(), peer_id, multi_addr)
-                                    .await {
+                                    .await
+                                {
                                     error!("Failed to send request: {:?}", e);
                                 }
-                                
+
                                 *result_flag.borrow_mut() = Some(());
                                 break;
                             } else {
@@ -386,43 +389,42 @@ impl WasmMainServiceWorker {
                                     .borrow_mut()
                                     .remove(&query_id)
                                     .expect("dht query context not found");
-                                
+
                                 let mut txn = txn.borrow_mut().clone();
                                 txn.recv_not_registered();
-                                
-                                if let Err(e) = rpc_sender_channel
-                                    .borrow_mut()
-                                    .send(txn.clone())
-                                    .await {
+
+                                if let Err(e) =
+                                    rpc_sender_channel.borrow_mut().send(txn.clone()).await
+                                {
                                     error!("Failed to send RPC: {:?}", e);
                                 }
 
                                 lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
                                 error!(target: "MainServiceWorker","target peer not found in remote dht 😔");
-                                
+
                                 // Failed lookup, set result flag
                                 *result_flag.borrow_mut() = Some(());
                                 break;
                             }
                         }
-                        
+
                         // Small delay to prevent busy-waiting and allow other tasks to run
                         // Using gloo_timers for better WASM compatibility
                         TimeoutFuture::new(100).await;
                     }
                 });
-                
+
                 // Simple loop checking the timeout flag
                 loop {
                     if let Some(_) = timeout_flag.borrow().as_ref() {
                         // Either success, failure, or timeout occurred
                         break;
                     }
-                    
+
                     // Small delay to prevent busy-waiting
                     TimeoutFuture::new(100).await;
                 }
-                
+
                 // Handle timeout if no result was found
                 if let Some(_) = timeout_flag.borrow().as_ref() {
                     // Check if we need to handle timeout (this is a simplified check)
@@ -435,7 +437,7 @@ impl WasmMainServiceWorker {
 
                     self.lru_cache.borrow_mut().push(txn.tx_nonce.into(), txn);
                     error!(target: "MainServiceWorker","DHT query timeout after 60 seconds for target: {}", target_id);
-                }
+                };
             }
         }
         Ok(())
@@ -565,7 +567,7 @@ impl WasmMainServiceWorker {
 
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
-        
+
         // ====================================================================================== //
 
         // Clone necessary parts to avoid borrow conflicts while keeping concurrent execution
@@ -600,9 +602,7 @@ impl WasmMainServiceWorker {
         // Extract public_interface_worker before moving main_worker into futures
         let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
 
-        let swarm_handler_future = async move {
-            main_worker.start_swarm_handler()
-        };
+        let swarm_handler_future = async move { main_worker.start_swarm_handler() };
 
         futures::select! {
             tx_watch_result = tx_update_future.fuse() => {
@@ -633,4 +633,3 @@ pub async fn start_vane_web3(
     let public_interface_worker_js = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(worker)));
     Ok(public_interface_worker_js)
 }
-

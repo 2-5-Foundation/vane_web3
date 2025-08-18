@@ -12632,7 +12632,6 @@ dependencies = [
  "simple_logger",
  "simplelog",
  "tokio",
- "wasm-node",
 ]
 
 [[package]]
