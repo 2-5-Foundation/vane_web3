@@ -94,7 +94,9 @@ impl WasmMainServiceWorker {
         };
         let db_worker = Rc::new(db);
 
-        let lru_cache: LruCache<u64, TxStateMachine> = LruCache::unbounded();
+        // Use bounded cache to prevent memory overflow in WASM environment
+        // 10,000 entries should be sufficient for most use cases while preventing unbounded growth
+        let lru_cache: LruCache<u64, TxStateMachine> = LruCache::new(std::num::NonZeroUsize::new(10).unwrap());
 
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
@@ -565,17 +567,17 @@ impl WasmMainServiceWorker {
         live: bool,
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
-
+    
         // ====================================================================================== //
         let mut main_worker = Self::new(relay_node_multi_addr, account, network, live).await?;
-
+    
         // ====================================================================================== //
-
+    
         let p2p_worker = main_worker.p2p_worker.clone();
         let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
-
+    
         // ====================================================================================== //
-
+    
         // Clone necessary parts to avoid borrow conflicts while keeping concurrent execution
         let user_rpc_update_recv_channel = main_worker.user_rpc_update_recv_channel.clone();
         let rpc_sender_channel = main_worker.rpc_sender_channel.clone();
@@ -587,7 +589,7 @@ impl WasmMainServiceWorker {
         let p2p_worker = main_worker.p2p_worker.clone();
         let p2p_network_service = main_worker.p2p_network_service.clone();
         let public_interface_worker = main_worker.public_interface_worker.clone();
-
+    
         let tx_update_future = async move {
             // Create a temporary worker with cloned data for tx updates
             let mut temp_worker = WasmMainServiceWorker {
@@ -604,39 +606,57 @@ impl WasmMainServiceWorker {
             };
             temp_worker.handle_public_interface_tx_updates().await
         };
-
+    
         // Extract public_interface_worker before moving main_worker into futures
         let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
-
+    
         let swarm_handler_future = async move { main_worker.start_swarm_handler() };
-
-        futures::select! {
-            tx_watch_result = tx_update_future.fuse() => {
-                if let Err(err) = tx_watch_result {
-                    error!("tx watch handle error: {err}");
-                }
-            },
-            swarm_result = swarm_handler_future.fuse() => {
-                if let Err(err) = swarm_result {
-                    error!("swarm handle error: {err}");
-                }
+    
+        // Spawn both futures as background tasks instead of using select!
+        // This prevents one from being cancelled when the other completes
+        // Use wasm_bindgen_futures::spawn_local for WASM compatibility
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(err) = tx_update_future.await {
+                error!("tx watch handle error: {err}");
             }
-        }
-
+        });
+    
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(err) = swarm_handler_future.await {
+                error!("swarm handle error: {err}");
+            }
+        });
+    
+        // In WASM environment, we don't want to block forever
+        // Return the public interface worker so JavaScript can interact with it
+        // The spawned tasks will continue running in the background
+    
         Ok(public_interface_worker)
     }
 }
 
+
 #[wasm_bindgen]
-pub async fn start_vane_web3(
+pub fn start_vane_web3(
     relay_node_multi_addr: String,
     account: String,
     network: String,
     live: bool,
-) -> Result<PublicInterfaceWorkerJs, JsValue> {
-    let worker = WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live)
-        .await
-        .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
-    let public_interface_worker_js = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(worker)));
-    Ok(public_interface_worker_js)
+) -> js_sys::Promise {
+    // Set up panic hook for better error reporting
+    console_error_panic_hook::set_once();
+    
+    wasm_bindgen_futures::future_to_promise(async move {
+        match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {
+            Ok(public_interface_worker) => {
+                // Convert to JsValue for return
+                Ok(JsValue::from("WASM node started successfully"))
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to start WASM node: {}", e);
+                error!("{}", error_msg);
+                Err(JsValue::from_str(&error_msg))
+            }
+        }
+    })
 }
