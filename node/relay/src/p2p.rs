@@ -93,11 +93,7 @@ impl RelayP2pWorker {
 
         let mut swarm = SwarmBuilder::with_existing_identity(self_keypair)
             .with_tokio()
-            .with_tcp(
-                transport_tcp,
-                libp2p::tls::Config::new,
-                libp2p::yamux::Config::default,
-            )?
+            
             .with_behaviour(|_| relay_behaviour)?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))

@@ -11,10 +11,13 @@ use std::collections::HashMap;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use primitives::data_structure::{DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine};
+use primitives::data_structure::{
+    DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
+};
 
 // ---------------------- libp2p common --------------------- //
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
+use libp2p::noise;
 use libp2p::relay::client::Event as RelayClientEvent;
 use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
 use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
@@ -42,6 +45,8 @@ use libp2p_kad::{Event as DhtEvent, Record};
 use libp2p_webtransport_websys;
 use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
+use futures::future::Either;
+
 
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -117,8 +122,24 @@ impl WasmP2pWorker {
             .with(libp2p::multiaddr::Protocol::P2pCircuit)
             .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()));
 
-        let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
+        let webtransport = libp2p_webtransport_websys::Transport::new(
+            libp2p_webtransport_websys::Config::new(&self_keypair),
+        )
+        .boxed();
 
+        let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
+        let authenticated_relay = relay_transport
+            .upgrade(upgrade::Version::V1)
+            .authenticate(libp2p::noise::Config::new(&self_keypair)?)
+            .multiplex(libp2p::yamux::Config::default())
+            .boxed();
+
+            let combined_transport = OrTransport::new(webtransport, authenticated_relay)
+            .map(|either, _| match either {
+                Either::Left((peer, muxer)) => (peer, muxer),
+                Either::Right((peer, muxer)) => (peer, muxer),
+            })
+            .boxed();
         let request_response_config = libp2p::request_response::Config::default()
             .with_request_timeout(core::time::Duration::from_secs(300)); // 5 minutes waiting time for a response
 
@@ -150,13 +171,10 @@ impl WasmP2pWorker {
             app_client_dht: dht_behaviour,
         };
 
-        let upgraded_transport = libp2p_webtransport_websys::Transport::new(
-            libp2p_webtransport_websys::Config::new(&self_keypair),
-        )
-        .boxed();
+        // Transport is already defined above as combined_transport
 
         let mut wasm_swarm = Swarm::new(
-            upgraded_transport,
+            combined_transport,
             combined_behaviour,
             peer_id,
             libp2p::swarm::Config::with_wasm_executor()
