@@ -11,7 +11,7 @@ use std::collections::HashMap;
 // peer discovery
 // app to app communication (i.e sending the tx to be verified by the receiver) and back
 
-use primitives::data_structure::{HashId, NetworkCommand, SwarmMessage, TxStateMachine};
+use primitives::data_structure::{DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine};
 
 // ---------------------- libp2p common --------------------- //
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
@@ -28,7 +28,7 @@ use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use core::cell::RefCell;
-use db_wasm::OpfsRedbWorker;
+use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::{FutureExt, StreamExt};
 use libp2p::core::transport::global_only::Transport;
 use libp2p::core::Transport as TransportTrait;
@@ -95,7 +95,7 @@ where
 
 impl WasmP2pWorker {
     pub async fn new(
-        db_worker: Rc<OpfsRedbWorker>,
+        db_worker: Rc<DbWorker>,
         relay_node_multi_addr: String,
         user_account_id: String,
         command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,

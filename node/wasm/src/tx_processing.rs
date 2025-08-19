@@ -129,7 +129,7 @@ impl WasmTxProcessingWorker {
                     }
                 };
                 let signature = EcdsaSignature::try_from(signature.as_slice())
-                    .map_err(|err| anyhow!("failed to convert ecdsa signature"))?;
+                    .map_err(|err| anyhow!("failed to convert ecdsa signature: {:?}", err))?;
 
                 match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
                     Ok(recovered_addr) => {
@@ -166,10 +166,10 @@ impl WasmTxProcessingWorker {
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
         let tx_hash = unsafe {
             let tx_value =
-                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value: {:?}", e))?;
             let res: JsValue = submitTx(tx_value).await;
             from_value::<[u8; 32]>(res)
-                .map_err(|e| anyhow!("failed to convert tx hash to bytes"))?
+                .map_err(|e| anyhow!("failed to convert tx hash to bytes: {:?}", e))?
         };
         Ok(tx_hash)
     }
@@ -177,10 +177,10 @@ impl WasmTxProcessingWorker {
     pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
         let unsigned_tx_call = unsafe {
             let tx_value =
-                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value"))?;
+                to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value: {:?}", e))?;
             let res: JsValue = createTx(tx_value).await;
             from_value::<[u8; 32]>(res)
-                .map_err(|e| anyhow!("failed to convert unsigned tx call to bytes"))?
+                .map_err(|e| anyhow!("failed to convert unsigned tx call to bytes: {:?}", e))?
         };
         tx.call_payload = Some(unsigned_tx_call);
         Ok(())

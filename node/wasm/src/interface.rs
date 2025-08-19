@@ -35,7 +35,7 @@ mod rpc_wasm_imports {
     pub use async_stream::stream;
     pub use core::cell::RefCell;
     pub use core::fmt;
-    pub use db_wasm::OpfsRedbWorker;
+    pub use db_wasm::{DbWorker, OpfsRedbWorker};
     pub use futures::StreamExt;
     pub use libp2p::PeerId;
     pub use lru::LruCache;
@@ -55,7 +55,7 @@ mod rpc_wasm_imports {
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
     /// local database worker
-    pub db_worker: Rc<OpfsRedbWorker>,
+    pub db_worker: Rc<DbWorker>,
     // p2pworker
     pub p2p_worker: Rc<WasmP2pWorker>,
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
@@ -72,7 +72,7 @@ pub struct PublicInterfaceWorker {
 
 impl PublicInterfaceWorker {
     pub async fn new(
-        db_worker: Rc<OpfsRedbWorker>,
+        db_worker: Rc<DbWorker>,
         p2p_worker: Rc<WasmP2pWorker>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,

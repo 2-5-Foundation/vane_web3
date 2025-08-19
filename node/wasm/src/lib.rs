@@ -20,7 +20,7 @@ use anyhow::{anyhow, Error};
 use codec::Decode;
 use core::cell::RefCell;
 use core::str::FromStr;
-use db_wasm::OpfsRedbWorker;
+use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
 use futures::FutureExt;
 use gloo_timers::future::TimeoutFuture;
 use libp2p::multiaddr::Protocol;
@@ -40,7 +40,7 @@ use wasm_timer::TryFutureExt;
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
-    pub db_worker: Rc<OpfsRedbWorker>,
+    pub db_worker: Rc<DbWorker>,
     pub public_interface_worker: Rc<RefCell<PublicInterfaceWorker>>,
     pub wasm_tx_processing_worker: Rc<RefCell<WasmTxProcessingWorker>>,
     // for swarm events
@@ -68,6 +68,7 @@ impl WasmMainServiceWorker {
         relay_node_multi_addr: String,
         account: String,
         network: String,
+        live: bool,
     ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
@@ -86,7 +87,11 @@ impl WasmMainServiceWorker {
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
-        let db = OpfsRedbWorker::initialize_db_client("vane.db").await?;
+        let db = if live {
+            DbWorker::initialize_opfs_db_client("vane.db").await?
+        } else {
+            DbWorker::initialize_inmemory_db_client("vane.db").await?
+        };
         let db_worker = Rc::new(db);
 
         let lru_cache: LruCache<u64, TxStateMachine> = LruCache::unbounded();
@@ -557,11 +562,12 @@ impl WasmMainServiceWorker {
         relay_node_multi_addr: String,
         account: String,
         network: String,
+        live: bool,
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let mut main_worker = Self::new(relay_node_multi_addr, account, network).await?;
+        let mut main_worker = Self::new(relay_node_multi_addr, account, network, live).await?;
 
         // ====================================================================================== //
 
@@ -626,8 +632,9 @@ pub async fn start_vane_web3(
     relay_node_multi_addr: String,
     account: String,
     network: String,
+    live: bool,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
-    let worker = WasmMainServiceWorker::run(relay_node_multi_addr, account, network)
+    let worker = WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live)
         .await
         .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
     let public_interface_worker_js = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(worker)));

@@ -105,7 +105,7 @@ pub struct OpfsRedbWorker {
 
 impl OpfsRedbWorker {
     async fn new(db_name: &str) -> Result<Self, anyhow::Error> {
-        let mut opfs_fs = OpfsFileSystem::new(db_name).await?;
+        let opfs_fs = OpfsFileSystem::new(db_name).await?;
 
         // Try to load existing database from OPFS
         let db_bytes = opfs_fs.get_db_bytes().await?;
@@ -497,5 +497,342 @@ impl DbWorkerInterface for OpfsRedbWorker {
         write_txn.commit()?;
 
         Ok(())
+    }
+}
+
+// ------------------------------------ Testing ------------------------------------ //
+
+use std::collections::HashMap;
+use std::cell::RefCell;
+
+type MemUserAccountTable = HashMap<String, Vec<u8>>;
+type MemTransactionsDataTable = HashMap<String, Vec<u8>>;
+type MemTransactionTable = HashMap<String, Vec<Vec<u8>>>;
+type MemNonceTable = HashMap<String, u32>;
+type MemSavedPeersTable = HashMap<String, String>;
+
+
+pub struct InMemoryDbWorker {
+    user_accounts: RefCell<MemUserAccountTable>,
+    transactions_data: RefCell<MemTransactionsDataTable>,
+    transactions: RefCell<MemTransactionTable>,
+    nonces: RefCell<MemNonceTable>,
+    saved_peers: RefCell<MemSavedPeersTable>,
+}
+
+impl DbWorkerInterface for InMemoryDbWorker {
+    async fn initialize_db_client(_file_url: &str) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            user_accounts: RefCell::new(HashMap::new()),
+            transactions_data: RefCell::new(HashMap::new()),
+            transactions: RefCell::new(HashMap::new()),
+            nonces: RefCell::new(HashMap::new()),
+            saved_peers: RefCell::new(HashMap::new()),
+        })
+    }
+
+    async fn set_user_account(&self, user: UserAccount) -> Result<(), anyhow::Error> {
+        self.user_accounts.borrow_mut().insert(USER_ACC_KEY.to_string(), user.encode());
+        Ok(())
+    }
+
+    async fn update_user_account(
+        &self,
+        account_id: String,
+        network: ChainSupported,
+    ) -> Result<UserAccount, anyhow::Error> {
+        let mut user_account = self.user_accounts.borrow().get(USER_ACC_KEY).map(|v| {
+            let decoded_val: UserAccount = Decode::decode(&mut &v[..]).expect("failed to decode");
+            decoded_val
+        }).ok_or_else(|| anyhow!("user account not found"))?;
+        user_account.accounts.push((account_id, network));
+        self.user_accounts.borrow_mut().insert(USER_ACC_KEY.to_string(), user_account.encode());
+        Ok(user_account)
+    }
+
+    async fn get_nonce(&self) -> Result<u32, anyhow::Error> {
+        Ok(self.nonces.borrow().get(NONCE_KEY).copied().unwrap_or(0))
+    }
+
+    async fn increment_nonce(&self) -> Result<(), anyhow::Error> {
+        let current = self.nonces.borrow().get(NONCE_KEY).copied().unwrap_or(0);
+        self.nonces.borrow_mut().insert(NONCE_KEY.to_string(), current + 1);
+        Ok(())
+    }
+
+    async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error> {
+        let user_account = self.user_accounts.borrow().get(USER_ACC_KEY).map(|v| {
+            let decoded_val: UserAccount = Decode::decode(&mut &v[..]).expect("failed to decode");
+            decoded_val
+        }).ok_or_else(|| anyhow!("user account not found"))?;
+        Ok(user_account)
+    }
+
+    async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        let tx_data = tx_state.encode();
+        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
+            let mut saved_txs = saved_txs.clone();
+            saved_txs.push(tx_data);
+            saved_txs
+        } else {
+            vec![tx_data]
+        };
+        self.transactions.borrow_mut().insert(TXS_KEY.to_string(), to_store);
+        Ok(())
+    }
+
+    async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        let tx_data = tx_state.encode();
+        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
+            let mut saved_txs = saved_txs.clone();
+            saved_txs.push(tx_data);
+            saved_txs
+        } else {
+            vec![tx_data]
+        };
+        self.transactions.borrow_mut().insert(TXS_KEY.to_string(), to_store);
+        Ok(())
+    }
+
+    async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
+        let mut failed_txs = Vec::new();
+        for tx in self.transactions.borrow().get(TXS_KEY).map(|v| v.clone()).unwrap_or_default() {
+            let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
+            if !tx.success {
+                failed_txs.push(tx);
+            }
+        }
+        Ok(failed_txs)
+    }
+
+    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
+        let data = self.transactions_data.borrow().get(TXS_DATA_KEY).map(|v| {
+            let decoded_val: TransactionsData = Decode::decode(&mut &v[..]).expect("failed to decode");
+            decoded_val
+        }).unwrap_or(TransactionsData {
+            success_value: 0,
+            failed_value: 0,
+        });
+        Ok(data.success_value as u64)
+    }
+
+    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
+        let data = self.transactions_data.borrow().get(TXS_DATA_KEY).map(|v| {
+            let decoded_val: TransactionsData = Decode::decode(&mut &v[..]).expect("failed to decode");
+            decoded_val
+        }).unwrap_or(TransactionsData {
+            success_value: 0,
+            failed_value: 0,
+        });
+        Ok(data.failed_value as u64)
+    }
+
+    async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
+        let mut success_txs = Vec::new();
+        for tx in self.transactions.borrow().get(TXS_KEY).map(|v| v.clone()).unwrap_or_default() {
+            let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
+            if tx.success {
+                success_txs.push(tx);
+            }
+        }
+        Ok(success_txs)
+    }
+
+    async fn record_saved_user_peers(
+        &self,
+        acc_id: String,
+        multi_addr: String,
+    ) -> Result<(), Error> {
+        self.saved_peers.borrow_mut().insert(acc_id, multi_addr);
+        Ok(())
+    }
+
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<String, Error> {
+        Ok(self.saved_peers.borrow().get(&account_id).cloned().unwrap_or_default())
+    }
+
+    async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), Error> {
+        let mut all_account_ids = Vec::new();
+        let mut peer_id = None; 
+
+        for (account_id, stored_peer_id) in &self.saved_peers.clone().into_inner() {
+            if let Some(ref existing_peer_id) = peer_id {
+                if stored_peer_id != existing_peer_id {
+                    return Err(anyhow!(
+                        "Inconsistent peer ID mapping: expected {}, got {}",
+                        existing_peer_id,
+                        stored_peer_id
+                    ));
+                }
+            } else {
+                peer_id = Some(stored_peer_id.clone());
+            }
+
+            all_account_ids.push(account_id.clone());
+        }
+
+        let peer_id = peer_id.ok_or_else(|| anyhow!("No saved peers found"))?;
+        Ok((all_account_ids, peer_id))
+    }
+
+    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), Error> {
+        // Find all account IDs mapped to this peer_id and remove them
+        let keys_to_remove: Vec<String> = self.saved_peers
+            .borrow()
+            .iter()
+            .filter_map(|(account_id, stored_peer_id)| {
+                if stored_peer_id == peer_id {
+                    Some(account_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Remove all mappings for this peer_id
+        for account_id in keys_to_remove {
+            self.saved_peers.borrow_mut().remove(&account_id);
+        }
+
+        Ok(())
+    }
+}
+
+/// Enum wrapper for different database worker implementations
+/// This provides polymorphism without needing trait objects
+pub enum DbWorker {
+    Opfs(OpfsRedbWorker),
+    InMemory(InMemoryDbWorker),
+}
+
+impl DbWorker {
+    pub async fn initialize_opfs_db_client(file_url: &str) -> Result<Self, anyhow::Error> {
+        let worker = OpfsRedbWorker::initialize_db_client(file_url).await?;
+        Ok(DbWorker::Opfs(worker))
+    }
+
+    pub async fn initialize_inmemory_db_client(file_url: &str) -> Result<Self, anyhow::Error> {
+        let worker = InMemoryDbWorker::initialize_db_client(file_url).await?;
+        Ok(DbWorker::InMemory(worker))
+    }
+}
+
+impl DbWorkerInterface for DbWorker {
+    async fn initialize_db_client(file_url: &str) -> Result<Self, anyhow::Error> {
+        // Default to in-memory for this generic method
+        Self::initialize_inmemory_db_client(file_url).await
+    }
+
+    async fn set_user_account(&self, user: UserAccount) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.set_user_account(user).await,
+            DbWorker::InMemory(worker) => worker.set_user_account(user).await,
+        }
+    }
+
+    async fn update_user_account(
+        &self,
+        account_id: String,
+        network: ChainSupported,
+    ) -> Result<UserAccount, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.update_user_account(account_id, network).await,
+            DbWorker::InMemory(worker) => worker.update_user_account(account_id, network).await,
+        }
+    }
+
+    async fn get_nonce(&self) -> Result<u32, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_nonce().await,
+            DbWorker::InMemory(worker) => worker.get_nonce().await,
+        }
+    }
+
+    async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_user_account().await,
+            DbWorker::InMemory(worker) => worker.get_user_account().await,
+        }
+    }
+
+    async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.update_success_tx(tx_state).await,
+            DbWorker::InMemory(worker) => worker.update_success_tx(tx_state).await,
+        }
+    }
+
+    async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.update_failed_tx(tx_state).await,
+            DbWorker::InMemory(worker) => worker.update_failed_tx(tx_state).await,
+        }
+    }
+
+    async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_failed_txs().await,
+            DbWorker::InMemory(worker) => worker.get_failed_txs().await,
+        }
+    }
+
+    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_total_value_success().await,
+            DbWorker::InMemory(worker) => worker.get_total_value_success().await,
+        }
+    }
+
+    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_total_value_failed().await,
+            DbWorker::InMemory(worker) => worker.get_total_value_failed().await,
+        }
+    }
+
+    async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_success_txs().await,
+            DbWorker::InMemory(worker) => worker.get_success_txs().await,
+        }
+    }
+
+    async fn increment_nonce(&self) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.increment_nonce().await,
+            DbWorker::InMemory(worker) => worker.increment_nonce().await,
+        }
+    }
+
+    async fn record_saved_user_peers(
+        &self,
+        acc_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.record_saved_user_peers(acc_id, multi_addr).await,
+            DbWorker::InMemory(worker) => worker.record_saved_user_peers(acc_id, multi_addr).await,
+        }
+    }
+
+    async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_saved_user_peers(account_id).await,
+            DbWorker::InMemory(worker) => worker.get_saved_user_peers(account_id).await,
+        }
+    }
+
+    async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.get_all_saved_peers().await,
+            DbWorker::InMemory(worker) => worker.get_all_saved_peers().await,
+        }
+    }
+
+    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.delete_saved_peer(peer_id).await,
+            DbWorker::InMemory(worker) => worker.delete_saved_peer(peer_id).await,
+        }
     }
 }
