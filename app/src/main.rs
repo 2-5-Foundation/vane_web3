@@ -40,7 +40,7 @@ enum Commands {
         /// P2P port for network communication
         #[arg(short, long, default_value = "30333")]
         port: u16,
-        #[arg(short, long, default_value = "true")]
+        #[arg(short, long, default_value = "false")]
         live: bool,
     },
 }

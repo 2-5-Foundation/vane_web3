@@ -541,7 +541,6 @@ pub trait DbWorkerInterface: Sized {
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error>;
 }
 
-
 /// Node error reporting structure
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NodeError {

@@ -502,15 +502,14 @@ impl DbWorkerInterface for OpfsRedbWorker {
 
 // ------------------------------------ Testing ------------------------------------ //
 
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 type MemUserAccountTable = HashMap<String, Vec<u8>>;
 type MemTransactionsDataTable = HashMap<String, Vec<u8>>;
 type MemTransactionTable = HashMap<String, Vec<Vec<u8>>>;
 type MemNonceTable = HashMap<String, u32>;
 type MemSavedPeersTable = HashMap<String, String>;
-
 
 pub struct InMemoryDbWorker {
     user_accounts: RefCell<MemUserAccountTable>,
@@ -532,7 +531,9 @@ impl DbWorkerInterface for InMemoryDbWorker {
     }
 
     async fn set_user_account(&self, user: UserAccount) -> Result<(), anyhow::Error> {
-        self.user_accounts.borrow_mut().insert(USER_ACC_KEY.to_string(), user.encode());
+        self.user_accounts
+            .borrow_mut()
+            .insert(USER_ACC_KEY.to_string(), user.encode());
         Ok(())
     }
 
@@ -541,12 +542,20 @@ impl DbWorkerInterface for InMemoryDbWorker {
         account_id: String,
         network: ChainSupported,
     ) -> Result<UserAccount, anyhow::Error> {
-        let mut user_account = self.user_accounts.borrow().get(USER_ACC_KEY).map(|v| {
-            let decoded_val: UserAccount = Decode::decode(&mut &v[..]).expect("failed to decode");
-            decoded_val
-        }).ok_or_else(|| anyhow!("user account not found"))?;
+        let mut user_account = self
+            .user_accounts
+            .borrow()
+            .get(USER_ACC_KEY)
+            .map(|v| {
+                let decoded_val: UserAccount =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .ok_or_else(|| anyhow!("user account not found"))?;
         user_account.accounts.push((account_id, network));
-        self.user_accounts.borrow_mut().insert(USER_ACC_KEY.to_string(), user_account.encode());
+        self.user_accounts
+            .borrow_mut()
+            .insert(USER_ACC_KEY.to_string(), user_account.encode());
         Ok(user_account)
     }
 
@@ -556,15 +565,23 @@ impl DbWorkerInterface for InMemoryDbWorker {
 
     async fn increment_nonce(&self) -> Result<(), anyhow::Error> {
         let current = self.nonces.borrow().get(NONCE_KEY).copied().unwrap_or(0);
-        self.nonces.borrow_mut().insert(NONCE_KEY.to_string(), current + 1);
+        self.nonces
+            .borrow_mut()
+            .insert(NONCE_KEY.to_string(), current + 1);
         Ok(())
     }
 
     async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error> {
-        let user_account = self.user_accounts.borrow().get(USER_ACC_KEY).map(|v| {
-            let decoded_val: UserAccount = Decode::decode(&mut &v[..]).expect("failed to decode");
-            decoded_val
-        }).ok_or_else(|| anyhow!("user account not found"))?;
+        let user_account = self
+            .user_accounts
+            .borrow()
+            .get(USER_ACC_KEY)
+            .map(|v| {
+                let decoded_val: UserAccount =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .ok_or_else(|| anyhow!("user account not found"))?;
         Ok(user_account)
     }
 
@@ -577,7 +594,9 @@ impl DbWorkerInterface for InMemoryDbWorker {
         } else {
             vec![tx_data]
         };
-        self.transactions.borrow_mut().insert(TXS_KEY.to_string(), to_store);
+        self.transactions
+            .borrow_mut()
+            .insert(TXS_KEY.to_string(), to_store);
         Ok(())
     }
 
@@ -590,13 +609,21 @@ impl DbWorkerInterface for InMemoryDbWorker {
         } else {
             vec![tx_data]
         };
-        self.transactions.borrow_mut().insert(TXS_KEY.to_string(), to_store);
+        self.transactions
+            .borrow_mut()
+            .insert(TXS_KEY.to_string(), to_store);
         Ok(())
     }
 
     async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
         let mut failed_txs = Vec::new();
-        for tx in self.transactions.borrow().get(TXS_KEY).map(|v| v.clone()).unwrap_or_default() {
+        for tx in self
+            .transactions
+            .borrow()
+            .get(TXS_KEY)
+            .map(|v| v.clone())
+            .unwrap_or_default()
+        {
             let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
             if !tx.success {
                 failed_txs.push(tx);
@@ -606,30 +633,48 @@ impl DbWorkerInterface for InMemoryDbWorker {
     }
 
     async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
-        let data = self.transactions_data.borrow().get(TXS_DATA_KEY).map(|v| {
-            let decoded_val: TransactionsData = Decode::decode(&mut &v[..]).expect("failed to decode");
-            decoded_val
-        }).unwrap_or(TransactionsData {
-            success_value: 0,
-            failed_value: 0,
-        });
+        let data = self
+            .transactions_data
+            .borrow()
+            .get(TXS_DATA_KEY)
+            .map(|v| {
+                let decoded_val: TransactionsData =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .unwrap_or(TransactionsData {
+                success_value: 0,
+                failed_value: 0,
+            });
         Ok(data.success_value as u64)
     }
 
     async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
-        let data = self.transactions_data.borrow().get(TXS_DATA_KEY).map(|v| {
-            let decoded_val: TransactionsData = Decode::decode(&mut &v[..]).expect("failed to decode");
-            decoded_val
-        }).unwrap_or(TransactionsData {
-            success_value: 0,
-            failed_value: 0,
-        });
+        let data = self
+            .transactions_data
+            .borrow()
+            .get(TXS_DATA_KEY)
+            .map(|v| {
+                let decoded_val: TransactionsData =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .unwrap_or(TransactionsData {
+                success_value: 0,
+                failed_value: 0,
+            });
         Ok(data.failed_value as u64)
     }
 
     async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
         let mut success_txs = Vec::new();
-        for tx in self.transactions.borrow().get(TXS_KEY).map(|v| v.clone()).unwrap_or_default() {
+        for tx in self
+            .transactions
+            .borrow()
+            .get(TXS_KEY)
+            .map(|v| v.clone())
+            .unwrap_or_default()
+        {
             let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
             if tx.success {
                 success_txs.push(tx);
@@ -648,12 +693,17 @@ impl DbWorkerInterface for InMemoryDbWorker {
     }
 
     async fn get_saved_user_peers(&self, account_id: String) -> Result<String, Error> {
-        Ok(self.saved_peers.borrow().get(&account_id).cloned().unwrap_or_default())
+        Ok(self
+            .saved_peers
+            .borrow()
+            .get(&account_id)
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), Error> {
         let mut all_account_ids = Vec::new();
-        let mut peer_id = None; 
+        let mut peer_id = None;
 
         for (account_id, stored_peer_id) in &self.saved_peers.clone().into_inner() {
             if let Some(ref existing_peer_id) = peer_id {
@@ -677,7 +727,8 @@ impl DbWorkerInterface for InMemoryDbWorker {
 
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), Error> {
         // Find all account IDs mapped to this peer_id and remove them
-        let keys_to_remove: Vec<String> = self.saved_peers
+        let keys_to_remove: Vec<String> = self
+            .saved_peers
             .borrow()
             .iter()
             .filter_map(|(account_id, stored_peer_id)| {

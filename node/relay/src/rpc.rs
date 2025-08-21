@@ -25,7 +25,7 @@ impl RelayServerRpcWorker {
         // Create a broadcast channel that can handle multiple subscribers
         let (broadcast_tx, _) = broadcast::channel(100);
         let broadcast_tx = Arc::new(broadcast_tx);
-        
+
         // Spawn a task to continuously consume from the mpsc channel and forward to broadcast
         let broadcast_tx_clone = broadcast_tx.clone();
         tokio::spawn(async move {
@@ -37,7 +37,7 @@ impl RelayServerRpcWorker {
             }
             debug!(target: "rpc", "Metrics channel receiver closed");
         });
-        
+
         Self {
             relay_server_metrics_broadcast: broadcast_tx,
         }
@@ -63,7 +63,7 @@ impl RelayServerRpcServer for RelayServerRpcWorker {
 
             let subscription_msg = SubscriptionMessage::from_json(&relay_server_metrics)
                 .map_err(|_| anyhow!("failed to convert tx update to json"))?;
-            
+
             // If sending fails, client disconnected - break the loop gracefully
             if let Err(_) = sink.send(subscription_msg).await {
                 debug!(target: "rpc", "Client disconnected from metrics subscription");

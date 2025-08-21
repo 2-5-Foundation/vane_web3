@@ -32,6 +32,7 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use core::cell::RefCell;
 use db_wasm::{DbWorker, OpfsRedbWorker};
+use futures::future::Either;
 use futures::{FutureExt, StreamExt};
 use libp2p::core::transport::global_only::Transport;
 use libp2p::core::Transport as TransportTrait;
@@ -45,8 +46,6 @@ use libp2p_kad::{Event as DhtEvent, Record};
 use libp2p_webtransport_websys;
 use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
-use futures::future::Either;
-
 
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -134,7 +133,7 @@ impl WasmP2pWorker {
             .multiplex(libp2p::yamux::Config::default())
             .boxed();
 
-            let combined_transport = OrTransport::new(webtransport, authenticated_relay)
+        let combined_transport = OrTransport::new(webtransport, authenticated_relay)
             .map(|either, _| match either {
                 Either::Left((peer, muxer)) => (peer, muxer),
                 Either::Right((peer, muxer)) => (peer, muxer),

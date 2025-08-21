@@ -1,3 +1,4 @@
+use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, StreamExt};
 use libp2p::relay::Behaviour as RelayBehaviour;
 use libp2p::swarm::{derive_prelude, NetworkBehaviour};
@@ -6,11 +7,18 @@ use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
 use libp2p_kad::{Behaviour as DhtBehaviour, Record, K_VALUE};
 
-use libp2p::relay::Event as RelayServerEvent;
-use libp2p_kad::Event as DhtEvent;
-
 use anyhow::anyhow;
+use futures::future::Either;
+use libp2p::relay::Event as RelayServerEvent;
+use libp2p::Transport;
+use libp2p::{
+    core::{muxing::StreamMuxerBox},
+    identity::Keypair,
+    noise, quic, tcp, yamux
+};
+use libp2p_kad::Event as DhtEvent;
 use log::{error, info, trace};
+use std::net::{Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -58,19 +66,38 @@ impl RelayP2pWorker {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(self_keypair.public());
 
+        // External multiaddr (with p2p component)
         let url = if live {
-            format!("/dns/{}/tcp/{}/p2p/{}", dns, port, peer_id)
+            format!(
+                "/dns/{}/tcp/{}/quic-v1/webtransport/p2p/{}",
+                dns, port, peer_id
+            )
         } else {
-            format!("/ip6/::/tcp/{}/p2p/{}", port, peer_id)
+            format!(
+                "/ip6/::/tcp/{}/quic-v1/webtransport/p2p/{}",
+                port,
+                peer_id.clone()
+            )
         };
-        let external_multi_addr: Multiaddr = url
-            .parse()
-            .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
+        let external_multi_addr = if live {
+            Multiaddr::empty()
+                .with(libp2p::multiaddr::Protocol::Dns((dns.into())))
+                .with(libp2p::multiaddr::Protocol::Udp(port))
+                .with(libp2p::multiaddr::Protocol::QuicV1)
+            // .with(libp2p::multiaddr::Protocol::WebTransport)
+        } else {
+            Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+                .with(libp2p::multiaddr::Protocol::Udp(port))
+                .with(libp2p::multiaddr::Protocol::QuicV1)
+            // .with(libp2p::multiaddr::Protocol::WebTransport)
+        };
 
-        let listening_addr = format!("/ip6/::/tcp/{}", port);
-        let listening_multi_addr = listening_addr
-            .parse()
-            .map_err(|err| anyhow!("failed to parse listening addr, caused by: {err}"))?;
+        // Listening multiaddr (without p2p component)
+        //let listening_addr = format!("/ip6/::/tcp/{}/quic-v1/webtransport", port);
+        let listening_multi_addr = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+            .with(libp2p::multiaddr::Protocol::Udp(port))
+            .with(libp2p::multiaddr::Protocol::QuicV1);
+        // .with(libp2p::multiaddr::Protocol::WebTransport);
 
         let dht_behaviour = DhtBehaviour::<MemoryStore>::new(
             peer_id.clone(),
@@ -84,27 +111,53 @@ impl RelayP2pWorker {
                 },
             ),
         );
+
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
             libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config::default()),
             dht_behaviour,
         );
 
-        let transport_tcp = libp2p::tcp::Config::new().nodelay(true).port_reuse(true);
+        // let mut relay_swarm = libp2p::SwarmBuilder::with_existing_identity(self_keypair)
+        // .with_tokio()
+        // .with_tcp(
+        //     libp2p::tcp::Config::default(),
+        //     libp2p::noise::Config::new(&self_keypair)?,
+        //     libp2p::yamux::Config::default(),
+        // )?
+        // .with_quic()
+        // .with_behaviour(|_| relay_behaviour)?
+        // .build();
 
-        let mut swarm = SwarmBuilder::with_existing_identity(self_keypair)
-            .with_tokio()
-            
-            .with_behaviour(|_| relay_behaviour)?
-            .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
+        let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default())
+            .upgrade(upgrade::Version::V1)
+            .authenticate(noise::Config::new(&self_keypair)?)
+            .multiplex(yamux::Config::default())
+            .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
+            .boxed();
+
+        let quic_transport = quic::tokio::Transport::new(quic::Config::new(&self_keypair))
+            .map(|(peer, conn), _| (peer, StreamMuxerBox::new(conn)))
+            .boxed();
+
+        let combined_transport = OrTransport::new(quic_transport, tcp_transport)
+            .map(|either, _| match either {
+                Either::Left((peer, muxer)) => (peer, muxer),
+                Either::Right((peer, muxer)) => (peer, muxer),
             })
-            .build();
+            .boxed();
 
-        swarm.add_external_address(external_multi_addr.clone());
+        let mut relay_swarm = Swarm::new(
+            combined_transport,
+            relay_behaviour,
+            peer_id,
+            libp2p::swarm::Config::with_tokio_executor()
+                .with_idle_connection_timeout(std::time::Duration::from_secs(300)),
+        );
+        // relay_swarm.add_external_address(external_multi_addr.clone());
 
         Ok(Self {
             peer_id,
-            swarm: Arc::new(Mutex::new(swarm)),
+            swarm: Arc::new(Mutex::new(relay_swarm)),
             external_multi_addr,
             listening_addr: listening_multi_addr,
             metrics_counters,

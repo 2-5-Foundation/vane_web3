@@ -1,0 +1,6 @@
+12:22:10 [INFO]  🦀...vane relay server starting...🚀 
+12:22:10 [INFO] local_peer_id=12D3KooWBzQZcZim4AAVwzqFs64gV8J1hDdMhzXvzWT2n8HB2Trr
+12:22:10 [INFO] Starting telemetry metrics collection...
+12:22:10 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/::1/udp/30333/quic-v1 }
+12:22:10 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/fc00:bbbb:bbbb:bb01:d:0:10:8f2f/udp/30333/quic-v1 }
+12:22:10 [WARN] Failed to trigger bootstrap: No known peers.
