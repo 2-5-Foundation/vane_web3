@@ -42,8 +42,17 @@ class Logger {
 
     private formatLogMessage(entry: LogEntry): string {
         const timestamp = new Date(entry.timestamp).toISOString();
-        const location = entry.file && entry.line ? `${entry.file}:${entry.line}` : entry.module_path || '';
-        const locationStr = location ? ` [${location}]` : '';
+        
+        // Extract just the filename from the full path for cleaner logs
+        let fileInfo = '';
+        if (entry.file && entry.line) {
+            const filename = entry.file.split('/').pop() || entry.file;
+            fileInfo = `📄 ${filename}:${entry.line}`;
+        } else if (entry.module_path) {
+            fileInfo = `📦 ${entry.module_path}`;
+        }
+        
+        const locationStr = fileInfo ? ` [${fileInfo}]` : '';
         
         return `[${timestamp}] ${entry.target}${locationStr}: ${entry.message}`;
     }
@@ -80,25 +89,37 @@ class Logger {
         this.addToHistory(entry);
         const formattedMessage = this.formatLogMessage(entry);
 
+        // Create a cleaner format with file info more prominent
+        const timestamp = new Date(entry.timestamp).toISOString().split('T')[1].slice(0, 12); // Just time part
+        let fileInfo = '';
+        if (entry.file && entry.line) {
+            const filename = entry.file.split('/').pop() || entry.file;
+            fileInfo = `📄${filename}:${entry.line}`;
+        }
+        
+        const cleanMessage = fileInfo 
+            ? `${entry.target} [${fileInfo}] ${entry.message}`
+            : `${entry.target} ${entry.message}`;
+
         // Output to browser console with appropriate level
         switch (level) {
             case LogLevel.Error:
-                console.error(`🔴 ${formattedMessage}`);
+                console.error(`🔴 [${timestamp}] ${cleanMessage}`);
                 break;
             case LogLevel.Warn:
-                console.warn(`🟡 ${formattedMessage}`);
+                console.warn(`🟡 [${timestamp}] ${cleanMessage}`);
                 break;
             case LogLevel.Info:
-                console.info(`🔵 ${formattedMessage}`);
+                console.info(`🔵 [${timestamp}] ${cleanMessage}`);
                 break;
             case LogLevel.Debug:
-                console.debug(`🟢 ${formattedMessage}`);
+                console.debug(`🟢 [${timestamp}] ${cleanMessage}`);
                 break;
             case LogLevel.Trace:
-                console.debug(`⚪ ${formattedMessage}`);
+                console.debug(`⚪ [${timestamp}] ${cleanMessage}`);
                 break;
             default:
-                console.log(`❓ ${formattedMessage}`);
+                console.log(`❓ [${timestamp}] ${cleanMessage}`);
         }
     }
 

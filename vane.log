@@ -1,6 +1,5 @@
-12:20:50 [INFO]  🦀...vane relay server starting...🚀 
-12:20:50 [INFO] local_peer_id=12D3KooWGRmfhmohvWPJfFSTHhHM1wzqya2Th1tXZaUJvBh5rEux
-12:20:50 [INFO] Starting telemetry metrics collection...
-12:20:50 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/::1/udp/30333/quic-v1 }
-12:20:50 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/fc00:bbbb:bbbb:bb01:d:0:10:8f2f/udp/30333/quic-v1 }
-12:20:50 [WARN] Failed to trigger bootstrap: No known peers.
+23:52:17 [INFO]  🦀...vane relay server starting...🚀 
+23:52:17 [INFO] local_peer_id=12D3KooWNQBWx7TBiFGe6pJp8oPBu4YnaEQ8zSRQbtY41DvjWEvG
+23:52:17 [INFO] dht mode changed: Server
+23:52:17 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/::1/tcp/30333/ws }
+23:52:18 [WARN] Failed to trigger bootstrap: No known peers.

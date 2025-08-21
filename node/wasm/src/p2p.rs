@@ -3,9 +3,9 @@ pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
 use libp2p::core::transport::{upgrade, OrTransport};
+use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::multiaddr::Protocol;
-use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 
 // peer discovery
@@ -36,13 +36,13 @@ use futures::future::Either;
 use futures::{FutureExt, StreamExt};
 use libp2p::core::transport::global_only::Transport;
 use libp2p::core::Transport as TransportTrait;
-use libp2p::relay::client::Behaviour as RelayClientBehaviour;
-use libp2p::request_response::json::Behaviour as JsonBehaviour;
-use libp2p_kad::{
+use libp2p::kad::{
     Behaviour as DhtBehaviour, GetRecordOk, GetRecordResult, PeerRecord, QueryId, QueryResult,
     RoutingUpdate,
 };
-use libp2p_kad::{Event as DhtEvent, Record};
+use libp2p::kad::{Event as DhtEvent, Record};
+use libp2p::relay::client::Behaviour as RelayClientBehaviour;
+use libp2p::request_response::json::Behaviour as JsonBehaviour;
 use libp2p_webtransport_websys;
 use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
@@ -156,7 +156,7 @@ impl WasmP2pWorker {
                 peer_id.clone(),
                 MemoryStoreConfig {
                     max_records: 1000,
-                    max_value_bytes: 50,
+                    max_value_bytes: 512,
                     max_providers_per_key: 1024,
                     max_provided_keys: 10,
                 },
@@ -223,20 +223,20 @@ impl WasmP2pWorker {
                 num_established,
                 ..
             } => {
-                info!(target:"p2p","connection established: peer_id:{peer_id:?} endpoint:{endpoint:?} num_established:{num_established:?}")
+                info!(target:"p2p","🟢 Connected to peer {} (connections: {})", peer_id, num_established)
             }
             SwarmEvent::IncomingConnection {
                 local_addr,
                 send_back_addr,
                 ..
             } => {
-                info!(target:"p2p","incoming connection: local_addr:{local_addr:?} send_back_addr:{send_back_addr:?}")
+                info!(target:"p2p","📥 Incoming connection from {}", send_back_addr)
             }
             SwarmEvent::Dialing { peer_id, .. } => {
-                info!(target:"p2p","dialing to {peer_id:?}")
+                info!(target:"p2p","📞 Dialing peer {}", peer_id.map(|p| p.to_string()).unwrap_or_else(|| "unknown".to_string()))
             }
             SwarmEvent::ListenerError { error, .. } => {
-                error!(target: "p2p","listener error: {error}");
+                error!(target: "p2p","❌ Listener error: {}", error);
             }
             SwarmEvent::ConnectionClosed {
                 peer_id,
@@ -244,32 +244,34 @@ impl WasmP2pWorker {
                 cause,
                 ..
             } => {
-                info!(target:"p2p","connection closed peer_id:{peer_id:?} endpoint:{endpoint:?} cause:{cause:?}")
+                warn!(target:"p2p","🔌 Connection closed with peer {}: {:?}", peer_id, cause)
             }
             SwarmEvent::IncomingConnectionError { error, .. } => {
-                error!(target:"p2p","incoming connection error: {error:?}")
+                error!(target:"p2p","❌ Incoming connection failed: {}", error)
             }
             SwarmEvent::OutgoingConnectionError { error, .. } => {
-                error!(target:"p2p","outgoing connection error: {error:?}")
+                error!(target:"p2p","❌ Outgoing connection failed: {}", error)
             }
-            SwarmEvent::ListenerClosed { reason, .. } => info!("listener closed: {reason:?}"),
+            SwarmEvent::ListenerClosed { reason, .. } => {
+                info!(target:"p2p","🔌 Listener closed: {:?}", reason)
+            }
             SwarmEvent::NewListenAddr { address, .. } => {
-                info!(target:"p2p","new listener address: {address:?}")
+                info!(target:"p2p","🎧 Listening on: {}", address)
             }
             SwarmEvent::ExpiredListenAddr { address, .. } => {
-                info!(target:"p2p","expired listener add: {address:?}")
+                debug!(target:"p2p","⏰ Listener address expired: {}", address)
             }
             SwarmEvent::NewExternalAddrCandidate { address, .. } => {
-                info!(target:"p2p","new external addr candidate: {address:?}")
+                debug!(target:"p2p","🌐 External address candidate: {}", address)
             }
-            _ => info!(target:"p2p","unhandled event"),
+            _ => debug!(target:"p2p","⚡ Unhandled swarm event"),
         }
     }
 
     async fn handle_dht_events(&self, dht_event: DhtEvent) {
         match dht_event {
             DhtEvent::InboundRequest { request } => {
-                info!(target: "p2p","dht request: {request:?}")
+                info!(target: "p2p","📨 DHT request received")
             }
             DhtEvent::OutboundQueryProgressed {
                 id, result, stats, ..
@@ -291,11 +293,10 @@ impl WasmP2pWorker {
                         .send((None, id))
                         .await
                         .expect("failed to send dht query result on the channel");
-                    error!(target: "p2p","dht query result not found: {id:?}");
                 }
             }
             DhtEvent::PendingRoutablePeer { peer, address } => {
-                info!(target: "p2p","dht pending routable peer: {peer:?} {address:?}")
+                debug!(target: "p2p","🔄 DHT routing update: peer {} at {}", peer, address)
             }
             DhtEvent::RoutablePeer { peer, address } => {
                 info!(target: "p2p","dht routable peer: {peer:?} {address:?}")
@@ -420,9 +421,9 @@ impl WasmP2pWorker {
         let mut dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
 
         let record =
-            libp2p_kad::Record::new(account_id.as_bytes().to_vec(), value.as_bytes().to_vec());
+            libp2p::kad::Record::new(account_id.as_bytes().to_vec(), value.as_bytes().to_vec());
 
-        let query_id = dht_behaviour.put_record(record.clone(), libp2p_kad::Quorum::Majority);
+        let query_id = dht_behaviour.put_record(record.clone(), libp2p::kad::Quorum::Majority);
 
         dht_behaviour
             .start_providing(record.key)
@@ -469,7 +470,7 @@ impl WasmP2pWorker {
             self.user_account_id.as_bytes().to_vec(),
             self.user_circuit_multi_addr.to_vec(),
         );
-        dht.put_record(record.clone(), libp2p_kad::Quorum::Majority)?;
+        dht.put_record(record.clone(), libp2p::kad::Quorum::Majority)?;
         dht.start_providing(record.key)?;
 
         Ok(())
@@ -487,7 +488,7 @@ impl WasmP2pWorker {
             .dial(self.relay_multi_addr.clone())
             .map_err(|e| anyhow!("failed to dial relay node: {e}"))?;
         let _listening_id = self.wasm_swarm.borrow_mut().listen_on(multi_addr.clone())?;
-        trace!(target:"p2p","listening to: {:?}",multi_addr);
+        info!(target:"p2p","listening to: {:?}",multi_addr);
 
         self.announce_dht()?;
 
@@ -497,26 +498,18 @@ impl WasmP2pWorker {
         let pending_request = self.wasm_pending_request.clone();
         let self_clone = self.clone();
 
-        let callback = Closure::wrap(Box::new(move || {
-            let swarm = Rc::clone(&swarm);
-            let p2p_command_recv = Rc::clone(&p2p_command_recv);
-            let pending_request = Rc::clone(&pending_request);
-            let sender = Rc::clone(&sender);
-
-            // Clone self_clone before the async block to avoid consuming it
-            let self_clone_for_async = self_clone.clone();
-
-            wasm_bindgen_futures::spawn_local(async move {
+        // Event-driven approach - no polling needed!
+        wasm_bindgen_futures::spawn_local(async move {
+            loop {
                 let mut swarm = swarm.borrow_mut();
                 let mut p2p_command_recv = p2p_command_recv.borrow_mut();
 
                 futures::select! {
                     event = swarm.next().fuse() => {
                         if let Some(event) = event {
-                            self_clone_for_async.handle_swarm_events(pending_request, event, sender).await
-                        } else {
-                            info!("no current swarm event")
+                            self_clone.handle_swarm_events(pending_request.clone(), event, sender.clone()).await
                         }
+                        // Continue processing - don't break if no event, just keep listening
                     },
                     cmd = p2p_command_recv.recv().fuse() => {
                         match cmd {
@@ -549,24 +542,16 @@ impl WasmP2pWorker {
                                 }
                             },
                             None => {
-                                info!("command channel closed");
+                                info!("command channel closed - shutting down P2P worker");
+                                break; // Only exit when command channel is explicitly closed
                             },
                             _ => {}
                         }
                     }
+                    // Removed the "complete" branch - keep running indefinitely
                 }
-            })
-        }) as Box<dyn FnMut()>);
-
-        web_sys::window()
-            .expect("windows not found")
-            .set_interval_with_callback_and_timeout_and_arguments_0(
-                callback.as_ref().unchecked_ref(),
-                100, // 100 ms interval
-            )
-            .map_err(|err| anyhow!("failed to set windows interval: {err:?}"))?;
-
-        callback.forget();
+            }
+        });
         Ok(())
     }
 }
