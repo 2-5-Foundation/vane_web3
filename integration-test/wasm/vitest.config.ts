@@ -9,6 +9,17 @@ export default defineConfig({
     setupFiles: ['./test/setup.ts'],
     include: ['test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', '.idea', '.git', '.cache'],
+    browser: {
+      enabled: process.env.VITEST_BROWSER === 'true',
+      name: 'chrome',
+      provider: 'playwright',
+      headless: true,
+      screenshotOnFailure: false,
+      api: {
+        port: 63315,
+        strictPort: true
+      }
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

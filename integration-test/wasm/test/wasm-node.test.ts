@@ -177,7 +177,7 @@ describe('WASM Node Tests', () => {
         if (peerIdMatch && !localPeerId) {
           const capturedPeerId = peerIdMatch[1];
           localPeerId = capturedPeerId;
-          relayMultiAddr = `/ip6/::/tcp/30333/quic-v1/webtransport/p2p/${capturedPeerId}`;
+          relayMultiAddr = `/ip6/::1/tcp/30333/ws/p2p/${capturedPeerId}`;
           console.log(`🎯 Captured local_peer_id: ${capturedPeerId}`);
           console.log(`🔗 Relay multiaddr: ${relayMultiAddr}`);
         }

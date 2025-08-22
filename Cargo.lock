@@ -4117,7 +4117,7 @@ dependencies = [
  "libp2p-tls",
  "libp2p-upnp",
  "libp2p-websocket",
- "libp2p-webtransport-websys",
+ "libp2p-websocket-websys",
  "libp2p-yamux",
  "multiaddr",
  "pin-project",
@@ -4499,23 +4499,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-webtransport-websys"
-version = "0.5.1"
+name = "libp2p-websocket-websys"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e0bf65fe6b4be6eaa51df462bf5d0882a29ab9d433ac4858b2865b4bbd404b2"
+checksum = "e73d85b4dc8c2044f58508461bd8bb12f541217c0038ade8cce0ddc1607b8f72"
 dependencies = [
+ "bytes",
  "futures",
  "js-sys",
  "libp2p-core",
- "libp2p-identity",
- "libp2p-noise",
- "multiaddr",
- "multihash",
  "send_wrapper 0.6.0",
  "thiserror 2.0.12",
  "tracing",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-sys",
 ]
 
@@ -7111,9 +7107,6 @@ name = "send_wrapper"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
-dependencies = [
- "futures-core",
-]
 
 [[package]]
 name = "serde"
@@ -8997,7 +8990,7 @@ dependencies = [
  "hex-literal",
  "js-sys",
  "libp2p",
- "libp2p-webtransport-websys",
+ "libp2p-websocket-websys",
  "log",
  "lru 0.12.5",
  "parity-scale-codec",

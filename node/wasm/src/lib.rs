@@ -24,10 +24,10 @@ use core::str::FromStr;
 use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
 use futures::FutureExt;
 use gloo_timers::future::TimeoutFuture;
+use libp2p::kad::QueryId;
 use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use libp2p::PeerId;
-use libp2p_kad::QueryId;
 use log::{error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
