@@ -1,0 +1,13 @@
+{
+  "name": "wasm-minimal-test",
+  "type": "module",
+  "scripts": {
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@vitest/browser": "^2.1.8",
+    "playwright": "^1.48.0",
+    "typescript": "^5.0.0"
+  }
+}
