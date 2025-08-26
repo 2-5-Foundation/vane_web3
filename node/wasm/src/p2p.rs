@@ -2,7 +2,6 @@ use anyhow::{anyhow, Error};
 pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
-use std::net::Ipv4Addr;
 use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::multiaddr::Protocol;
@@ -485,17 +484,11 @@ impl WasmP2pWorker {
             RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
         >,
     ) -> Result<(), Error> {
-        //info!(target:"p2p","relay node dialing: {:?}",self.relay_multi_addr);
-        let test_multi_addr = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
-        .with(Protocol::Tcp(30333))
-        .with(Protocol::Ws("/".into()))
-        .with(Protocol::P2p(PeerId::from_str("12D3KooWMhjaFfWm5XAkEW9ennQ8smwxTAnm8zyu8aggBKDUzTvw").unwrap()));
-        
-        //let test_multi_addr = Multiaddr::from("/ip4/127.0.0.1/tcp/30333/ws/p2p/12D3KooWMhjaFfWm5XAkEW9ennQ8smwxTAnm8zyu8aggBKDUzTvw");
         self.wasm_swarm
             .borrow_mut()
-            .dial(test_multi_addr.clone())
+            .dial(self.relay_multi_addr.clone())
             .map_err(|e| anyhow!("failed to dial relay node: {e}"))?;
+        info!(target:"p2p","relay node dialed: {:?}",self.relay_multi_addr);
 
         self.announce_dht()?;
 
