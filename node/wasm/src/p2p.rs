@@ -2,6 +2,7 @@ use anyhow::{anyhow, Error};
 pub use codec::Encode;
 use core::pin::Pin;
 use core::str::FromStr;
+use std::net::Ipv4Addr;
 use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::multiaddr::Protocol;
@@ -180,7 +181,7 @@ impl WasmP2pWorker {
                 .with_idle_connection_timeout(std::time::Duration::from_secs(300)),
         );
         
-        wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
+        // wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
 
         Ok(Self {
             node_id: peer_id,
@@ -264,7 +265,9 @@ impl WasmP2pWorker {
             SwarmEvent::NewExternalAddrCandidate { address, .. } => {
                 debug!(target:"p2p","🌐 External address candidate: {}", address)
             }
-            _ => debug!(target:"p2p","⚡ Unhandled swarm event"),
+            _ => {
+                debug!(target:"p2p","⚡ Unhandled swarm event");
+            }
         }
     }
 
@@ -436,7 +439,7 @@ impl WasmP2pWorker {
 
     fn announce_dht(&mut self) -> Result<(), anyhow::Error> {
         let relay_peer_id = self
-            .relay_multi_addr
+            .relay_multi_addr.clone()
             .pop()
             .and_then(|p| {
                 if let Protocol::P2p(peer_id) = p {
@@ -447,7 +450,6 @@ impl WasmP2pWorker {
             })
             .ok_or_else(|| anyhow!("relay_multi_addr missing PeerId"))?;
 
-        // Extract swarm reference once to avoid multiple mutable borrows
         let mut swarm = self.wasm_swarm.borrow_mut();
         let mut dht = &mut swarm.behaviour_mut().app_client_dht;
 
@@ -471,7 +473,8 @@ impl WasmP2pWorker {
             self.user_circuit_multi_addr.to_vec(),
         );
         dht.put_record(record.clone(), libp2p::kad::Quorum::Majority)?;
-        dht.start_providing(record.key)?;
+        dht.start_providing(record.clone().key)?;
+        info!(target: "p2p","dht record added and started providing: {record:?}");
 
         Ok(())
     }
@@ -482,13 +485,17 @@ impl WasmP2pWorker {
             RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
         >,
     ) -> Result<(), Error> {
-        let multi_addr = &self.user_circuit_multi_addr;
+        //info!(target:"p2p","relay node dialing: {:?}",self.relay_multi_addr);
+        let test_multi_addr = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+        .with(Protocol::Tcp(30333))
+        .with(Protocol::Ws("/".into()))
+        .with(Protocol::P2p(PeerId::from_str("12D3KooWMhjaFfWm5XAkEW9ennQ8smwxTAnm8zyu8aggBKDUzTvw").unwrap()));
+        
+        //let test_multi_addr = Multiaddr::from("/ip4/127.0.0.1/tcp/30333/ws/p2p/12D3KooWMhjaFfWm5XAkEW9ennQ8smwxTAnm8zyu8aggBKDUzTvw");
         self.wasm_swarm
             .borrow_mut()
-            .dial(self.relay_multi_addr.clone())
+            .dial(test_multi_addr.clone())
             .map_err(|e| anyhow!("failed to dial relay node: {e}"))?;
-        let _listening_id = self.wasm_swarm.borrow_mut().listen_on(multi_addr.clone())?;
-        info!(target:"p2p","listening to: {:?}",multi_addr);
 
         self.announce_dht()?;
 
@@ -541,14 +548,9 @@ impl WasmP2pWorker {
                                     swarm.dial(target_multi_addr).expect("failed to dial");
                                 }
                             },
-                            None => {
-                                info!("command channel closed - shutting down P2P worker");
-                                break; // Only exit when command channel is explicitly closed
-                            },
                             _ => {}
                         }
                     }
-                    // Removed the "complete" branch - keep running indefinitely
                 }
             }
         });

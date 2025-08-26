@@ -294,7 +294,7 @@ impl WasmMainServiceWorker {
                     .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
                 let peer_id = {
-                    match multi_addr.pop().expect("peer id not found") {
+                    match multi_addr.clone().pop().expect("peer id not found") {
                         Protocol::P2p(id) => id,
                         _ => {
                             return Err(anyhow!("peer id not found"));

@@ -1,6 +1,7 @@
 import init, * as wasmModule from '../../../node/wasm/pkg/wasm_node.js';
 import { hostFunctions } from '../../../node/wasm/host_functions/main';
 
+
 export function logWasmExports() {
     console.log('📦 WASM Module Exports:');
     
@@ -49,7 +50,7 @@ export function logWasmExports() {
     console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
 }
 
-function setupWasmLogging() {
+export function setupWasmLogging() {
     console.log('🔧 Setting up WASM logging...');
     
     // Set debug level for comprehensive logging
@@ -73,7 +74,7 @@ function setupWasmLogging() {
     }
   }
   
-  async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {
+  export async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {
     console.log('⏳ Waiting for WASM initialization...');
     
     const startTime = Date.now();
@@ -108,3 +109,110 @@ function setupWasmLogging() {
       setTimeout(checkInitialization, checkInterval);
     });
   }
+
+
+export interface RelayNodeInfo {
+  peerId: string;
+  multiAddr: string;
+}
+
+export interface WasmNodeInstance {
+  promise: Promise<any>;
+  isRunning: boolean;
+  stop: () => void;
+}
+
+/**
+ * Reads relay node info from the file created by the start-relay.js script
+ * This allows browser tests to get the real multiaddr without using child_process
+ */
+export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<RelayNodeInfo> {
+  console.log(`🔍 Loading relay node info from relay-info.json`);
+  
+  return new Promise<RelayNodeInfo>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Relay info not available within ${timeoutMs}ms. Make sure to start the relay node first using: bun run start-relay`));
+    }, timeoutMs);
+
+    const checkRelayInfo = async () => {
+      try {
+        // In browser environment, we'll fetch the file via HTTP
+        const response = await fetch('/relay-info.json');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const relayInfo = await response.json();
+        
+        // Proceed as soon as essential fields are present; don't require ready: true
+        if (relayInfo.peerId && relayInfo.multiAddr) {
+          clearTimeout(timeoutId);
+          console.log(`✅ Loaded relay node info`);
+          console.log(`🎯 Peer ID: ${relayInfo.peerId}`);
+          console.log(`🔗 MultiAddr: ${relayInfo.multiAddr}`);
+          
+          resolve({
+            peerId: relayInfo.peerId,
+            multiAddr: relayInfo.multiAddr
+          });
+        } else {
+          // Relay not ready yet, check again
+          setTimeout(checkRelayInfo, 500);
+        }
+      } catch (error) {
+        // File not found or not ready, check again
+        setTimeout(checkRelayInfo, 500);
+      }
+    };
+
+    // Start checking immediately
+    checkRelayInfo();
+  });
+}
+
+export function startWasmNode(
+  relayMultiAddr: string, 
+  walletAddress: string, 
+  network: string = "Ethereum", 
+  live: boolean = false
+): WasmNodeInstance {
+  let isRunning = true;
+  let abortController: AbortController | null = null;
+
+  // Create an abort controller to handle cancellation
+  abortController = new AbortController();
+
+  const wasmPromise = wasmModule.start_vane_web3(relayMultiAddr, walletAddress, network, live)
+    .then((result) => {
+      console.log('✅ WASM node started successfully:', result);
+      return result;
+    })
+    .catch((error) => {
+      if (!abortController?.signal.aborted) {
+        console.error('❌ WASM node failed to start:', error);
+        isRunning = false;
+        throw error;
+      }
+      console.log('🛑 WASM node startup cancelled');
+      return null;
+    });
+
+  const stop = () => {
+    if (isRunning && abortController) {
+      console.log('🛑 Stopping WASM node...');
+      isRunning = false;
+      abortController.abort();
+      
+      // Note: The WASM module doesn't have a built-in stop function,
+      // so we rely on the abort controller to cancel the promise.
+      // In a production environment, you would want to implement
+      // a proper shutdown mechanism in the Rust code.
+    }
+  };
+
+  return {
+    promise: wasmPromise,
+    isRunning,
+    stop
+  };
+}

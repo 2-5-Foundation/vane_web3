@@ -13,7 +13,7 @@ use libp2p::kad::Event as DhtEvent;
 use libp2p::relay::Event as RelayServerEvent;
 use libp2p::Transport;
 use log::{error, info, trace};
-use std::net::{Ipv6Addr, SocketAddr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -40,7 +40,7 @@ pub struct RelayP2pWorker {
     pub peer_id: PeerId,
     pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>>,
     pub external_multi_addr: Multiaddr,
-    pub listening_addr: Multiaddr,
+    pub listening_addr: (Multiaddr, Multiaddr),
 }
 
 impl RelayP2pWorker {
@@ -62,6 +62,10 @@ impl RelayP2pWorker {
         };
 
         let listening_multi_addr = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+            .with(libp2p::multiaddr::Protocol::Tcp(port))
+            .with(libp2p::multiaddr::Protocol::Ws("/".into()));
+
+        let listening_multi_addr_ipv4 = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
 
@@ -106,14 +110,17 @@ impl RelayP2pWorker {
             peer_id,
             swarm: Arc::new(Mutex::new(relay_swarm)),
             external_multi_addr,
-            listening_addr: listening_multi_addr,
+            listening_addr: (listening_multi_addr, listening_multi_addr_ipv4),
         })
     }
 
     pub async fn start_swarm(&mut self) -> Result<(), anyhow::Error> {
-        let listening_addr = &self.listening_addr;
+        let listening_addr = &self.listening_addr.0;
         let _listening_id = self.swarm.lock().await.listen_on(listening_addr.clone())?;
         trace!(target:"p2p","relay server listening to: {:?}",listening_addr.clone());
+        let listening_addr_ipv4 = &self.listening_addr.1;
+        let _listening_id_ipv4 = self.swarm.lock().await.listen_on(listening_addr_ipv4.clone())?;
+        trace!(target:"p2p","relay server listening to ipv4: {:?}",listening_addr_ipv4.clone());
 
         self.swarm
             .lock()
@@ -150,7 +157,31 @@ impl RelayP2pWorker {
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
                     info!(target:"p2p","dialing: {:?}",peer_id);
-                }
+                },
+                SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    info!(target:"p2p","outgoing connection error: {:?}, error {:?}",peer_id,error);
+                },
+                SwarmEvent::ListenerClosed { listener_id, addresses, reason, .. } => {
+                    info!(target:"p2p","listener closed: {:?}, addresses {:?}, reason {:?}",listener_id,addresses,reason);
+                },
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    info!(target:"p2p","new listen addr: {:?}",address);
+                },
+                SwarmEvent::ExpiredListenAddr { address, .. } => {
+                    info!(target:"p2p","expired listen addr: {:?}",address);
+                },
+                SwarmEvent::NewExternalAddrCandidate { address, .. } => {
+                    info!(target:"p2p","new external addr candidate: {:?}",address);
+                },
+                SwarmEvent::ExternalAddrConfirmed { address, .. } => {
+                    info!(target:"p2p","external addr confirmed: {:?}",address);
+                },
+                SwarmEvent::ExternalAddrExpired { address, .. } => {
+                    info!(target:"p2p","external addr expired: {:?}",address);
+                },
+                SwarmEvent::NewExternalAddrOfPeer { peer_id, address, .. } => {
+                    info!(target:"p2p","new external addr of peer: {:?}, {:?}",peer_id,address);
+                },
                 _ => {
                     info!(target:"p2p","swarm event: {:?}",swarm_event);
                 }

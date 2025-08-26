@@ -2,12 +2,18 @@
   "name": "wasm-minimal-test",
   "type": "module",
   "scripts": {
-    "test": "vitest"
+    "test": "bunx vitest",
+    "test:run": "bunx vitest run",
+    "start-relay": "bun run start-relay.ts",
+    "test:with-relay": "bun run start-relay & sleep 5 && bunx vitest run; kill %1"
   },
   "devDependencies": {
-    "vitest": "^2.1.8",
-    "@vitest/browser": "^2.1.8",
+    "vitest": "^3.2.4",
+    "@vitest/browser": "^3.2.4",
     "playwright": "^1.48.0",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "viem": "^2.35.1"
   }
 }
