@@ -1,5 +1,5 @@
 [workspace]
-members =[ "app", "integration-test", "primitives","db/prisma", "db-wasm", "node/relay", "node/wasm"]
+members =[ "app", "integration-test", "primitives","db/prisma", "db-wasm", "node/relay", "node/wasm", "node/test_client"]
 exclude = [
     "db",
     "node/native"

@@ -46,6 +46,8 @@ use libp2p::request_response::json::Behaviour as JsonBehaviour;
 use libp2p_websocket_websys;
 use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
+use gloo_timers::future::TimeoutFuture;
+
 
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -118,8 +120,7 @@ impl WasmP2pWorker {
             Multiaddr::try_from(relay_node_multi_addr).expect("failed to parse relay multiaddr");
         let user_circuit_multi_addr = relay_multi_addr
             .clone()
-            .with(libp2p::multiaddr::Protocol::P2pCircuit)
-            .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()));
+            .with(libp2p::multiaddr::Protocol::P2pCircuit);
 
         let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
         let authenticated_relay = relay_transport
@@ -252,8 +253,8 @@ impl WasmP2pWorker {
             SwarmEvent::OutgoingConnectionError { error, .. } => {
                 error!(target:"p2p","❌ Outgoing connection failed: {}", error)
             }
-            SwarmEvent::ListenerClosed { reason, .. } => {
-                info!(target:"p2p","🔌 Listener closed: {:?}", reason)
+            SwarmEvent::ListenerClosed { reason, addresses,.. } => {
+                info!(target:"p2p","🔌 Listener closed: {:?} {:?}", reason, addresses)
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!(target:"p2p","🎧 Listening on: {}", address)
@@ -489,6 +490,22 @@ impl WasmP2pWorker {
             .dial(self.relay_multi_addr.clone())
             .map_err(|e| anyhow!("failed to dial relay node: {e}"))?;
         info!(target:"p2p","relay node dialed: {:?}",self.relay_multi_addr);
+        
+        TimeoutFuture::new(100).await;
+        self.wasm_swarm.borrow_mut().listen_on(self.user_circuit_multi_addr.clone())?;
+
+        let full_circuit_addr = self.user_circuit_multi_addr
+            .clone()
+            .with(libp2p::multiaddr::Protocol::P2p(self.node_id.clone()));
+        
+        self.wasm_swarm
+            .borrow_mut()
+            .add_external_address(full_circuit_addr.clone());
+        info!(target:"p2p","Added external circuit address: {:?}", full_circuit_addr);
+        
+        for _ in 0..100 {
+            TimeoutFuture::new(100).await;
+        }
 
         self.announce_dht()?;
 

@@ -83,11 +83,9 @@ impl RelayP2pWorker {
         );
 
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
-            libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config::default()),
+            libp2p::relay::Behaviour::new(peer_id.clone(), Default::default()),
             dht_behaviour,
         );
-
-        let transport_tcp = libp2p::tcp::Config::new().nodelay(true).port_reuse(true);
 
         let mut relay_swarm = SwarmBuilder::with_existing_identity(self_keypair)
             .with_tokio()
@@ -130,7 +128,6 @@ impl RelayP2pWorker {
             .add_address(&self.peer_id, listening_addr.clone());
 
         loop {
-            // Get the next event from the swarm
             let swarm_event = {
                 let mut swarm = self.swarm.lock().await;
                 swarm.select_next_some().await
