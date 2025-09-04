@@ -1,56 +1,36 @@
-// this layer should only be about user interaction
-// receive tx requests
-// pre processing
-// send to tx processing layer
-// NGIX for ssl
-
-// ========================================
-// TODO!
-// Make sure that user cannot manually change the STATUS,RECEIVER AND SENDER ADDRESSES, AND NETWORK AND TOKEN ID
-// hence hash all those values and everytime user updates, assert if they are intact
-// ========================================
 
 extern crate alloc;
 
+use core::{cell::RefCell, fmt, str::FromStr};
+use alloc::{rc::Rc, string::{String, ToString}, vec::Vec};
+
 use anyhow::anyhow;
-use core::str::FromStr;
-
+use async_stream::stream;
+use db_wasm::{DbWorker, OpfsRedbWorker};
+use futures::StreamExt;
+use libp2p::PeerId;
 use log::{info, trace};
-
-use crate::cryptography::verify_public_bytes;
-use crate::p2p::WasmP2pWorker;
-use alloc::string::ToString;
-use primitives::data_structure::{
-    AccountInfo, ChainSupported, Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
+use lru::LruCache;
+use reqwasm::http::{Request, RequestMode};
+use serde_wasm_bindgen;
+use sp_core::blake2_256;
+use sp_runtime::{format, traits::Zero};
+use tokio_with_wasm::alias::sync::{
+    mpsc::{Receiver, Sender},
+    {Mutex, MutexGuard},
 };
-use sp_runtime::traits::Zero;
+use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
 
-use alloc::rc::Rc;
-use alloc::string::String;
-use primitives::data_structure::{DbTxStateMachine, DbWorkerInterface};
-use rpc_wasm_imports::*;
+use crate::{
+    cryptography::verify_public_bytes,
+    p2p::WasmP2pWorker,
+};
 
-mod rpc_wasm_imports {
-    pub use alloc::alloc;
-    pub use async_stream::stream;
-    pub use core::cell::RefCell;
-    pub use core::fmt;
-    pub use db_wasm::{DbWorker, OpfsRedbWorker};
-    pub use futures::StreamExt;
-    pub use libp2p::PeerId;
-    pub use lru::LruCache;
-    pub use reqwasm::http::{Request, RequestMode};
-    pub use serde_wasm_bindgen;
-    pub use sp_core::blake2_256;
-    pub use sp_runtime::format;
-    pub use sp_runtime::Vec;
-    pub use tokio_with_wasm::alias::sync::mpsc::{Receiver, Sender};
-    pub use tokio_with_wasm::alias::sync::{Mutex, MutexGuard};
-    pub use wasm_bindgen::prelude::wasm_bindgen;
-    pub use wasm_bindgen::{JsError, JsValue};
-}
+use primitives::data_structure::{
+    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
+    TxStatus, UserAccount, UserMetrics,
+};
 
-// ----------------------------------- WASM -------------------------------- //
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {

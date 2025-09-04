@@ -1,29 +1,24 @@
 extern crate alloc;
 
-use alloc::sync::Arc;
+use core::{cell::RefCell, str::FromStr};
+use alloc::{
+    collections::BTreeMap, rc::Rc, string::ToString, sync::Arc, vec::Vec,
+};
+
 use anyhow::anyhow;
-use core::str::FromStr;
-use log::error;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
+use log::{error, info};
+use serde_wasm_bindgen::{from_value, to_value};
+use wasm_bindgen::prelude::*;
+use web3::{transports, Web3};
+
+use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
-    keccak_256,
+    keccak_256, ByteArray, H256,
 };
-use sp_core::{ByteArray, H256};
 use sp_runtime::traits::Verify;
-
-use alloc::collections::BTreeMap;
-use alloc::rc::Rc;
-use alloc::string::ToString;
-use alloc::vec::Vec;
-use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
-use core::cell::RefCell;
-use log::info;
-use serde_wasm_bindgen::{from_value, to_value};
-use wasm_bindgen::prelude::*;
-use web3::transports;
-use web3::Web3;
+use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]

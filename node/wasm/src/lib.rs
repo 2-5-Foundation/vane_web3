@@ -7,37 +7,33 @@ pub mod logging;
 pub mod p2p;
 pub mod tx_processing;
 
-use crate::p2p::P2pNetworkService;
+use std::collections::HashMap;
+use core::{cell::RefCell, str::FromStr};
+use alloc::{format, rc::Rc, string::String, sync::Arc, vec};
 
-use crate::interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs};
-use crate::p2p::WasmP2pWorker;
-use crate::tx_processing::WasmTxProcessingWorker;
-use alloc::format;
-use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec;
 use anyhow::{anyhow, Error};
 use codec::Decode;
-use core::cell::RefCell;
-use core::str::FromStr;
 use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
 use futures::FutureExt;
 use gloo_timers::future::TimeoutFuture;
-use libp2p::kad::QueryId;
-use libp2p::multiaddr::Protocol;
-use libp2p::Multiaddr;
-use libp2p::PeerId;
 use log::{error, info, warn};
 use lru::LruCache;
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_timer::TryFutureExt;
+use libp2p::{
+    kad::QueryId,
+    multiaddr::Protocol,
+    Multiaddr, PeerId,
+};
+use crate::{
+    interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs},
+    p2p::{P2pNetworkService, WasmP2pWorker},
+    tx_processing::WasmTxProcessingWorker,
+};
 use primitives::data_structure::{
     ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
     TxStateMachine, TxStatus, UserAccount,
 };
-use std::collections::HashMap;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
-use wasm_timer::TryFutureExt;
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {

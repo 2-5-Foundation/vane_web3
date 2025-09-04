@@ -1,54 +1,45 @@
-use anyhow::{anyhow, Error};
-pub use codec::Encode;
-use core::pin::Pin;
-use core::str::FromStr;
-use libp2p::core::transport::{upgrade, OrTransport};
-use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
-use libp2p::multiaddr::Protocol;
-use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 
-// peer discovery
-// app to app communication (i.e sending the tx to be verified by the receiver) and back
+use core::{cell::RefCell, pin::Pin, str::FromStr};
 
+use alloc::{
+    boxed::Box, collections::VecDeque, format, rc::Rc, string::String,
+};
+
+use anyhow::{anyhow, Error};
+use futures::{future::Either, FutureExt, StreamExt};
+use gloo_timers::future::TimeoutFuture;
+use log::{debug, error, info, trace, warn};
+use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
+use web_sys::wasm_bindgen::JsCast;
+
+use libp2p::{
+    core::transport::{global_only::Transport, upgrade, OrTransport, Transport as TransportTrait},
+    futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream},
+    kad::{
+        store::{MemoryStore, MemoryStoreConfig},
+        Behaviour as DhtBehaviour, Event as DhtEvent, GetRecordOk, GetRecordResult, PeerRecord,
+        QueryId, QueryResult, Record, RoutingUpdate,
+    },
+    multiaddr::Protocol,
+    noise,
+    relay::client::{Behaviour as RelayClientBehaviour, Event as RelayClientEvent},
+    request_response::{
+        json::Behaviour as JsonBehaviour,
+        Behaviour, Codec, Event, InboundRequestId, Message, OutboundRequestId, ProtocolSupport,
+        ResponseChannel,
+    },
+    ping::{Behaviour as PingBehaviour, Config as PingConfig, Event as PingEvent},
+    swarm::{derive_prelude, NetworkBehaviour, SwarmEvent},
+    Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder,
+};
+use libp2p_websocket_websys;
+
+use db_wasm::{DbWorker, OpfsRedbWorker};
 use primitives::data_structure::{
     DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
 };
-
-// ---------------------- libp2p common --------------------- //
-use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream};
-use libp2p::noise;
-use libp2p::relay::client::Event as RelayClientEvent;
-use libp2p::request_response::{Behaviour, Event, InboundRequestId, Message, OutboundRequestId};
-use libp2p::request_response::{Codec, ProtocolSupport, ResponseChannel};
-use libp2p::swarm::SwarmEvent;
-use libp2p::swarm::{derive_prelude, NetworkBehaviour};
-use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
-
-use alloc::boxed::Box;
-use alloc::collections::VecDeque;
-use alloc::format;
-use alloc::rc::Rc;
-use alloc::string::String;
-use core::cell::RefCell;
-use db_wasm::{DbWorker, OpfsRedbWorker};
-use futures::future::Either;
-use futures::{FutureExt, StreamExt};
-use libp2p::core::transport::global_only::Transport;
-use libp2p::core::Transport as TransportTrait;
-use libp2p::kad::{
-    Behaviour as DhtBehaviour, GetRecordOk, GetRecordResult, PeerRecord, QueryId, QueryResult,
-    RoutingUpdate,
-};
-use libp2p::kad::{Event as DhtEvent, Record};
-use libp2p::relay::client::Behaviour as RelayClientBehaviour;
-use libp2p::request_response::json::Behaviour as JsonBehaviour;
-use libp2p_websocket_websys;
-use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
-use web_sys::wasm_bindgen::JsCast;
-use gloo_timers::future::TimeoutFuture;
-
-
+pub use codec::Encode;
 #[derive(Clone)]
 pub struct WasmP2pWorker {
     pub node_id: PeerId,
@@ -56,7 +47,7 @@ pub struct WasmP2pWorker {
     pub relay_multi_addr: Multiaddr,
     pub user_account_id: String,
     pub wasm_swarm:
-        Rc<RefCell<Swarm<WasmRelayBehaviour<TxStateMachine, Result<TxStateMachine, String>>>>>,
+        Rc<RefCell<Swarm<WasmRelayBehaviour>>>,
     pub wasm_p2p_command_recv:
         Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>>>,
     pub wasm_pending_request:
@@ -68,21 +59,15 @@ pub struct WasmP2pWorker {
 
 #[derive(NetworkBehaviour)]
 #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
-pub struct WasmRelayBehaviour<TReq, TResp>
-where
-    TReq: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
-    TResp: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
-{
+pub struct WasmRelayBehaviour {
     pub relay_client: libp2p::relay::client::Behaviour,
-    pub app_json: JsonBehaviour<TReq, TResp>,
+    pub app_json: JsonBehaviour<TxStateMachine, Result<TxStateMachine, String>>,
     pub app_client_dht: DhtBehaviour<MemoryStore>,
+    pub ping: PingBehaviour,
 }
 
-impl<TReq, TResp> WasmRelayBehaviour<TReq, TResp>
-where
-    TReq: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
-    TResp: Clone + Send + Sync + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
-{
+impl WasmRelayBehaviour {
+
     pub fn new(
         protocols: impl IntoIterator<Item = (StreamProtocol, libp2p::request_response::ProtocolSupport)>,
         config: libp2p::request_response::Config,
@@ -90,11 +75,13 @@ where
         dht_behaviour: DhtBehaviour<MemoryStore>,
     ) -> Self {
         let json_behaviour = JsonBehaviour::new(protocols, config);
+        let ping_behaviour = PingBehaviour::new(PingConfig::new());
 
         Self {
             relay_client: relay_behaviour,
             app_json: json_behaviour,
             app_client_dht: dht_behaviour,
+            ping: ping_behaviour,
         }
     }
 }
@@ -145,14 +132,7 @@ impl WasmP2pWorker {
         let request_response_config = libp2p::request_response::Config::default()
             .with_request_timeout(core::time::Duration::from_secs(300)); // 5 minutes waiting time for a response
 
-        let json_behaviour = JsonBehaviour::new(
-            [(
-                StreamProtocol::new("/wasm_relay_client_protocol"),
-                ProtocolSupport::Full,
-            )],
-            request_response_config,
-        );
-
+    
         let dht_behaviour = DhtBehaviour::with_config(
             peer_id.clone(),
             MemoryStore::with_config(
@@ -167,12 +147,13 @@ impl WasmP2pWorker {
             Default::default(),
         );
 
-        let combined_behaviour = WasmRelayBehaviour {
-            relay_client: relay_behaviour,
-            app_json: json_behaviour,
-            app_client_dht: dht_behaviour,
-        };
-
+        let combined_behaviour = WasmRelayBehaviour::new(
+            vec![(StreamProtocol::new("/wasm_relay_client_protocol"), ProtocolSupport::Full)],
+            request_response_config,
+            relay_behaviour,
+            dht_behaviour,
+        );
+       
         let mut wasm_swarm = Swarm::new(
             combined_transport,
             combined_behaviour,
@@ -199,7 +180,7 @@ impl WasmP2pWorker {
     pub async fn handle_swarm_events(
         &self,
         pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, String>>>>>,
-        events: SwarmEvent<WasmRelayBehaviourEvent<TxStateMachine, Result<TxStateMachine, String>>>,
+        events: SwarmEvent<WasmRelayBehaviourEvent>,
         sender: Rc<
             RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
         >,
@@ -215,6 +196,9 @@ impl WasmP2pWorker {
                 }
                 WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
                     self.handle_dht_events(app_client_dht_event).await;
+                }
+                WasmRelayBehaviourEvent::Ping(ping_event) => {
+                    self.handle_ping_events(ping_event);
                 }
             },
             // Generic swarm events
@@ -267,6 +251,14 @@ impl WasmP2pWorker {
             }
             _ => {
                 debug!(target:"p2p","⚡ Unhandled swarm event");
+            }
+        }
+    }
+
+    fn handle_ping_events(&self, ping_event: PingEvent) {
+        match ping_event {
+            PingEvent{peer, result, ..} => {
+                info!("checking communicationg: ping: {result:?} by peer: {peer:?}")
             }
         }
     }

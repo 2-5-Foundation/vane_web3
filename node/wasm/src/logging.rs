@@ -1,7 +1,6 @@
 use log::{Level, Log, Metadata, Record};
 use wasm_bindgen::prelude::*;
 
-// External JavaScript logging functions
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["hostFunctions", "hostLogging"], js_name = "log")]
@@ -18,7 +17,6 @@ extern "C" {
     fn js_set_log_level(level: u32);
 }
 
-/// Custom logger that forwards Rust logs to JavaScript host functions
 pub struct WasmLogger;
 
 impl WasmLogger {
@@ -30,14 +28,12 @@ impl WasmLogger {
         Ok(())
     }
 
-    /// Initialize with debug mode for development
     pub fn init_debug() -> Result<(), log::SetLoggerError> {
         log::set_logger(&WasmLogger)?;
         log::set_max_level(log::LevelFilter::Debug);
         Ok(())
     }
 
-    /// Set the log level from Rust
     pub fn set_log_level(level: Level) {
         let level_num = match level {
             Level::Error => 1,
@@ -56,11 +52,9 @@ impl Log for WasmLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         let target = metadata.target();
 
-        // Filter out noisy third-party crates unless they're errors
         match metadata.level() {
             Level::Error => true, // Always show errors
             Level::Warn => {
-                // Show warnings from our code and critical libs
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
@@ -68,7 +62,6 @@ impl Log for WasmLogger {
                     || target.contains("failed")
             }
             Level::Info => {
-                // Show info from our code and important network events
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
@@ -77,7 +70,6 @@ impl Log for WasmLogger {
                     || target.contains("dial")
             }
             Level::Debug | Level::Trace => {
-                // Only show debug/trace from our own modules
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
@@ -108,11 +100,9 @@ impl Log for WasmLogger {
     }
 
     fn flush(&self) {
-        // No buffering in WASM context
     }
 }
 
-/// Convenience macros for logging from WASM
 #[macro_export]
 macro_rules! wasm_log_error {
     ($($arg:tt)*) => {
@@ -148,25 +138,21 @@ macro_rules! wasm_log_trace {
     };
 }
 
-/// Initialize logging for WASM
-/// Call this early in your WASM initialization
+
 pub fn init_wasm_logging() -> Result<(), log::SetLoggerError> {
     WasmLogger::init()
 }
 
-/// Initialize clean production logging (info level, filtered output)
 pub fn init_clean_logging() -> Result<(), log::SetLoggerError> {
     console_error_panic_hook::set_once();
     WasmLogger::init()
 }
 
-/// Initialize verbose logging for debugging (debug level, more details)
 pub fn init_debug_logging() -> Result<(), log::SetLoggerError> {
     console_error_panic_hook::set_once();
     WasmLogger::init_debug()
 }
 
-/// Set log level from Rust code
 pub fn set_wasm_log_level(level: Level) {
     WasmLogger::set_log_level(level);
 }
