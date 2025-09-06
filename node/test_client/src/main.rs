@@ -61,9 +61,9 @@ async fn main() -> Result<()> {
         .boxed();
 
     // Create WebSocket transport for direct connections
-    let websocket_transport = libp2p::websocket::Config::new(
-        libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::default())
-    )
+    let websocket_transport = libp2p::websocket::Config::new(libp2p::tcp::tokio::Transport::new(
+        libp2p::tcp::Config::default(),
+    ))
     .upgrade(libp2p::core::transport::upgrade::Version::V1)
     .authenticate(noise::Config::new(&keypair)?)
     .multiplex(yamux::Config::default())

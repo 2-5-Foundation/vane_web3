@@ -4,11 +4,10 @@ use opfs::persistent;
 use opfs::persistent::{app_specific_dir, DirectoryHandle, FileHandle, WritableFileStream};
 use opfs::{CreateWritableOptions, GetFileHandleOptions};
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Ports, UserAccount,
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, UserAccount,
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use web_sys::{FileSystemDirectoryHandle, StorageManager};
 
 // you must import the traits to call methods on the types
 use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};

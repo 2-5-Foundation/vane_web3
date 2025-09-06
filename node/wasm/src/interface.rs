@@ -1,14 +1,17 @@
-
 extern crate alloc;
 
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{cell::RefCell, fmt, str::FromStr};
-use alloc::{rc::Rc, string::{String, ToString}, vec::Vec};
 
 use anyhow::anyhow;
 use async_stream::stream;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::StreamExt;
-use libp2p::PeerId;
+use libp2p::{Multiaddr, PeerId};
 use log::{info, trace};
 use lru::LruCache;
 use reqwasm::http::{Request, RequestMode};
@@ -21,16 +24,12 @@ use tokio_with_wasm::alias::sync::{
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
 
-use crate::{
-    cryptography::verify_public_bytes,
-    p2p::WasmP2pWorker,
-};
+use crate::{cryptography::verify_public_bytes, p2p::WasmP2pWorker};
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
     TxStatus, UserAccount, UserMetrics,
 };
-
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -116,8 +115,7 @@ impl PublicInterfaceWorker {
             sender_recv.extend_from_slice(receiver.as_bytes());
             let multi_addr = blake2_256(&sender_recv[..]);
 
-            let mut nonce = 0;
-            nonce = self
+            let nonce = self
                 .db_worker
                 .get_nonce()
                 .await

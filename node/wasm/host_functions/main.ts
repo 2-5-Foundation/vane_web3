@@ -7,3 +7,5 @@ export const hostFunctions = {
     hostCryptography: hostCryptography,
     hostLogging: hostLogging,
 }
+
+export default hostFunctions;

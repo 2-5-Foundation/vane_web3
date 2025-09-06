@@ -82,8 +82,57 @@ impl RelayP2pWorker {
             ),
         );
 
+        let relay_config =   libp2p::relay::Config {
+            // ---------------- Reservations ----------------
+            max_reservations: 10_000, // allow up to 10k peers reserving slots
+            max_reservations_per_peer: 4, // each peer can hold up to 4 reservations
+            reservation_duration: Duration::from_secs(60 * 60), // 1 hour, must be renewed
+
+            reservation_rate_limiters: vec![
+                // Per peer: max 30 reservations/hour, at most 1 every 2 minutes
+                libp2p::relay::rate_limiter::new_per_peer(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
+                    limit: NonZeroU32::new(30).unwrap(),
+                    interval: Duration::from_secs(120),
+                }),
+                // Per IP: max 60 reservations/hour, at most 1 every 1 minute
+                libp2p::relay::rate_limiter::new_per_ip(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
+                    limit: NonZeroU32::new(60).unwrap(),
+                    interval: Duration::from_secs(60),
+                }),
+            ],
+
+            // ---------------- Circuits ----------------
+            max_circuits: 1000, // allow up to 1000 concurrent circuits
+            max_circuits_per_peer: 20, // one peer can only have 20 active circuits
+            max_circuit_duration: Duration::from_secs(20 * 60), // each circuit can last max 20 minutes
+            max_circuit_bytes: 1024 * 1024 * 10, // 10 MB per circuit (≈ 20k transactions safely)
+
+            circuit_src_rate_limiters: vec![
+                // Per peer: max 20 circuits/hour, at most 1 every 10 seconds
+                libp2p::relay::rate_limiter::new_per_peer(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
+                    limit: NonZeroU32::new(20).unwrap(),
+                    interval: Duration::from_secs(10),
+                }),
+                // Per IP: same rule
+                libp2p::relay::rate_limiter::new_per_ip(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
+                    limit: NonZeroU32::new(20).unwrap(),
+                    interval: Duration::from_secs(10),
+                }),
+            ],
+        };
+
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
-            libp2p::relay::Behaviour::new(peer_id.clone(), Default::default()),
+            libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config{
+                max_reservations: 1000,
+                max_reservations_per_peer: 100,
+                reservation_duration: Duration::from_secs(60),
+                reservation_rate_limiters: vec![],
+                max_circuits: 1000,
+                max_circuits_per_peer: 100,
+                max_circuit_duration: Duration::from_secs(60),
+                max_circuit_bytes: 1024 * 1024 * 10,
+                circuit_src_rate_limiters: vec![],
+            }),
             dht_behaviour,
         );
 
@@ -117,7 +166,11 @@ impl RelayP2pWorker {
         let _listening_id = self.swarm.lock().await.listen_on(listening_addr.clone())?;
         trace!(target:"p2p","relay server listening to: {:?}",listening_addr.clone());
         let listening_addr_ipv4 = &self.listening_addr.1;
-        let _listening_id_ipv4 = self.swarm.lock().await.listen_on(listening_addr_ipv4.clone())?;
+        let _listening_id_ipv4 = self
+            .swarm
+            .lock()
+            .await
+            .listen_on(listening_addr_ipv4.clone())?;
         trace!(target:"p2p","relay server listening to ipv4: {:?}",listening_addr_ipv4.clone());
 
         self.swarm
@@ -154,31 +207,38 @@ impl RelayP2pWorker {
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
                     info!(target:"p2p","dialing: {:?}",peer_id);
-                },
+                }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                     info!(target:"p2p","outgoing connection error: {:?}, error {:?}",peer_id,error);
-                },
-                SwarmEvent::ListenerClosed { listener_id, addresses, reason, .. } => {
+                }
+                SwarmEvent::ListenerClosed {
+                    listener_id,
+                    addresses,
+                    reason,
+                    ..
+                } => {
                     info!(target:"p2p","listener closed: {:?}, addresses {:?}, reason {:?}",listener_id,addresses,reason);
-                },
+                }
                 SwarmEvent::NewListenAddr { address, .. } => {
                     info!(target:"p2p","new listen addr: {:?}",address);
-                },
+                }
                 SwarmEvent::ExpiredListenAddr { address, .. } => {
                     info!(target:"p2p","expired listen addr: {:?}",address);
-                },
+                }
                 SwarmEvent::NewExternalAddrCandidate { address, .. } => {
                     info!(target:"p2p","new external addr candidate: {:?}",address);
-                },
+                }
                 SwarmEvent::ExternalAddrConfirmed { address, .. } => {
                     info!(target:"p2p","external addr confirmed: {:?}",address);
-                },
+                }
                 SwarmEvent::ExternalAddrExpired { address, .. } => {
                     info!(target:"p2p","external addr expired: {:?}",address);
-                },
-                SwarmEvent::NewExternalAddrOfPeer { peer_id, address, .. } => {
+                }
+                SwarmEvent::NewExternalAddrOfPeer {
+                    peer_id, address, ..
+                } => {
                     info!(target:"p2p","new external addr of peer: {:?}, {:?}",peer_id,address);
-                },
+                }
                 _ => {
                     info!(target:"p2p","swarm event: {:?}",swarm_event);
                 }

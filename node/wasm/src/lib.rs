@@ -7,33 +7,29 @@ pub mod logging;
 pub mod p2p;
 pub mod tx_processing;
 
-use std::collections::HashMap;
-use core::{cell::RefCell, str::FromStr};
 use alloc::{format, rc::Rc, string::String, sync::Arc, vec};
+use core::{cell::RefCell, str::FromStr};
+use std::collections::HashMap;
 
-use anyhow::{anyhow, Error};
-use codec::Decode;
-use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
-use futures::FutureExt;
-use gloo_timers::future::TimeoutFuture;
-use log::{error, info, warn};
-use lru::LruCache;
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
-use wasm_timer::TryFutureExt;
-use libp2p::{
-    kad::QueryId,
-    multiaddr::Protocol,
-    Multiaddr, PeerId,
-};
 use crate::{
     interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs},
     p2p::{P2pNetworkService, WasmP2pWorker},
     tx_processing::WasmTxProcessingWorker,
 };
+use anyhow::{anyhow, Error};
+use codec::Decode;
+use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
+use futures::FutureExt;
+use gloo_timers::future::TimeoutFuture;
+use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
+use log::{error, info, warn};
+use lru::LruCache;
 use primitives::data_structure::{
     ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
     TxStateMachine, TxStatus, UserAccount,
 };
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_timer::TryFutureExt;
 
 #[derive(Clone)]
 pub struct WasmMainServiceWorker {
@@ -285,7 +281,7 @@ impl WasmMainServiceWorker {
         match target_peer_result {
             Ok(acc) => {
                 info!(target:"MainServiceWorker","target peer found in local db");
-                let mut multi_addr = acc
+                let multi_addr = acc
                     .parse::<Multiaddr>()
                     .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
@@ -336,8 +332,6 @@ impl WasmMainServiceWorker {
                 let p2p_network_service = self.p2p_network_service.clone();
                 let rpc_sender_channel = self.rpc_sender_channel.clone();
                 let lru_cache = self.lru_cache.clone();
-                let txn_clone = txn.clone();
-                let target_id_clone = target_id.clone();
 
                 wasm_bindgen_futures::spawn_local(async move {
                     loop {
@@ -567,12 +561,7 @@ impl WasmMainServiceWorker {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let mut main_worker = Self::new(relay_node_multi_addr, account, network, live).await?;
-
-        // ====================================================================================== //
-
-        let p2p_worker = main_worker.p2p_worker.clone();
-        let txn_processing_worker = main_worker.wasm_tx_processing_worker.borrow_mut().clone();
+        let main_worker = Self::new(relay_node_multi_addr, account, network, live).await?;
 
         // ====================================================================================== //
 
@@ -639,12 +628,13 @@ pub fn start_vane_web3(
     account: String,
     network: String,
     live: bool,
+    node_identifier: Option<String>,
 ) -> js_sys::Promise {
     // Set up panic hook for better error reporting
     console_error_panic_hook::set_once();
 
     // Initialize WASM logging to forward logs to JavaScript
-    let _ = crate::logging::init_wasm_logging();
+    let _ = crate::logging::init_wasm_logging(node_identifier);
 
     wasm_bindgen_futures::future_to_promise(async move {
         match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {

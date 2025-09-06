@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use core::{cell::RefCell, pin::Pin, str::FromStr};
 
-use alloc::{
-    boxed::Box, collections::VecDeque, format, rc::Rc, string::String,
-};
+use alloc::{boxed::Box, collections::VecDeque, format, rc::Rc, string::String};
 
 use anyhow::{anyhow, Error};
 use futures::{future::Either, FutureExt, StreamExt};
@@ -25,29 +23,26 @@ use libp2p::{
     noise,
     relay::client::{Behaviour as RelayClientBehaviour, Event as RelayClientEvent},
     request_response::{
-        json::Behaviour as JsonBehaviour,
-        Behaviour, Codec, Event, InboundRequestId, Message, OutboundRequestId, ProtocolSupport,
-        ResponseChannel,
+        json::Behaviour as JsonBehaviour, Behaviour, Codec, Event, InboundRequestId, Message,
+        OutboundRequestId, ProtocolSupport, ResponseChannel,
     },
-    ping::{Behaviour as PingBehaviour, Config as PingConfig, Event as PingEvent},
     swarm::{derive_prelude, NetworkBehaviour, SwarmEvent},
     Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
 use libp2p_websocket_websys;
 
+pub use codec::Encode;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use primitives::data_structure::{
     DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
 };
-pub use codec::Encode;
 #[derive(Clone)]
 pub struct WasmP2pWorker {
     pub node_id: PeerId,
     pub user_circuit_multi_addr: Multiaddr,
     pub relay_multi_addr: Multiaddr,
     pub user_account_id: String,
-    pub wasm_swarm:
-        Rc<RefCell<Swarm<WasmRelayBehaviour>>>,
+    pub wasm_swarm: Rc<RefCell<Swarm<WasmRelayBehaviour>>>,
     pub wasm_p2p_command_recv:
         Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>>>,
     pub wasm_pending_request:
@@ -63,11 +58,9 @@ pub struct WasmRelayBehaviour {
     pub relay_client: libp2p::relay::client::Behaviour,
     pub app_json: JsonBehaviour<TxStateMachine, Result<TxStateMachine, String>>,
     pub app_client_dht: DhtBehaviour<MemoryStore>,
-    pub ping: PingBehaviour,
 }
 
 impl WasmRelayBehaviour {
-
     pub fn new(
         protocols: impl IntoIterator<Item = (StreamProtocol, libp2p::request_response::ProtocolSupport)>,
         config: libp2p::request_response::Config,
@@ -75,13 +68,11 @@ impl WasmRelayBehaviour {
         dht_behaviour: DhtBehaviour<MemoryStore>,
     ) -> Self {
         let json_behaviour = JsonBehaviour::new(protocols, config);
-        let ping_behaviour = PingBehaviour::new(PingConfig::new());
 
         Self {
             relay_client: relay_behaviour,
             app_json: json_behaviour,
             app_client_dht: dht_behaviour,
-            ping: ping_behaviour,
         }
     }
 }
@@ -132,7 +123,6 @@ impl WasmP2pWorker {
         let request_response_config = libp2p::request_response::Config::default()
             .with_request_timeout(core::time::Duration::from_secs(300)); // 5 minutes waiting time for a response
 
-    
         let dht_behaviour = DhtBehaviour::with_config(
             peer_id.clone(),
             MemoryStore::with_config(
@@ -148,21 +138,24 @@ impl WasmP2pWorker {
         );
 
         let combined_behaviour = WasmRelayBehaviour::new(
-            vec![(StreamProtocol::new("/wasm_relay_client_protocol"), ProtocolSupport::Full)],
+            vec![(
+                StreamProtocol::new("/wasm_relay_client_protocol"),
+                ProtocolSupport::Full,
+            )],
             request_response_config,
             relay_behaviour,
             dht_behaviour,
         );
-       
-        let mut wasm_swarm = Swarm::new(
+
+        let wasm_swarm = Swarm::new(
             combined_transport,
             combined_behaviour,
             peer_id,
             libp2p::swarm::Config::with_wasm_executor()
-                .with_idle_connection_timeout(std::time::Duration::from_secs(300)),
+                .with_idle_connection_timeout(std::time::Duration::from_secs(12000)),
         );
-        
-        // wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
+
+        wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
 
         Ok(Self {
             node_id: peer_id,
@@ -197,21 +190,17 @@ impl WasmP2pWorker {
                 WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
                     self.handle_dht_events(app_client_dht_event).await;
                 }
-                WasmRelayBehaviourEvent::Ping(ping_event) => {
-                    self.handle_ping_events(ping_event);
-                }
+
             },
             // Generic swarm events
             SwarmEvent::ConnectionEstablished {
                 peer_id,
-                endpoint,
                 num_established,
                 ..
             } => {
                 info!(target:"p2p","🟢 Connected to peer {} (connections: {})", peer_id, num_established)
             }
             SwarmEvent::IncomingConnection {
-                local_addr,
                 send_back_addr,
                 ..
             } => {
@@ -225,7 +214,6 @@ impl WasmP2pWorker {
             }
             SwarmEvent::ConnectionClosed {
                 peer_id,
-                endpoint,
                 cause,
                 ..
             } => {
@@ -237,7 +225,9 @@ impl WasmP2pWorker {
             SwarmEvent::OutgoingConnectionError { error, .. } => {
                 error!(target:"p2p","❌ Outgoing connection failed: {}", error)
             }
-            SwarmEvent::ListenerClosed { reason, addresses,.. } => {
+            SwarmEvent::ListenerClosed {
+                reason, addresses, ..
+            } => {
                 info!(target:"p2p","🔌 Listener closed: {:?} {:?}", reason, addresses)
             }
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -255,21 +245,13 @@ impl WasmP2pWorker {
         }
     }
 
-    fn handle_ping_events(&self, ping_event: PingEvent) {
-        match ping_event {
-            PingEvent{peer, result, ..} => {
-                info!("checking communicationg: ping: {result:?} by peer: {peer:?}")
-            }
-        }
-    }
-
     async fn handle_dht_events(&self, dht_event: DhtEvent) {
         match dht_event {
             DhtEvent::InboundRequest { request } => {
                 info!(target: "p2p","📨 DHT request received")
             }
             DhtEvent::OutboundQueryProgressed {
-                id, result, stats, ..
+                id, result, ..
             } => {
                 if let QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(
                     PeerRecord { record, .. },
@@ -407,13 +389,13 @@ impl WasmP2pWorker {
 
     pub async fn get_dht_target_peer(&self, target_acc_id: String) -> Result<QueryId, Error> {
         let mut swarm = self.wasm_swarm.borrow_mut();
-        let mut dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
+        let dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
         Ok(dht_behaviour.get_record(target_acc_id.as_bytes().to_vec().into()))
     }
 
     pub async fn add_account_to_dht(&self, account_id: String, value: String) -> Result<(), Error> {
         let mut swarm = self.wasm_swarm.borrow_mut();
-        let mut dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
+        let dht_behaviour = &mut swarm.behaviour_mut().app_client_dht;
 
         let record =
             libp2p::kad::Record::new(account_id.as_bytes().to_vec(), value.as_bytes().to_vec());
@@ -431,7 +413,8 @@ impl WasmP2pWorker {
 
     fn announce_dht(&mut self) -> Result<(), anyhow::Error> {
         let relay_peer_id = self
-            .relay_multi_addr.clone()
+            .relay_multi_addr
+            .clone()
             .pop()
             .and_then(|p| {
                 if let Protocol::P2p(peer_id) = p {
@@ -482,19 +465,22 @@ impl WasmP2pWorker {
             .dial(self.relay_multi_addr.clone())
             .map_err(|e| anyhow!("failed to dial relay node: {e}"))?;
         info!(target:"p2p","relay node dialed: {:?}",self.relay_multi_addr);
-        
-        TimeoutFuture::new(100).await;
-        self.wasm_swarm.borrow_mut().listen_on(self.user_circuit_multi_addr.clone())?;
 
-        let full_circuit_addr = self.user_circuit_multi_addr
+        TimeoutFuture::new(100).await;
+        self.wasm_swarm
+            .borrow_mut()
+            .listen_on(self.user_circuit_multi_addr.clone())?;
+
+        let full_circuit_addr = self
+            .user_circuit_multi_addr
             .clone()
             .with(libp2p::multiaddr::Protocol::P2p(self.node_id.clone()));
-        
+
         self.wasm_swarm
             .borrow_mut()
             .add_external_address(full_circuit_addr.clone());
         info!(target:"p2p","Added external circuit address: {:?}", full_circuit_addr);
-        
+
         for _ in 0..100 {
             TimeoutFuture::new(100).await;
         }
@@ -602,7 +588,7 @@ impl P2pNetworkService {
             peer_id: peer_id.clone(),
         };
 
-        self.p2p_command_tx.send(close_command);
+        self.p2p_command_tx.send(close_command).await.map_err(|err| anyhow!("failed to send close command; {err}"))?;
         Ok(())
     }
 

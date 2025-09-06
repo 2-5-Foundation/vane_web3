@@ -36,7 +36,8 @@ export function testWasmLogging() {
             "This is a test log message from JavaScript",
             "test_module",
             "test_logging.ts",
-            42
+            42,
+            "NODE 1",
         );
         
         // Check if the log was recorded

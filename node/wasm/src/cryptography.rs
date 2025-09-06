@@ -1,6 +1,6 @@
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
-pub use VaneCrypto::*;
-pub mod VaneCrypto {
+pub use vane_crypto::*;
+pub mod vane_crypto {
     use anyhow::anyhow;
     use base58::FromBase58;
     use curve25519_dalek::edwards::CompressedEdwardsY;

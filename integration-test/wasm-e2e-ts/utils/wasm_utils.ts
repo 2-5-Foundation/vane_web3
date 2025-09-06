@@ -1,5 +1,8 @@
 import init, * as wasmModule from '../../../node/wasm/pkg/wasm_node.js';
 import { hostFunctions } from '../../../node/wasm/host_functions/main';
+import { createTestClient, http, TestClient } from 'viem';
+import { foundry } from 'viem/chains';
+import { privateKeyToAccount } from 'viem/accounts';
 
 
 export function logWasmExports() {
@@ -50,7 +53,7 @@ export function logWasmExports() {
     console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
 }
 
-export function setupWasmLogging() {
+export function setupWasmLogging(identifier: string) {
     console.log('🔧 Setting up WASM logging...');
     
     // Set debug level for comprehensive logging
@@ -65,7 +68,9 @@ export function setupWasmLogging() {
         "WASM logging system initialized successfully",
         "test-module",
         "wasm-node.test.ts",
-        1
+        1,
+        identifier,
+
       );
       
       console.log('✅ WASM logging system verified');
@@ -170,11 +175,37 @@ export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<Rela
   });
 }
 
+export function getWallets(): TestClient[] {
+  const walletClient1 = createTestClient({
+    account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(),
+  })
+
+  const walletClient2 = createTestClient({
+    account: privateKeyToAccount('0x8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f'), 
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(),
+  })
+
+  const walletClient3 = createTestClient({
+    account: privateKeyToAccount('0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae1f3f9e2a55b3b19'), 
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(),
+  })
+  
+  return [walletClient1, walletClient2, walletClient3];
+}
+
 export function startWasmNode(
   relayMultiAddr: string, 
   walletAddress: string, 
   network: string = "Ethereum", 
-  live: boolean = false
+  live: boolean = false,
+  nodeIdentifier: string = ""
 ): WasmNodeInstance {
   let isRunning = true;
   let abortController: AbortController | null = null;
@@ -182,7 +213,7 @@ export function startWasmNode(
   // Create an abort controller to handle cancellation
   abortController = new AbortController();
 
-  const wasmPromise = wasmModule.start_vane_web3(relayMultiAddr, walletAddress, network, live)
+  const wasmPromise = wasmModule.start_vane_web3(relayMultiAddr, walletAddress, network, live, nodeIdentifier)
     .then((result) => {
       console.log('✅ WASM node started successfully:', result);
       return result;

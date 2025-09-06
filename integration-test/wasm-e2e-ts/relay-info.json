@@ -1,0 +1,8 @@
+{
+  "peerId": "12D3KooWHVFZBFRb6yHjEzpspgGmwHLgBVxWDL95fwQnPWV79F4f",
+  "multiAddr": "/ip6/::1/tcp/30333/ws/p2p/12D3KooWHVFZBFRb6yHjEzpspgGmwHLgBVxWDL95fwQnPWV79F4f",
+  "host": "127.0.0.1",
+  "port": 30333,
+  "ready": false,
+  "timestamp": "2025-09-06T16:05:48.073Z"
+}

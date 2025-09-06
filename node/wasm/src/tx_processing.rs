@@ -1,9 +1,7 @@
 extern crate alloc;
 
+use alloc::{collections::BTreeMap, rc::Rc, string::ToString, sync::Arc, vec::Vec};
 use core::{cell::RefCell, str::FromStr};
-use alloc::{
-    collections::BTreeMap, rc::Rc, string::ToString, sync::Arc, vec::Vec,
-};
 
 use anyhow::anyhow;
 use log::{error, info};
@@ -12,13 +10,13 @@ use wasm_bindgen::prelude::*;
 use web3::{transports, Web3};
 
 use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
+use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256, ByteArray, H256,
 };
 use sp_runtime::traits::Verify;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
