@@ -628,13 +628,12 @@ pub fn start_vane_web3(
     account: String,
     network: String,
     live: bool,
-    node_identifier: Option<String>,
 ) -> js_sys::Promise {
     // Set up panic hook for better error reporting
     console_error_panic_hook::set_once();
 
     // Initialize WASM logging to forward logs to JavaScript
-    let _ = crate::logging::init_wasm_logging(node_identifier);
+    let _ = crate::logging::init_wasm_logging();
 
     wasm_bindgen_futures::future_to_promise(async move {
         match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {

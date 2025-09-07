@@ -5,7 +5,10 @@
     "test": "bunx vitest",
     "test:run": "bunx vitest run",
     "start-relay": "bun run start-relay.ts",
-    "test:with-relay": "bun run start-relay & sleep 5 && bunx vitest run; kill %1"
+    "test:with-relay": "bun run start-relay & sleep 5 && bunx vitest run; kill %1",
+    "build-and-test": "./run_e2e.sh",
+    "build-wasm": "cd ../../node/wasm && cargo build --target wasm32-unknown-unknown --release && wasm-pack build --target web --out-dir pkg",
+    "build-relay": "cd ../../ && cargo build --release"
   },
   "devDependencies": {
     "vitest": "^3.2.4",

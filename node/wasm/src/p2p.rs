@@ -147,7 +147,7 @@ impl WasmP2pWorker {
             dht_behaviour,
         );
 
-        let wasm_swarm = Swarm::new(
+        let mut wasm_swarm = Swarm::new(
             combined_transport,
             combined_behaviour,
             peer_id,

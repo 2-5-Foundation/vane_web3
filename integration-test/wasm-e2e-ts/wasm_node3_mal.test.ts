@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
 import { hostFunctions } from '../../node/wasm/host_functions/main.js'
-import init, * as wasmModule from '../../node/wasm/pkg/wasm_node.js';
+import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
 
@@ -32,16 +32,30 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
     // Initialize WASM module
     // const wasmUrl = '../../node/wasm/pkg/wasm_node.js';
-    await init();
-    console.log('✅ WASM module initialized');
-  })
+    try {
+        await init();
+        console.log('✅ WASM module initialized');
+        setupWasmLogging();
+        logWasmExports();
+        await waitForWasmInitialization();
+  
+      } catch (error) {
+        console.error('❌ Failed to initialize WASM module:', error);
+      }
+  
+      wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
+      await wasmNodeInstance.promise;
+      await new Promise(resolve => setTimeout(resolve, 150000));
+      console.log('✅ WASM node started successfully');
+  
+  }, 100000)
 
   test('should initialize malicious WASM node successfully', async () => {
     expect(wasm_client_address).toBeDefined();
     expect(relayInfo).toBeDefined();
     console.log('✅ Malicious node initialization test passed');
   })
-  
+
 
   afterAll(async () => {
     console.log('🧹 Cleaning up Malicious WASM Node 3...');

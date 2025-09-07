@@ -18,8 +18,6 @@
         module_path?: string;
         file?: string;
         line?: number;
-        identifier?: string;
-
     }
 
     class Logger {
@@ -71,7 +69,6 @@
             module_path?: string,
             file?: string,
             line?: number,
-            identifier?: string
 
         ) {
             if (!this.shouldLog(level)) {
@@ -85,7 +82,6 @@
                 module_path,
                 file,
                 line,
-                identifier
             };
 
             this.addToHistory(entry);
@@ -100,26 +96,24 @@
                 ? `${entry.target} [${fileInfo}] ${entry.message}`
                 : `${entry.target} ${entry.message}`;
 
-            const identifierStr = identifier ? `[${identifier}]` : '';
-            console.log(`🔧 Identifier: ${identifierStr}`);
             switch (level) {
                 case LogLevel.Error:
-                    console.error(`🔴 ${identifierStr} ${cleanMessage}`);
+                    console.error(`🔴 ${cleanMessage}`);
                     break;
                 case LogLevel.Warn:
-                    console.warn(`🟡 ${identifierStr} ${cleanMessage}`);
+                    console.warn(`🟡 ${cleanMessage}`);
                     break;
                 case LogLevel.Info:
-                    console.info(`🔵 ${identifierStr} ${cleanMessage}`);
+                    console.info(`🔵 ${cleanMessage}`);
                     break;
                 case LogLevel.Debug:
-                    console.debug(`🟢 ${identifierStr} ${cleanMessage}`);
+                    console.debug(`🟢 ${cleanMessage}`);
                     break;
                 case LogLevel.Trace:
-                    console.debug(`⚪ ${identifierStr} ${cleanMessage}`);
+                    console.debug(`⚪ ${cleanMessage}`);
                     break;
                 default:
-                    console.log(`❓ ${identifierStr} ${cleanMessage}`);
+                    console.log(`❓ ${cleanMessage}`);
             }
         }
 
@@ -154,10 +148,9 @@
             module_path?: string,
             file?: string,
             line?: number,
-            identifier?: string,
 
         ) {
-            logger.log(level as LogLevel, target, message, module_path, file, line, identifier);
+            logger.log(level as LogLevel, target, message, module_path, file, line);
         },
 
         /**

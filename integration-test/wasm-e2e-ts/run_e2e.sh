@@ -18,6 +18,53 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Build steps
+echo -e "${BLUE}🔨 Building required components...${NC}"
+
+# Step 1: Build WASM node
+echo -e "${YELLOW}Step 1: Building WASM node...${NC}"
+cd ../../node/wasm
+
+# Compile to wasm32-unknown-unknown
+echo -e "${YELLOW}  Compiling to wasm32-unknown-unknown...${NC}"
+cargo build --target wasm32-unknown-unknown --release
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Failed to compile WASM node to wasm32-unknown-unknown${NC}"
+    exit 1
+fi
+
+# Build with wasm-pack
+echo -e "${YELLOW}  Building with wasm-pack...${NC}"
+wasm-pack build --target web --out-dir pkg
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Failed to build WASM package with wasm-pack${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ WASM node built successfully${NC}"
+
+# Step 2: Build relay node
+echo -e "${YELLOW}Step 2: Building relay node...${NC}"
+cd ../../
+
+# Build the relay node binary
+echo -e "${YELLOW}  Compiling vane_web3_app...${NC}"
+cargo build --release
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Failed to compile relay node${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Relay node built successfully${NC}"
+
+# Return to test directory
+cd integration-test/wasm-e2e-ts
+echo -e "${GREEN}✅ All components built successfully${NC}"
+echo ""
+
 # Function to start a node in a new terminal
 start_node() {
     local node_name=$1

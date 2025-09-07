@@ -1,4 +1,4 @@
-import init, * as wasmModule from '../../../node/wasm/pkg/wasm_node.js';
+import init, * as wasmModule from '../../../node/wasm/pkg/vane_wasm_node.js';
 import { hostFunctions } from '../../../node/wasm/host_functions/main';
 import { createTestClient, http, TestClient } from 'viem';
 import { foundry } from 'viem/chains';
@@ -53,7 +53,7 @@ export function logWasmExports() {
     console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
 }
 
-export function setupWasmLogging(identifier: string) {
+  export function setupWasmLogging() {
     console.log('🔧 Setting up WASM logging...');
     
     // Set debug level for comprehensive logging
@@ -69,7 +69,6 @@ export function setupWasmLogging(identifier: string) {
         "test-module",
         "wasm-node.test.ts",
         1,
-        identifier,
 
       );
       
@@ -205,7 +204,6 @@ export function startWasmNode(
   walletAddress: string, 
   network: string = "Ethereum", 
   live: boolean = false,
-  nodeIdentifier: string = ""
 ): WasmNodeInstance {
   let isRunning = true;
   let abortController: AbortController | null = null;
@@ -213,7 +211,7 @@ export function startWasmNode(
   // Create an abort controller to handle cancellation
   abortController = new AbortController();
 
-  const wasmPromise = wasmModule.start_vane_web3(relayMultiAddr, walletAddress, network, live, nodeIdentifier)
+  const wasmPromise = wasmModule.start_vane_web3(relayMultiAddr, walletAddress, network, live)
     .then((result) => {
       console.log('✅ WASM node started successfully:', result);
       return result;

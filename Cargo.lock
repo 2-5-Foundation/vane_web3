@@ -8844,6 +8844,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "vane-wasm-node"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-stream",
+ "base58",
+ "console_error_panic_hook",
+ "curve25519-dalek",
+ "db-wasm",
+ "futures",
+ "getrandom 0.3.3",
+ "gloo-timers 0.3.0",
+ "heapless",
+ "hex-literal",
+ "js-sys",
+ "libp2p",
+ "libp2p-websocket-websys",
+ "log",
+ "lru 0.12.5",
+ "parity-scale-codec",
+ "primitives",
+ "reqwasm",
+ "serde",
+ "serde-wasm-bindgen 0.6.5",
+ "serde_json",
+ "sp-core",
+ "sp-runtime",
+ "tokio_with_wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-timer",
+ "web-sys",
+ "web3",
+]
+
+[[package]]
 name = "vane_web3_app"
 version = "0.1.0"
 dependencies = [
@@ -9023,43 +9060,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "wasm-node"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "async-stream",
- "base58",
- "console_error_panic_hook",
- "curve25519-dalek",
- "db-wasm",
- "futures",
- "getrandom 0.3.3",
- "gloo-timers 0.3.0",
- "heapless",
- "hex-literal",
- "js-sys",
- "libp2p",
- "libp2p-websocket-websys",
- "log",
- "lru 0.12.5",
- "parity-scale-codec",
- "primitives",
- "reqwasm",
- "serde",
- "serde-wasm-bindgen 0.6.5",
- "serde_json",
- "sp-core",
- "sp-runtime",
- "tokio_with_wasm",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-timer",
- "web-sys",
- "web3",
 ]
 
 [[package]]

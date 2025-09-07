@@ -12,32 +12,25 @@ extern "C" {
         module_path: Option<&str>,
         file: Option<&str>,
         line: Option<u32>,
-        identifier: Option<&str>,
     );
 
     #[wasm_bindgen(js_namespace = ["hostFunctions", "hostLogging"], js_name = "setLogLevel")]
     fn js_set_log_level(level: u32);
 }
 
-pub struct WasmLogger{
-    identifier: Option<String>,
-}
+pub struct WasmLogger{}
 
 impl WasmLogger {
     /// Initialize the WASM logger with smart filtering
-    pub fn init(identifier: Option<String>) -> Result<(), log::SetLoggerError> {
-        static LOGGER: OnceLock<WasmLogger> = OnceLock::new();
-        let logger_ref: &'static WasmLogger = LOGGER.get_or_init(|| WasmLogger{identifier});
-        log::set_logger(logger_ref)?;
+    pub fn init() -> Result<(), log::SetLoggerError> {
+        log::set_logger(&WasmLogger{})?;
         // Set a reasonable default - Info level to reduce noise
         log::set_max_level(log::LevelFilter::Info);
         Ok(())
     }
 
-    pub fn init_debug(identifier: Option<String>) -> Result<(), log::SetLoggerError> {
-        static LOGGER: OnceLock<WasmLogger> = OnceLock::new();
-        let logger_ref: &'static WasmLogger = LOGGER.get_or_init(|| WasmLogger{identifier});
-        log::set_logger(logger_ref)?;
+    pub fn init_debug() -> Result<(), log::SetLoggerError> {
+        log::set_logger(&WasmLogger{})?;
         log::set_max_level(log::LevelFilter::Debug);
         Ok(())
     }
@@ -100,9 +93,8 @@ impl Log for WasmLogger {
             let module_path = record.module_path();
             let file = record.file();
             let line = record.line();
-            let identifier = self.identifier.as_deref();
             unsafe {
-                js_log(level_num, target, &message, module_path, file, line, identifier);
+                js_log(level_num, target, &message, module_path, file, line);
             }
         }
     }
@@ -145,18 +137,18 @@ macro_rules! wasm_log_trace {
     };
 }
 
-pub fn init_wasm_logging(identifier: Option<String>) -> Result<(), log::SetLoggerError> {
-    WasmLogger::init(identifier)
+pub fn init_wasm_logging() -> Result<(), log::SetLoggerError> {
+    WasmLogger::init()
 }
 
-pub fn init_clean_logging(identifier: Option<String>) -> Result<(), log::SetLoggerError> {
+pub fn init_clean_logging() -> Result<(), log::SetLoggerError> {
     console_error_panic_hook::set_once();
-    WasmLogger::init(identifier)
+    WasmLogger::init()
 }
 
-pub fn init_debug_logging(identifier: Option<String>) -> Result<(), log::SetLoggerError> {
+pub fn init_debug_logging() -> Result<(), log::SetLoggerError> {
     console_error_panic_hook::set_once();
-    WasmLogger::init_debug(identifier)
+    WasmLogger::init_debug()
 }
 
 pub fn set_wasm_log_level(level: Level) {
