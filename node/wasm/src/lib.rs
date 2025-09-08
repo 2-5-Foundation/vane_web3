@@ -85,6 +85,7 @@ impl WasmMainServiceWorker {
         } else {
             DbWorker::initialize_inmemory_db_client("vane.db").await?
         };
+
         let db_worker = Rc::new(db);
 
         // Use bounded cache to prevent memory overflow in WASM environment

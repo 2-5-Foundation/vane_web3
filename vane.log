@@ -1,5 +1,114 @@
-01:14:33 [INFO]  🦀...vane relay server starting...🚀 
-01:14:33 [INFO] local_peer_id=12D3KooWDRRNLGSpyygu3EDiDp7xz5bVM98zRR1Unhk9ZZDQLWXh
-01:14:33 [INFO] dht mode changed: Server
-01:14:33 [INFO] swarm event: NewListenAddr { listener_id: ListenerId(1), address: /ip6/::1/tcp/30333/ws }
-01:14:34 [WARN] Failed to trigger bootstrap: No known peers.
+00:30:24 [INFO]  🦀...vane relay server starting...🚀 
+00:30:24 [INFO] local_peer_id=12D3KooWBo68AyGpAppPkEzN4ycHpGFyppyfJhx8uX2QFbKNRrpL
+00:30:24 [INFO] dht mode changed: Server
+00:30:24 [INFO] new listen addr: /ip6/::1/tcp/30333/ws
+00:30:24 [INFO] new listen addr: /ip4/127.0.0.1/tcp/30333/ws
+00:30:24 [INFO] new listen addr: /ip4/192.168.0.185/tcp/30333/ws
+00:30:24 [INFO] new listen addr: /ip4/169.254.125.227/tcp/30333/ws
+00:30:25 [WARN] Failed to trigger bootstrap: No known peers.
+00:30:44 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(1), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55632/ws }
+00:30:44 [INFO] connection established PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf"): duration 304.2125ms
+00:30:47 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(2), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55683/ws }
+00:30:47 [INFO] connection established PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3"): duration 304.06425ms
+00:30:50 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(3), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55758/ws }
+00:30:50 [INFO] connection established PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX"): duration 304.229833ms
+00:30:54 [INFO] dht unroutable peer: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf")
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:54 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf"), renewed: false
+00:30:54 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf"), connection: ConnectionId(1), record: None }
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:54 [INFO] dht inbound request: AddProvider { record: None }
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:54 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:57 [INFO] dht unroutable peer: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3")
+00:30:57 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:57 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:57 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:30:57 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3"), renewed: false
+00:30:57 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3"), connection: ConnectionId(2), record: None }
+00:30:57 [INFO] dht inbound request: AddProvider { record: None }
+00:31:00 [INFO] dht unroutable peer: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX")
+00:31:00 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:31:00 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:31:00 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:31:00 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX"), renewed: false
+00:31:00 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX"), connection: ConnectionId(3), record: None }
+00:31:00 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:31:00 [INFO] dht inbound request: AddProvider { record: None }
+00:31:39 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf"), renewed: true
+00:31:42 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3"), renewed: true
+00:31:45 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX"), renewed: true
+00:32:23 [INFO] connection closed: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:32:23 [INFO] relay message, reservation closed: PeerId("12D3KooWMQkVSF1QP8Yx8TMJ1KWfCCV713Vnqgk2cnXHFd24BMFf")
+00:32:26 [INFO] connection closed: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:32:26 [INFO] relay message, reservation closed: PeerId("12D3KooWGTr8yckteDn1WpqZ1nAabrjxg8bfC9mgsS69a8afitQ3")
+00:32:29 [INFO] connection closed: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:32:29 [INFO] relay message, reservation closed: PeerId("12D3KooWDe2GWZWwVQPH1rS1EEynC4a6CHTKbT8TqKZE2vdzuqpX")
+00:35:25 [WARN] Failed to trigger bootstrap: No known peers.
+00:37:27 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(4), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56732/ws }
+00:37:27 [INFO] connection established PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz"): duration 304.682125ms
+00:37:30 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(5), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56743/ws }
+00:37:30 [INFO] connection established PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf"): duration 304.384291ms
+00:37:33 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(6), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56762/ws }
+00:37:33 [INFO] connection established PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM"): duration 303.830459ms
+00:37:37 [INFO] dht unroutable peer: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz")
+00:37:37 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:37 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:37 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:37 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz"), renewed: false
+00:37:37 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz"), connection: ConnectionId(4), record: None }
+00:37:37 [INFO] dht inbound request: AddProvider { record: None }
+00:37:40 [INFO] dht unroutable peer: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf")
+00:37:40 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:40 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:40 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:40 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf"), renewed: false
+00:37:40 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf"), connection: ConnectionId(5), record: None }
+00:37:40 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:40 [INFO] dht inbound request: AddProvider { record: None }
+00:37:43 [INFO] dht unroutable peer: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM")
+00:37:43 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:43 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:43 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:37:43 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM"), renewed: false
+00:37:43 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM"), connection: ConnectionId(6), record: None }
+00:37:43 [INFO] dht inbound request: AddProvider { record: None }
+00:38:22 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz"), renewed: true
+00:38:25 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf"), renewed: true
+00:38:28 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM"), renewed: true
+00:39:06 [INFO] connection closed: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:39:06 [INFO] relay message, reservation closed: PeerId("12D3KooWQFg5GWuLfdro4iGRHmY2sgTWjGiMhQkttp98MiwuR2Qz")
+00:39:09 [INFO] connection closed: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:39:09 [INFO] relay message, reservation closed: PeerId("12D3KooWBgGf9xLwaEQCra4edSbUvAujZvSdYaQxwsQQiZBsoEPf")
+00:39:12 [INFO] connection closed: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:39:12 [INFO] relay message, reservation closed: PeerId("12D3KooWLAkXXEzPtmUT2TbeZbgmGGKx2U828NpjerT7XHufPqfM")
+00:40:25 [WARN] Failed to trigger bootstrap: No known peers.
+00:44:32 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(7), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/57840/ws }
+00:44:33 [INFO] connection established PeerId("12D3KooWLFMQ4ax6PUvmMzyA4jTxeVEg5wTxoHcQ4g1iXbFFfcYw"): duration 303.696625ms
+00:44:35 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(8), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/57853/ws }
+00:44:36 [INFO] connection established PeerId("12D3KooWHPAE9NUNcu3u9pbsJxoEt6qvgc7kBEv3MCjhtu8Dbvq5"): duration 302.858292ms
+00:44:38 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(9), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/57864/ws }
+00:44:39 [INFO] connection established PeerId("12D3KooWAcMj9YYNiVAXHH5wbLiEaMSF515XRJt78BWBFZeM9Aaj"): duration 303.714542ms
+00:44:42 [INFO] dht unroutable peer: PeerId("12D3KooWLFMQ4ax6PUvmMzyA4jTxeVEg5wTxoHcQ4g1iXbFFfcYw")
+00:44:42 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:42 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:42 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:42 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLFMQ4ax6PUvmMzyA4jTxeVEg5wTxoHcQ4g1iXbFFfcYw"), renewed: false
+00:44:42 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWLFMQ4ax6PUvmMzyA4jTxeVEg5wTxoHcQ4g1iXbFFfcYw"), connection: ConnectionId(7), record: None }
+00:44:42 [INFO] dht inbound request: AddProvider { record: None }
+00:44:46 [INFO] dht unroutable peer: PeerId("12D3KooWHPAE9NUNcu3u9pbsJxoEt6qvgc7kBEv3MCjhtu8Dbvq5")
+00:44:46 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:46 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:46 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:46 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHPAE9NUNcu3u9pbsJxoEt6qvgc7kBEv3MCjhtu8Dbvq5"), renewed: false
+00:44:46 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWHPAE9NUNcu3u9pbsJxoEt6qvgc7kBEv3MCjhtu8Dbvq5"), connection: ConnectionId(8), record: None }
+00:44:46 [INFO] dht inbound request: AddProvider { record: None }
+00:44:49 [INFO] dht unroutable peer: PeerId("12D3KooWAcMj9YYNiVAXHH5wbLiEaMSF515XRJt78BWBFZeM9Aaj")
+00:44:49 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:49 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:49 [INFO] dht inbound request: FindNode { num_closer_peers: 0 }
+00:44:49 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWAcMj9YYNiVAXHH5wbLiEaMSF515XRJt78BWBFZeM9Aaj"), renewed: false
+00:44:49 [INFO] dht inbound request: PutRecord { source: PeerId("12D3KooWAcMj9YYNiVAXHH5wbLiEaMSF515XRJt78BWBFZeM9Aaj"), connection: ConnectionId(9), record: None }
+00:44:49 [INFO] dht inbound request: AddProvider { record: None }

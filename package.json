@@ -1,0 +1,21 @@
+{
+  "name": "vane-web3",
+  "version": "0.1.0",
+  "description": "Vane Web3 P2P Network Implementation",
+  "type": "module",
+  "scripts": {
+    "build": "cargo build --release",
+    "build-wasm": "scripts/build-wasm-package.sh",
+    "build-relay": "cargo build --release",
+    "start-relay": "bun run scripts/start-relay.ts",
+    "test:e2e": "scripts/run_e2e.sh",
+    "test:db": "scripts/db_tests.sh",
+    "clean": "cargo clean && rm -rf node/wasm/pkg && rm -rf integration-test/wasm-e2e-ts/relay-info.json"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

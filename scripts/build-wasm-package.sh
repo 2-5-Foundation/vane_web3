@@ -6,9 +6,31 @@ set -e
 
 echo "Building WASM package with host functions..."
 
-# Build the WASM module
-echo "Building WASM module..."
+# Get the project root directory (parent of scripts directory)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT/node/wasm"
+
+# Step 1: Compile to wasm32-unknown-unknown
+echo "Step 1: Compiling to wasm32-unknown-unknown..."
+cargo build --target wasm32-unknown-unknown --release
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to compile WASM node to wasm32-unknown-unknown"
+    exit 1
+fi
+
+echo "✅ WASM compilation successful"
+
+# Step 2: Build the WASM package with wasm-pack
+echo "Step 2: Building WASM package with wasm-pack..."
 wasm-pack build --target web --out-dir pkg
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to build WASM package with wasm-pack"
+    exit 1
+fi
+
+echo "✅ WASM package built successfully"
 
 # Add host functions import to the generated JS file
 echo "Adding host functions import to vane_wasm_node.js..."

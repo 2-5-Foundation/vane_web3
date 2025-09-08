@@ -4,11 +4,12 @@
   "scripts": {
     "test": "bunx vitest",
     "test:run": "bunx vitest run",
-    "start-relay": "bun run start-relay.ts",
-    "test:with-relay": "bun run start-relay & sleep 5 && bunx vitest run; kill %1",
-    "build-and-test": "./run_e2e.sh",
+    "start-relay": "bun run ../../scripts/start-relay.ts",
+    "test:with-relay": "bun run ../../scripts/start-relay.ts & sleep 5 && bunx vitest run; kill %1",
+    "build-and-test": "../../scripts/run_e2e.sh",
     "build-wasm": "cd ../../node/wasm && cargo build --target wasm32-unknown-unknown --release && wasm-pack build --target web --out-dir pkg",
-    "build-relay": "cd ../../ && cargo build --release"
+    "build-relay": "cd ../../ && cargo build --release",
+    "build-wasm-package": "../../scripts/build-wasm-package.sh"
   },
   "devDependencies": {
     "vitest": "^3.2.4",

@@ -20,6 +20,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
 
+use std::num::NonZeroU32;
 #[derive(NetworkBehaviour)]
 #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
 pub struct RelayServerBehaviour<TStore> {
@@ -82,44 +83,22 @@ impl RelayP2pWorker {
             ),
         );
 
-        let relay_config =   libp2p::relay::Config {
-            // ---------------- Reservations ----------------
-            max_reservations: 10_000, // allow up to 10k peers reserving slots
-            max_reservations_per_peer: 4, // each peer can hold up to 4 reservations
-            reservation_duration: Duration::from_secs(60 * 60), // 1 hour, must be renewed
-
-            reservation_rate_limiters: vec![
-                // Per peer: max 30 reservations/hour, at most 1 every 2 minutes
-                libp2p::relay::rate_limiter::new_per_peer(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
-                    limit: NonZeroU32::new(30).unwrap(),
-                    interval: Duration::from_secs(120),
-                }),
-                // Per IP: max 60 reservations/hour, at most 1 every 1 minute
-                libp2p::relay::rate_limiter::new_per_ip(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
-                    limit: NonZeroU32::new(60).unwrap(),
-                    interval: Duration::from_secs(60),
-                }),
-            ],
-
-            // ---------------- Circuits ----------------
-            max_circuits: 1000, // allow up to 1000 concurrent circuits
-            max_circuits_per_peer: 20, // one peer can only have 20 active circuits
-            max_circuit_duration: Duration::from_secs(20 * 60), // each circuit can last max 20 minutes
-            max_circuit_bytes: 1024 * 1024 * 10, // 10 MB per circuit (≈ 20k transactions safely)
-
-            circuit_src_rate_limiters: vec![
-                // Per peer: max 20 circuits/hour, at most 1 every 10 seconds
-                libp2p::relay::rate_limiter::new_per_peer(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
-                    limit: NonZeroU32::new(20).unwrap(),
-                    interval: Duration::from_secs(10),
-                }),
-                // Per IP: same rule
-                libp2p::relay::rate_limiter::new_per_ip(libp2p::relay::rate_limiter::GenericRateLimiterConfig {
-                    limit: NonZeroU32::new(20).unwrap(),
-                    interval: Duration::from_secs(10),
-                }),
-            ],
+        let mut relay_config = libp2p::relay::Config{
+            max_reservations: 10_000,
+            max_reservations_per_peer: 4,
+            reservation_duration: Duration::from_secs(60 * 60),
+            max_circuits: 1000,
+            max_circuit_bytes: 1024 * 1024 * 10,
+            max_circuit_duration: Duration::from_secs(20 * 60),
+            max_circuits_per_peer: 20,
+            ..Default::default()
         };
+
+        relay_config
+        .reservation_rate_per_peer(NonZeroU32::new(30).unwrap(), Duration::from_secs(120))
+        .reservation_rate_per_ip(NonZeroU32::new(60).unwrap(), Duration::from_secs(60))
+        .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
+        .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10)); 
 
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
             libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config{
