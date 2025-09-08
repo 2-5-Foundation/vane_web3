@@ -692,12 +692,13 @@ impl DbWorkerInterface for InMemoryDbWorker {
     }
 
     async fn get_saved_user_peers(&self, account_id: String) -> Result<String, Error> {
-        Ok(self
-            .saved_peers
-            .borrow()
-            .get(&account_id)
-            .cloned()
-            .unwrap_or_default())
+        let saved_peer = self
+        .saved_peers
+        .borrow()
+        .get(&account_id).ok_or_else(|| anyhow!("No saved target peer"))?.clone();
+        
+        Ok(saved_peer)
+       
     }
 
     async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), Error> {

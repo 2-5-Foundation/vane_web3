@@ -24,7 +24,7 @@ use tokio_with_wasm::alias::sync::{
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
 
-use crate::{cryptography::verify_public_bytes, p2p::WasmP2pWorker};
+use crate::{cryptography::verify_public_bytes, p2p::{P2pNetworkService, WasmP2pWorker}};
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
@@ -37,6 +37,8 @@ pub struct PublicInterfaceWorker {
     pub db_worker: Rc<DbWorker>,
     // p2pworker
     pub p2p_worker: Rc<WasmP2pWorker>,
+    /// p2p network service
+    pub p2p_network_service: Rc<P2pNetworkService>,
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
     pub rpc_receiver_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
     /// sender channel when user updates the transaction state, propagating to main service worker
@@ -53,6 +55,7 @@ impl PublicInterfaceWorker {
     pub async fn new(
         db_worker: Rc<DbWorker>,
         p2p_worker: Rc<WasmP2pWorker>,
+        p2p_network_service: Rc<P2pNetworkService>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
@@ -61,6 +64,7 @@ impl PublicInterfaceWorker {
         Ok(Self {
             db_worker,
             p2p_worker,
+            p2p_network_service,
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
@@ -79,7 +83,7 @@ impl PublicInterfaceWorker {
             .await
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
-        self.p2p_worker
+        self.p2p_network_service
             .add_account_to_dht(account_id, user_account.multi_addr)
             .await
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;

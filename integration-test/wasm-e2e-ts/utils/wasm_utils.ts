@@ -3,6 +3,7 @@ import { hostFunctions } from '../../../node/wasm/host_functions/main';
 import { createTestClient, http, TestClient } from 'viem';
 import { foundry } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
+import { PublicInterfaceWorkerJs } from '../../../node/wasm/pkg/vane_wasm_node.js';
 
 
 export function logWasmExports() {
@@ -121,7 +122,7 @@ export interface RelayNodeInfo {
 }
 
 export interface WasmNodeInstance {
-  promise: Promise<any>;
+  promise: Promise<PublicInterfaceWorkerJs | null>;
   isRunning: boolean;
   stop: () => void;
 }

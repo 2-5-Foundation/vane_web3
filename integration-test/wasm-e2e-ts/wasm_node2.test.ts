@@ -29,8 +29,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     wasm_client_address = walletClient!.account!.address;
     console.log("2 wasm client address", wasm_client_address);
 
-    // Initialize WASM module
-    // const wasmUrl = '../../node/wasm/pkg/wasm_node.js';
     try {
         await init();
         console.log('✅ WASM module initialized');
@@ -44,10 +42,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   
       wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
       await wasmNodeInstance.promise;
-      await new Promise(resolve => setTimeout(resolve, 150000));
+      await new Promise(resolve => setTimeout(resolve, 11000));
       console.log('✅ WASM node started successfully');
   
-  }, 100000)
+  })
 
   it("should assert",async() => {
     expect(1 + 1).toEqual(2)

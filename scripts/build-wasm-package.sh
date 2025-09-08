@@ -50,6 +50,7 @@ cp host_functions/main.ts pkg/
 cp host_functions/cryptography.ts pkg/
 cp host_functions/networking.ts pkg/
 cp host_functions/logging.ts pkg/
+cp host_functions/primitives.ts pkg/
 
 # Create index.ts if it doesn't exist
 if [ ! -f pkg/index.ts ]; then
@@ -84,7 +85,8 @@ pkg.files = [
   'main.ts',
   'cryptography.ts',
   'networking.ts',
-  'logging.ts'
+  'logging.ts',
+  'primitives.ts'
 ];
 
 pkg.main = 'index.ts';

@@ -45,10 +45,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   
       wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
       await wasmNodeInstance.promise;
-      await new Promise(resolve => setTimeout(resolve, 150000));
+      await new Promise(resolve => setTimeout(resolve, 11000));
       console.log('✅ WASM node started successfully');
   
-  }, 100000)
+  })
 
   test('should initialize malicious WASM node successfully', async () => {
     expect(wasm_client_address).toBeDefined();

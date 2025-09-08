@@ -6,7 +6,7 @@ use anyhow::Error;
 use codec::{Decode, Encode};
 use core::hash::{Hash, Hasher};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
-use libp2p::{Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId,kad::QueryId};
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -270,6 +270,14 @@ pub enum NetworkCommand {
     Dial {
         target_multi_addr: Multiaddr,
         target_peer_id: PeerId,
+    },
+    GetDhtPeer {
+        target_acc_id: String,
+        response_sender:tokio_with_wasm::alias::sync::oneshot::Sender<Result<QueryId, Error>>,
+    },
+    AddDhtAccount {
+        account_id: String,
+        value: String
     },
     Close {
         peer_id: PeerId,

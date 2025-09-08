@@ -121,6 +121,7 @@ impl WasmMainServiceWorker {
         let public_interface_worker = PublicInterfaceWorker::new(
             db_worker.clone(),
             Rc::new(p2p_worker.clone()),
+            Rc::new(p2p_network_service.clone()),
             Rc::new(RefCell::new(rpc_recv_channel)),
             Rc::new(RefCell::new(user_rpc_update_sender_channel)),
             p2p_worker.node_id,
@@ -287,9 +288,9 @@ impl WasmMainServiceWorker {
                     .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
 
                 let peer_id = {
-                    match multi_addr.clone().pop().expect("peer id not found") {
-                        Protocol::P2p(id) => id,
-                        _ => {
+                    match multi_addr.clone().pop(){
+                        Some(Protocol::P2p(id)) => id,
+                         _=> {
                             return Err(anyhow!("peer id not found"));
                         }
                     }
@@ -309,7 +310,7 @@ impl WasmMainServiceWorker {
                 // fetch from DHT
                 info!(target:"MainServiceWorker","target peer not found in local db, fetching from remote dht");
                 let query_id = self
-                    .p2p_worker
+                    .p2p_network_service
                     .borrow_mut()
                     .get_dht_target_peer(target_id.clone())
                     .await?;
@@ -624,29 +625,28 @@ impl WasmMainServiceWorker {
 }
 
 #[wasm_bindgen]
-pub fn start_vane_web3(
+pub async fn start_vane_web3(
     relay_node_multi_addr: String,
     account: String,
     network: String,
     live: bool,
-) -> js_sys::Promise {
+) -> Result<PublicInterfaceWorkerJs, JsValue> {
     // Set up panic hook for better error reporting
     console_error_panic_hook::set_once();
 
     // Initialize WASM logging to forward logs to JavaScript
     let _ = crate::logging::init_wasm_logging();
 
-    wasm_bindgen_futures::future_to_promise(async move {
-        match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {
-            Ok(public_interface_worker) => {
-                // Convert to JsValue for return
-                Ok(JsValue::from("WASM node started successfully"))
-            }
-            Err(e) => {
-                let error_msg = format!("Failed to start WASM node: {}", e);
-                error!("{}", error_msg);
-                Err(JsValue::from_str(&error_msg))
-            }
+    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {
+        Ok(public_interface_worker) => {
+            // Convert the PublicInterfaceWorker to PublicInterfaceWorkerJs and return it
+            let js_worker = PublicInterfaceWorkerJs::new(Rc::new(RefCell::new(public_interface_worker)));
+            Ok(js_worker)
         }
-    })
+        Err(e) => {
+            let error_msg = format!("Failed to start WASM node: {}", e);
+            error!("{}", error_msg);
+            Err(JsValue::from_str(&error_msg))
+        }
+    }
 }

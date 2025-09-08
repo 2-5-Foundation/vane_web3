@@ -6,7 +6,7 @@ import { TestClient } from 'viem'
 
 
 describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
-  let relayInfo: RelayNodeInfo | null = null;
+  let relayInfo: RelayNodeInfo | null = null
   let walletClient: TestClient | null = null;
   let wasm_client_address: string | undefined = undefined;
   let receiver_client_address = "0x63FaC9201494f0bd17B9892B9fae4d52fe3BD377"
@@ -15,9 +15,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
  
   
   beforeAll(async () => {
+
     try {
       relayInfo = await loadRelayNodeInfo();
-      console.log('✅ Relay node info loaded');
     } catch (error) {
       console.error('❌ Failed to load relay node info:', error);
       console.error('💡 Make sure to start the relay node first: bun run start-relay');
@@ -28,12 +28,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     wasm_client_address = walletClient!.account!.address;
     console.log("1 wasm client address", wasm_client_address);
 
-    // Initialize WASM module
-    //const wasmUrl = '../../node/wasm/pkg/wasm_node_bg.wasm';
-    
     try {
       await init();
-      console.log('✅ WASM module initialized');
       setupWasmLogging();
       logWasmExports();
       await waitForWasmInitialization();
@@ -44,16 +40,19 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
     wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
     await wasmNodeInstance.promise;
-    await new Promise(resolve => setTimeout(resolve, 150000));
+    await new Promise(resolve => setTimeout(resolve, 11000));
     console.log('✅ WASM node started successfully');
 
-  }, 100000)
-
-  test('should initialize WASM node successfully', async () => {
-    expect(wasm_client_address).toBeDefined();
-    expect(relayInfo).toBeDefined();
-    console.log('✅ Basic initialization test passed');
   })
+
+  test('should successfully send a transaction', async () => {
+    expect(wasmNodeInstance).toBeDefined();
+    await wasmNodeInstance?.promise.then(vaneWasm => {
+      return vaneWasm?.initiateTransaction(wasm_client_address!, receiver_client_address, BigInt(1), "Eth", "Ethereum", "Maji");
+    });
+
+  })
+
 
   afterAll(async () => {
     console.log('🧹 Cleaning up WASM Node 1...');

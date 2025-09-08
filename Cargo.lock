@@ -5824,6 +5824,7 @@ dependencies = [
  "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "sp-core",
+ "tokio_with_wasm",
  "twox-hash 2.1.1",
  "wasm-bindgen",
 ]

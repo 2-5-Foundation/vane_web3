@@ -20,7 +20,10 @@ cd "$PROJECT_ROOT"
 
 # Step 1: Build WASM node
 echo -e "${YELLOW}Step 1: Building WASM node...${NC}"
-"$PROJECT_ROOT/scripts/build-wasm-package.sh"
+if ! "$PROJECT_ROOT/scripts/build-wasm-package.sh"; then
+    echo -e "${RED}❌ Failed to build WASM node. Exiting...${NC}"
+    exit 1
+fi
 
 # Return to test directory
 cd ../../integration-test/wasm-e2e-ts

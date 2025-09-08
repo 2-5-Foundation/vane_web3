@@ -15,6 +15,7 @@ export default defineConfig({
   },
   assetsInclude: ['**/*.wasm'],
   test: {
+    hookTimeout:20000,
     browser: {
       enabled: true,
       provider: 'playwright',
@@ -23,7 +24,14 @@ export default defineConfig({
         {
           browser: 'chromium'
         }
-      ]
+      ],
+      providerOptions: {
+        playwright: {
+          screenshot: 'off',
+          video: 'off',
+          trace: 'off'
+        }
+      }
     }
   }
 })
