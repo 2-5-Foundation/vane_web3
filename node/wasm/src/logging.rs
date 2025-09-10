@@ -1,6 +1,6 @@
 use log::{Level, Log, Metadata, Record};
-use wasm_bindgen::prelude::*;
 use std::sync::OnceLock;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -18,19 +18,19 @@ extern "C" {
     fn js_set_log_level(level: u32);
 }
 
-pub struct WasmLogger{}
+pub struct WasmLogger {}
 
 impl WasmLogger {
     /// Initialize the WASM logger with smart filtering
     pub fn init() -> Result<(), log::SetLoggerError> {
-        log::set_logger(&WasmLogger{})?;
+        log::set_logger(&WasmLogger {})?;
         // Set a reasonable default - Info level to reduce noise
         log::set_max_level(log::LevelFilter::Info);
         Ok(())
     }
 
     pub fn init_debug() -> Result<(), log::SetLoggerError> {
-        log::set_logger(&WasmLogger{})?;
+        log::set_logger(&WasmLogger {})?;
         log::set_max_level(log::LevelFilter::Debug);
         Ok(())
     }

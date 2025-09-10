@@ -54,7 +54,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     expect(wasm_client_address).toBeDefined();
     expect(relayInfo).toBeDefined();
     console.log('✅ Malicious node initialization test passed');
-  })
+    
+    // Keep the node connected for other nodes to interact with it
+    console.log('⏳ Keeping malicious WASM node connected for other nodes to interact...');
+    await new Promise(resolve => setTimeout(resolve, 60000));
+})
 
 
   afterAll(async () => {

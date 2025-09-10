@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libp2p = { version = "0.56", features = ["relay", "websocket", "noise", "yamux", "identify", "ping","tokio","tcp","dns","macros"] }
+libp2p = { workspace = true, features = ["relay", "websocket", "noise", "yamux", "identify", "ping","tokio","tcp","dns","macros","kad"] }
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 tracing = "0.1"

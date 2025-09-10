@@ -15,7 +15,8 @@ export default defineConfig({
   },
   assetsInclude: ['**/*.wasm'],
   test: {
-    hookTimeout:20000,
+    hookTimeout: 300000,
+    testTimeout: 300000,
     browser: {
       enabled: true,
       provider: 'playwright',

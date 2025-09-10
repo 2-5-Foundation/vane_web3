@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use core::{cell::RefCell, pin::Pin, str::FromStr};
 
@@ -16,8 +16,8 @@ use libp2p::{
     futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream},
     kad::{
         store::{MemoryStore, MemoryStoreConfig},
-        Behaviour as DhtBehaviour, Event as DhtEvent, GetRecordOk, GetRecordResult, PeerRecord,
-        QueryId, QueryResult, Record, RoutingUpdate,
+        Behaviour as DhtBehaviour, Config as KademliaConfig, Event as DhtEvent, GetRecordOk,
+        GetRecordResult, InboundRequest, PeerRecord, QueryId, QueryResult, Record, RoutingUpdate,
     },
     multiaddr::Protocol,
     noise,
@@ -50,6 +50,7 @@ pub struct WasmP2pWorker {
     pub current_req: VecDeque<SwarmMessage>,
     pub dht_channel_query:
         Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, QueryId)>>>,
+    pub announced_dht_keys: Rc<RefCell<HashSet<Vec<u8>>>>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -128,13 +129,13 @@ impl WasmP2pWorker {
             MemoryStore::with_config(
                 peer_id.clone(),
                 MemoryStoreConfig {
-                    max_records: 1000,
-                    max_value_bytes: 512,
-                    max_providers_per_key: 1024,
-                    max_provided_keys: 10,
+                    max_records: 10_000,         // Same as relay
+                    max_value_bytes: 2048,       // Increase this
+                    max_providers_per_key: 1024, // Keep this
+                    max_provided_keys: 100,      // Increase this
                 },
             ),
-            Default::default(),
+            KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol")),
         );
 
         let combined_behaviour = WasmRelayBehaviour::new(
@@ -167,11 +168,13 @@ impl WasmP2pWorker {
             wasm_swarm: Rc::new(RefCell::new(wasm_swarm)),
             wasm_pending_request: Rc::new(RefCell::new(Default::default())),
             dht_channel_query: Rc::new(RefCell::new(dht_query_result_tx)),
+            announced_dht_keys: Rc::new(RefCell::new(HashSet::new())),
         })
     }
 
     pub async fn handle_swarm_events(
-        &self,
+        &mut self,
+        swarm: &mut Swarm<WasmRelayBehaviour>,
         pending_request: Rc<RefCell<HashMap<u64, ResponseChannel<Result<TxStateMachine, String>>>>>,
         events: SwarmEvent<WasmRelayBehaviourEvent>,
         sender: Rc<
@@ -190,7 +193,6 @@ impl WasmP2pWorker {
                 WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
                     self.handle_dht_events(app_client_dht_event).await;
                 }
-
             },
             // Generic swarm events
             SwarmEvent::ConnectionEstablished {
@@ -200,10 +202,7 @@ impl WasmP2pWorker {
             } => {
                 info!(target:"p2p","🟢 Connected to peer {} (connections: {})", peer_id, num_established)
             }
-            SwarmEvent::IncomingConnection {
-                send_back_addr,
-                ..
-            } => {
+            SwarmEvent::IncomingConnection { send_back_addr, .. } => {
                 info!(target:"p2p","📥 Incoming connection from {}", send_back_addr)
             }
             SwarmEvent::Dialing { peer_id, .. } => {
@@ -212,11 +211,7 @@ impl WasmP2pWorker {
             SwarmEvent::ListenerError { error, .. } => {
                 error!(target: "p2p","❌ Listener error: {}", error);
             }
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                cause,
-                ..
-            } => {
+            SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                 warn!(target:"p2p","🔌 Connection closed with peer {}: {:?}", peer_id, cause)
             }
             SwarmEvent::IncomingConnectionError { error, .. } => {
@@ -231,6 +226,10 @@ impl WasmP2pWorker {
                 info!(target:"p2p","🔌 Listener closed: {:?} {:?}", reason, addresses)
             }
             SwarmEvent::NewListenAddr { address, .. } => {
+                // todo add graceful shutdown for this if it fails
+                if let Err(e) = self.announce_dht(swarm, address.clone()) {
+                    error!(target:"p2p","❌ Failed to announce DHT: {}", e);
+                }
                 info!(target:"p2p","🎧 Listening on: {}", address)
             }
             SwarmEvent::ExpiredListenAddr { address, .. } => {
@@ -247,31 +246,83 @@ impl WasmP2pWorker {
 
     async fn handle_dht_events(&self, dht_event: DhtEvent) {
         match dht_event {
-            DhtEvent::InboundRequest { request } => {
-                info!(target: "p2p","📨 DHT request received")
-            }
-            DhtEvent::OutboundQueryProgressed {
-                id, result, ..
-            } => {
-                if let QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(
-                    PeerRecord { record, .. },
-                ))) = result
-                {
-                    let multi_addr =
-                        Multiaddr::try_from(record.value).expect("failed to parse multiaddr");
-                    self.dht_channel_query
-                        .borrow_mut()
-                        .send((Some(multi_addr), id))
-                        .await
-                        .expect("failed to send dht query result on the channel");
-                } else {
-                    self.dht_channel_query
-                        .borrow_mut()
-                        .send((None, id))
-                        .await
-                        .expect("failed to send dht query result on the channel");
+            DhtEvent::InboundRequest { request } => match request {
+                InboundRequest::PutRecord { record, source, .. } => {
+                    info!(target:"p2p","dht inbound request: PutRecord {{ source: {:?}, record: {:?} }}", source, record);
                 }
-            }
+                InboundRequest::FindNode { num_closer_peers } => {
+                    info!(target:"p2p","dht inbound request: FindNode {{ num_closer_peers: {:?} }}", 
+                              num_closer_peers);
+                }
+                InboundRequest::GetProvider {
+                    num_closer_peers,
+                    num_provider_peers,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetProvider {{ num_closer_peers: {:?}, num_provider_peers: {:?} }}", 
+                              num_closer_peers, num_provider_peers);
+                }
+                InboundRequest::AddProvider { record } => {
+                    info!(target:"p2p","dht inbound request: AddProvider {{ key: {:?} }}", record);
+                }
+                InboundRequest::GetRecord {
+                    num_closer_peers,
+                    present_locally,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetRecord {{ num_closer_peers: {:?}, present_locally: {:?} }}", num_closer_peers, present_locally);
+                }
+            },
+            DhtEvent::OutboundQueryProgressed { id, result, .. } => match result {
+                QueryResult::GetRecord(result) => match result {
+                    GetRecordResult::Ok(GetRecordOk::FoundRecord(PeerRecord {
+                        record, ..
+                    })) => {
+                        // gracefully shutdown point
+                        let multi_addr =
+                            Multiaddr::try_from(record.value).expect("failed to parse multiaddr");
+                        self.dht_channel_query
+                            .borrow_mut()
+                            .send((Some(multi_addr), id))
+                            .await
+                            .expect("failed to send dht query result on the channel");
+                    }
+                    GetRecordResult::Err(e) => {
+                        self.dht_channel_query
+                            .borrow_mut()
+                            .send((None, id))
+                            .await
+                            .expect("failed to send dht query result on the channel");
+                    }
+                    GetRecordResult::Ok(GetRecordOk::FinishedWithNoAdditionalRecord { cache_candidates }) => {
+                        self.dht_channel_query
+                            .borrow_mut()
+                            .send((None, id))
+                            .await
+                            .expect("failed to send dht query result on the channel");
+                        info!(target:"p2p","dht get record finished: no record found, cache candidates: {:?}", cache_candidates);
+                    }
+                },
+                QueryResult::Bootstrap(result) => {
+                    info!(target:"p2p","dht bootstrap result: {:?}", result);
+                }
+                QueryResult::GetClosestPeers(result) => {
+                    info!(target:"p2p","dht get closest peers result: {:?}", result);
+                }
+                QueryResult::GetProviders(result) => {
+                    info!(target:"p2p","dht get providers result: {:?}", result);
+                }
+                QueryResult::StartProviding(result) => {
+                    info!(target:"p2p","dht start providing result: {:?}", result);
+                }
+                QueryResult::RepublishProvider(result) => {
+                    info!(target:"p2p","dht republish provider result: {:?}", result);
+                }
+                QueryResult::RepublishRecord(result) => {
+                    info!(target:"p2p","dht republish record result: {:?}", result);
+                }
+                QueryResult::PutRecord(result) => {
+                    info!(target:"p2p","dht put record result: {:?}", result);
+                }
+            },
             DhtEvent::PendingRoutablePeer { peer, address } => {
                 debug!(target: "p2p","🔄 DHT routing update: peer {} at {}", peer, address)
             }
@@ -387,48 +438,54 @@ impl WasmP2pWorker {
         }
     }
 
-
-    fn announce_dht(&mut self) -> Result<(), anyhow::Error> {
-        let relay_peer_id = self
-            .relay_multi_addr
-            .clone()
-            .pop()
-            .and_then(|p| {
-                if let Protocol::P2p(peer_id) = p {
-                    Some(peer_id)
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| anyhow!("relay_multi_addr missing PeerId"))?;
-
-        let mut swarm = self.wasm_swarm.borrow_mut();
-        let mut dht = &mut swarm.behaviour_mut().app_client_dht;
-
-        match dht.add_address(&relay_peer_id, self.relay_multi_addr.clone()) {
-            RoutingUpdate::Success => {
-                info!(target: "p2p","dht announced: {relay_peer_id}");
-            }
-            RoutingUpdate::Failed => {
-                error!(target: "p2p","dht announcement failed: {relay_peer_id}");
-            }
-            RoutingUpdate::Pending => {
-                error!(target: "p2p","dht announcement pending: {relay_peer_id}");
-            }
+    fn announce_dht(
+        &mut self,
+        swarm: &mut Swarm<WasmRelayBehaviour>,
+        full_circuit_address: Multiaddr,
+    ) -> Result<(), anyhow::Error> {
+        // Skip entire announce if we've already announced this account key
+        let account_key: Vec<u8> = self.user_account_id.as_bytes().to_vec();
+        if self.announced_dht_keys.borrow().contains(&account_key) {
+            debug!(target: "p2p","dht announce skipped before routing/bootstrap (already announced): {}", self.user_account_id);
+            return Ok(());
         }
-
-        dht.bootstrap()
-            .map_err(|e| anyhow!("failed to bootstrap dht: {e}"))?;
-
-        let record = Record::new(
-            self.user_account_id.as_bytes().to_vec(),
-            self.user_circuit_multi_addr.to_vec(),
-        );
-        dht.put_record(record.clone(), libp2p::kad::Quorum::Majority)?;
-        dht.start_providing(record.clone().key)?;
-        info!(target: "p2p","dht record added and started providing: {record:?}");
-
-        Ok(())
+		let relay_peer_id = self
+			.relay_multi_addr
+			.clone()
+			.pop()
+			.and_then(|p| {
+				if let Protocol::P2p(peer_id) = p {
+					Some(peer_id)
+				} else {
+					None
+				}
+			})
+			.ok_or_else(|| anyhow!("relay_multi_addr missing PeerId"))?;
+ 
+ 		let mut dht = &mut swarm.behaviour_mut().app_client_dht;
+ 
+ 		match dht.add_address(&relay_peer_id, self.relay_multi_addr.clone()) {
+ 			RoutingUpdate::Success => {
+ 				info!(target: "p2p","dht announced: {relay_peer_id}");
+ 			}
+ 			RoutingUpdate::Failed => {
+ 				error!(target: "p2p","dht announcement failed: {relay_peer_id}");
+ 			}
+ 			RoutingUpdate::Pending => {
+ 				error!(target: "p2p","dht announcement pending: {relay_peer_id}");
+ 			}
+ 		}
+ 
+ 		dht.bootstrap()
+ 			.map_err(|e| anyhow!("failed to bootstrap dht: {e}"))?;
+ 
+ 		let record = Record::new(account_key.clone(), full_circuit_address.to_vec());
+ 		dht.start_providing(record.clone().key)?;
+ 		dht.put_record(record.clone(), libp2p::kad::Quorum::One)?;
+ 		self.announced_dht_keys.borrow_mut().insert(account_key);
+ 		info!(target: "p2p","dht record added and started providing: {record:?}");
+ 
+ 		Ok(())
     }
 
     pub async fn start_swarm(
@@ -444,6 +501,7 @@ impl WasmP2pWorker {
         info!(target:"p2p","relay node dialed: {:?}",self.relay_multi_addr);
 
         TimeoutFuture::new(100).await;
+
         self.wasm_swarm
             .borrow_mut()
             .listen_on(self.user_circuit_multi_addr.clone())?;
@@ -462,13 +520,11 @@ impl WasmP2pWorker {
             TimeoutFuture::new(100).await;
         }
 
-        self.announce_dht()?;
-
         let sender = sender_channel.clone();
         let swarm = self.wasm_swarm.clone();
         let p2p_command_recv = self.wasm_p2p_command_recv.clone();
         let pending_request = self.wasm_pending_request.clone();
-        let self_clone = self.clone();
+        let mut self_clone = self.clone();
 
         // Event-driven approach - no polling needed!
         wasm_bindgen_futures::spawn_local(async move {
@@ -479,9 +535,8 @@ impl WasmP2pWorker {
                 futures::select! {
                     event = swarm.next().fuse() => {
                         if let Some(event) = event {
-                            self_clone.handle_swarm_events(pending_request.clone(), event, sender.clone()).await
+                            self_clone.handle_swarm_events(&mut *swarm, pending_request.clone(), event, sender.clone()).await
                         }
-                        // Continue processing - don't break if no event, just keep listening
                     },
                     cmd = p2p_command_recv.recv().fuse() => {
                         match cmd {
@@ -520,7 +575,9 @@ impl WasmP2pWorker {
                                 info!(target: "p2p", "Added account record to DHT: account_id={}, query_id={:?}", account_id, query_id);
                             },
                             Some(NetworkCommand::GetDhtPeer {target_acc_id,response_sender}) => {
-                                let resp =swarm.behaviour_mut().app_client_dht.get_record(target_acc_id.as_bytes().to_vec().into());
+                                let key = target_acc_id.as_bytes().to_vec().into();
+                                info!(target: "p2p", "Getting DHT peer: key={:?}", key);
+                                let resp =swarm.behaviour_mut().app_client_dht.get_record(key);
                                 response_sender.send(Ok(resp)).map_err(|err|anyhow!("failed to send response; {err:?}"));
                             }
                             _ => {}
@@ -575,7 +632,10 @@ impl P2pNetworkService {
             peer_id: peer_id.clone(),
         };
 
-        self.p2p_command_tx.send(close_command).await.map_err(|err| anyhow!("failed to send close command; {err}"))?;
+        self.p2p_command_tx
+            .send(close_command)
+            .await
+            .map_err(|err| anyhow!("failed to send close command; {err}"))?;
         Ok(())
     }
 
@@ -626,16 +686,16 @@ impl P2pNetworkService {
     }
 
     pub async fn add_account_to_dht(&self, account_id: String, value: String) -> Result<(), Error> {
-        let add_dht_account_command = NetworkCommand::AddDhtAccount {
-            account_id,
-            value,
-        };
+        let add_dht_account_command = NetworkCommand::AddDhtAccount { account_id, value };
         self.p2p_command_tx.send(add_dht_account_command).await?;
         Ok(())
     }
 
     pub async fn get_dht_target_peer(&self, target_acc_id: String) -> Result<QueryId, Error> {
-        let (response_sender, mut response_receiver) = tokio_with_wasm::alias::sync::oneshot::channel::<Result<QueryId, Error>>();
+        
+        let (response_sender, mut response_receiver) =
+            tokio_with_wasm::alias::sync::oneshot::channel::<Result<QueryId, Error>>();
+        
         let get_dht_peer_command = NetworkCommand::GetDhtPeer {
             target_acc_id,
             response_sender,
@@ -645,18 +705,18 @@ impl P2pNetworkService {
             .send(get_dht_peer_command)
             .await
             .map_err(|err| anyhow!("failed to send get dht peer command; {err}"))?;
-        
+
         for _ in 0..100 {
             match response_receiver.try_recv() {
                 Ok(result) => return result,
                 Err(tokio_with_wasm::alias::sync::oneshot::error::TryRecvError::Empty) => {
-                    TimeoutFuture::new(100).await;
+                    TimeoutFuture::new(600).await;
                 }
                 Err(tokio_with_wasm::alias::sync::oneshot::error::TryRecvError::Closed) => {
                     return Err(anyhow!("Response channel was closed unexpectedly"));
                 }
             }
         }
-        Err(anyhow!("DHT query timeout after 10 seconds"))
+        Err(anyhow!("DHT query timeout"))
     }
 }

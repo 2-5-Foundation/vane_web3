@@ -1,17 +1,21 @@
 use anyhow::Result;
 use clap::Parser;
 use libp2p::futures::StreamExt;
+use libp2p::kad::Record;
 use libp2p::swarm::derive_prelude::NetworkBehaviour;
-use libp2p::Transport;
 use libp2p::{
     core::{
         multiaddr::{Multiaddr, Protocol},
         transport::OrTransport,
     },
-    identity, noise, ping, relay,
+    identity,
+    kad::store::{MemoryStore, MemoryStoreConfig},
+    kad::{Behaviour as DhtBehaviour, Config as KademliaConfig},
+    noise, ping, relay,
     swarm::SwarmEvent,
     yamux, PeerId, Swarm,
 };
+use libp2p::{StreamProtocol, Transport};
 use tracing::{error, info, warn, Level};
 
 #[derive(Debug, Parser)]
@@ -26,13 +30,12 @@ struct Opts {
 struct Behaviour {
     relay_client: relay::client::Behaviour,
     ping: ping::Behaviour,
+    dht: DhtBehaviour<MemoryStore>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let opts = Opts::parse();
 
@@ -41,7 +44,7 @@ async fn main() -> Result<()> {
     // Generate a keypair
     let keypair = identity::Keypair::generate_ed25519();
     let peer_id = PeerId::from(keypair.public());
-    info!("🔑 Generated peer ID: {}", peer_id);
+    info!("🔑 Generated peer ID: {}", &peer_id);
 
     // Parse relay address
     let relay_multi_addr: Multiaddr = opts.relay_address.parse()?;
@@ -52,7 +55,7 @@ async fn main() -> Result<()> {
     info!("🔄 Circuit address: {}", circuit_addr);
 
     // Create relay client behavior
-    let (relay_transport, relay_behaviour) = relay::client::new(peer_id);
+    let (relay_transport, relay_behaviour) = relay::client::new(peer_id.clone());
 
     let authenticated_relay = relay_transport
         .upgrade(libp2p::core::transport::upgrade::Version::V1)
@@ -77,12 +80,27 @@ async fn main() -> Result<()> {
         })
         .boxed();
 
+    let dht_behaviour = DhtBehaviour::with_config(
+        peer_id.clone(),
+        MemoryStore::with_config(
+            peer_id.clone(),
+            MemoryStoreConfig {
+                max_records: 10_000,         // Same as relay
+                max_value_bytes: 2048,       // Increase this
+                max_providers_per_key: 1024, // Keep this
+                max_provided_keys: 100,      // Increase this
+            },
+        ),
+        KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol")),
+    );
+
     // Create swarm with combined transport
     let mut swarm = Swarm::new(
         combined_transport,
         Behaviour {
             relay_client: relay_behaviour,
             ping: ping::Behaviour::new(ping::Config::new()),
+            dht: dht_behaviour,
         },
         peer_id,
         libp2p::swarm::Config::with_tokio_executor()
@@ -105,6 +123,15 @@ async fn main() -> Result<()> {
             return Err(e.into());
         }
     }
+
+    //dht
+    let dht = &mut swarm.behaviour_mut().dht;
+    dht.add_address(&peer_id, relay_multi_addr.clone());
+
+    let record = Record::new(peer_id.to_bytes().to_vec(), b"test_value".to_vec());
+    info!("Hellooo");
+    dht.put_record(record.clone(), libp2p::kad::Quorum::One)?;
+    dht.start_providing(record.clone().key)?;
 
     // Event loop
     info!("🔄 Starting event loop...");

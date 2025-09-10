@@ -1,7 +1,10 @@
 use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, StreamExt};
 use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
-use libp2p::kad::{Behaviour as DhtBehaviour, Record, K_VALUE};
+use libp2p::kad::{
+    Behaviour as DhtBehaviour, Config as KademliaConfig, GetRecordOk, GetRecordResult,
+    InboundRequest, PeerRecord, QueryResult, Record, K_VALUE,
+};
 use libp2p::relay::Behaviour as RelayBehaviour;
 use libp2p::swarm::{derive_prelude, NetworkBehaviour};
 use libp2p::swarm::{NetworkInfo, SwarmEvent};
@@ -70,20 +73,21 @@ impl RelayP2pWorker {
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
 
-        let dht_behaviour = DhtBehaviour::<MemoryStore>::new(
+        let dht_behaviour = DhtBehaviour::with_config(
             peer_id.clone(),
             MemoryStore::with_config(
-                peer_id,
+                peer_id.clone(),
                 MemoryStoreConfig {
-                    max_records: 10_000,
-                    max_value_bytes: 512,
-                    max_provided_keys: 10_000,
-                    max_providers_per_key: K_VALUE.get(),
+                    max_records: 50_000,              // Same as relay
+                    max_value_bytes: 2048 * 50,       // Increase this
+                    max_providers_per_key: 1024 * 50, // Keep this
+                    max_provided_keys: 10_000,        // Increase this
                 },
             ),
+            KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol")),
         );
 
-        let mut relay_config = libp2p::relay::Config{
+        let mut relay_config = libp2p::relay::Config {
             max_reservations: 10_000,
             max_reservations_per_peer: 4,
             reservation_duration: Duration::from_secs(60 * 60),
@@ -95,23 +99,26 @@ impl RelayP2pWorker {
         };
 
         relay_config
-        .reservation_rate_per_peer(NonZeroU32::new(30).unwrap(), Duration::from_secs(120))
-        .reservation_rate_per_ip(NonZeroU32::new(60).unwrap(), Duration::from_secs(60))
-        .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
-        .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10)); 
+            .reservation_rate_per_peer(NonZeroU32::new(30).unwrap(), Duration::from_secs(120))
+            .reservation_rate_per_ip(NonZeroU32::new(60).unwrap(), Duration::from_secs(60))
+            .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
+            .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10));
 
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
-            libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config{
-                max_reservations: 1000,
-                max_reservations_per_peer: 100,
-                reservation_duration: Duration::from_secs(60),
-                reservation_rate_limiters: vec![],
-                max_circuits: 1000,
-                max_circuits_per_peer: 100,
-                max_circuit_duration: Duration::from_secs(60),
-                max_circuit_bytes: 1024 * 1024 * 10,
-                circuit_src_rate_limiters: vec![],
-            }),
+            libp2p::relay::Behaviour::new(
+                peer_id.clone(),
+                libp2p::relay::Config {
+                    max_reservations: 1000,
+                    max_reservations_per_peer: 100,
+                    reservation_duration: Duration::from_secs(60),
+                    reservation_rate_limiters: vec![],
+                    max_circuits: 1000,
+                    max_circuits_per_peer: 100,
+                    max_circuit_duration: Duration::from_secs(60),
+                    max_circuit_bytes: 1024 * 1024 * 10,
+                    circuit_src_rate_limiters: vec![],
+                },
+            ),
             dht_behaviour,
         );
 
@@ -164,7 +171,6 @@ impl RelayP2pWorker {
                 let mut swarm = self.swarm.lock().await;
                 swarm.select_next_some().await
             };
-
             match swarm_event {
                 SwarmEvent::Behaviour(relay_server_behaviour) => match relay_server_behaviour {
                     RelayServerBehaviourEvent::Dht(dht_event) => {
@@ -227,9 +233,47 @@ impl RelayP2pWorker {
 
     async fn handle_dht_event(&mut self, event: DhtEvent) -> Result<(), anyhow::Error> {
         match event {
-            DhtEvent::InboundRequest { request } => {
-                info!(target:"p2p","dht inbound request: {:?}",request);
-            }
+            DhtEvent::InboundRequest { request } => match request {
+                InboundRequest::PutRecord { record, source, .. } => {
+                    info!(target:"p2p","dht inbound request: PutRecord {{ source: {:?}, record: {:?} }}", source, record);
+                }
+                InboundRequest::GetProvider {
+                    num_closer_peers,
+                    num_provider_peers,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetProvider {{ num_closer_peers: {:?}, num_provider_peers: {:?} }}", 
+                              num_closer_peers, num_provider_peers);
+                }
+                InboundRequest::GetRecord {
+                    num_closer_peers,
+                    present_locally,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetRecord {{ num_closer_peers: {:?}, present_locally: {:?} }}", num_closer_peers, present_locally);
+                }
+                InboundRequest::AddProvider { record } => {
+                    info!(target:"p2p","dht inbound request: AddProvider {{ key: {:?} }}", record);
+                }
+                InboundRequest::FindNode { num_closer_peers } => {
+                    info!(target:"p2p","dht inbound request: FindNode {{ num_closer_peers: {:?} }}", 
+                              num_closer_peers);
+                }
+            },
+            DhtEvent::OutboundQueryProgressed { id, result, .. } => match result {
+                QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(
+                    PeerRecord { record, .. },
+                ))) => {
+                    info!(target:"p2p","dht found record: key={:?}, value={:?}", record.key, record.value);
+                }
+                QueryResult::GetRecord(GetRecordResult::Ok(
+                    GetRecordOk::FinishedWithNoAdditionalRecord { .. },
+                )) => {
+                    info!(target:"p2p","dht get record finished: no record found");
+                }
+                QueryResult::GetRecord(GetRecordResult::Err(e)) => {
+                    error!(target:"p2p","dht get record error: {:?}", e);
+                }
+                _ => {}
+            },
             DhtEvent::RoutingUpdated {
                 peer,
                 addresses,
@@ -250,7 +294,6 @@ impl RelayP2pWorker {
             DhtEvent::PendingRoutablePeer { peer, address } => {
                 info!(target:"p2p","dht pending routable peer: {:?}",address);
             }
-            _ => {}
         }
         Ok(())
     }

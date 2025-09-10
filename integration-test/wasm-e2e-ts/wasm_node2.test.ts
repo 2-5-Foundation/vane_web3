@@ -49,6 +49,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
   it("should assert",async() => {
     expect(1 + 1).toEqual(2)
-  })
+    
+    // Keep the node connected for other nodes to interact with it
+    console.log('⏳ Keeping WASM node 2 connected for other nodes to interact...');
+    await new Promise(resolve => setTimeout(resolve, 60000));
+})
 
 })

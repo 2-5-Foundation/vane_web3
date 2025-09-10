@@ -40,17 +40,21 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
     wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
     await wasmNodeInstance.promise;
-    await new Promise(resolve => setTimeout(resolve, 11000));
+    await new Promise(resolve => setTimeout(resolve, 20000));
     console.log('✅ WASM node started successfully');
 
   })
 
   test('should successfully send a transaction', async () => {
     expect(wasmNodeInstance).toBeDefined();
+    await new Promise(resolve => setTimeout(resolve, 10000));
     await wasmNodeInstance?.promise.then(vaneWasm => {
       return vaneWasm?.initiateTransaction(wasm_client_address!, receiver_client_address, BigInt(1), "Eth", "Ethereum", "Maji");
     });
 
+    // Keep the node connected for other nodes to interact with it
+    console.log('⏳ Keeping WASM node connected for other nodes to interact...');
+    await new Promise(resolve => setTimeout(resolve, 60000));
   })
 
 

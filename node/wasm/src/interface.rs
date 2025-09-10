@@ -24,7 +24,10 @@ use tokio_with_wasm::alias::sync::{
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
 
-use crate::{cryptography::verify_public_bytes, p2p::{P2pNetworkService, WasmP2pWorker}};
+use crate::{
+    cryptography::verify_public_bytes,
+    p2p::{P2pNetworkService, WasmP2pWorker},
+};
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,

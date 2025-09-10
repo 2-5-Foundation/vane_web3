@@ -64,7 +64,7 @@ export function logWasmExports() {
       
       // Log a test message to verify logging works
       hostFunctions.hostLogging.log(
-        hostFunctions.hostLogging.LogLevel.Info,
+        hostFunctions.hostLogging.LogLevel.Debug,
         "TestFramework",
         "WASM logging system initialized successfully",
         "test-module",
