@@ -54,7 +54,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
     // Keep the node connected for other nodes to interact with it
     console.log('⏳ Keeping WASM node connected for other nodes to interact...');
-    await new Promise(resolve => setTimeout(resolve, 60000));
+    await new Promise(resolve => setTimeout(resolve, 90000));
   })
 
 
