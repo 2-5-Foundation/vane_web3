@@ -1,7 +1,423 @@
-15:54:53 [INFO]  🦀...vane relay server starting...🚀 
-15:54:53 [INFO] local_peer_id=12D3KooWRwLxJ4oseK2TLhWM1rMHDDKhNbWiJwDtb97EQeKbkNQp
-15:54:53 [INFO] dht mode changed: Server
-15:54:53 [INFO] new listen addr: /ip6/::1/tcp/30333/ws
-15:54:53 [INFO] new listen addr: /ip4/127.0.0.1/tcp/30333/ws
-15:54:53 [INFO] new listen addr: /ip4/192.168.0.185/tcp/30333/ws
-15:54:54 [WARN] Failed to trigger bootstrap: No known peers.
+09:37:46 [INFO]  🦀...vane relay server starting...🚀 
+09:37:46 [INFO] local_peer_id=12D3KooWQVxYc8YPSenDCBfEK9df76PxN4Y3kgK2gzG6w3yrgpzd
+09:37:46 [INFO] dht mode changed: Server
+09:37:46 [INFO] new listen addr: /ip6/::1/tcp/30333/ws
+09:37:46 [INFO] new listen addr: /ip4/127.0.0.1/tcp/30333/ws
+09:37:46 [INFO] new listen addr: /ip4/192.168.0.185/tcp/30333/ws
+09:37:46 [INFO] new listen addr: /ip4/169.254.86.45/tcp/30333/ws
+09:37:46 [WARN] Failed to trigger bootstrap: No known peers.
+09:38:34 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(1), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59579/ws }
+09:38:34 [INFO] connection established PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM"): duration 305.464292ms
+09:38:36 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(2), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59590/ws }
+09:38:36 [INFO] connection established PeerId("12D3KooWRLL8ZWCaKb7cYsXZ8geubL7jpxnSe1WZKcPZCdDEYS84"): duration 304.052833ms
+09:38:39 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(3), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59601/ws }
+09:38:40 [INFO] connection established PeerId("12D3KooWEbCMvQzmMBhksxf2U6oxgK88wC8U2CkwhthRLA88S7ke"): duration 304.01325ms
+09:38:44 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM"), renewed: false
+09:38:46 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRLL8ZWCaKb7cYsXZ8geubL7jpxnSe1WZKcPZCdDEYS84"), renewed: false
+09:38:49 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWEbCMvQzmMBhksxf2U6oxgK88wC8U2CkwhthRLA88S7ke"), renewed: false
+09:39:29 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM"), renewed: true
+09:39:31 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRLL8ZWCaKb7cYsXZ8geubL7jpxnSe1WZKcPZCdDEYS84"), renewed: true
+09:39:35 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWEbCMvQzmMBhksxf2U6oxgK88wC8U2CkwhthRLA88S7ke"), renewed: true
+09:39:47 [INFO] connection closed: PeerId("12D3KooWRLL8ZWCaKb7cYsXZ8geubL7jpxnSe1WZKcPZCdDEYS84"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+09:39:47 [INFO] relay message, reservation closed: PeerId("12D3KooWRLL8ZWCaKb7cYsXZ8geubL7jpxnSe1WZKcPZCdDEYS84")
+09:39:50 [INFO] connection closed: PeerId("12D3KooWEbCMvQzmMBhksxf2U6oxgK88wC8U2CkwhthRLA88S7ke"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+09:39:50 [INFO] relay message, reservation closed: PeerId("12D3KooWEbCMvQzmMBhksxf2U6oxgK88wC8U2CkwhthRLA88S7ke")
+09:40:14 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM"), renewed: true
+09:40:34 [INFO] connection closed: PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+09:40:34 [INFO] relay message, reservation closed: PeerId("12D3KooWKiAZgbti5AmxCHn7bJRHvpPrYBxzqgmqBD3GicJYQJrM")
+09:42:46 [WARN] Failed to trigger bootstrap: No known peers.
+10:03:13 [WARN] Failed to trigger bootstrap: No known peers.
+10:03:13 [INFO] expired listen addr: /ip4/169.254.86.45/tcp/30333/ws
+10:08:13 [WARN] Failed to trigger bootstrap: No known peers.
+10:37:52 [WARN] Failed to trigger bootstrap: No known peers.
+11:37:52 [WARN] Failed to trigger bootstrap: No known peers.
+12:37:53 [WARN] Failed to trigger bootstrap: No known peers.
+13:38:03 [WARN] Failed to trigger bootstrap: No known peers.
+14:38:04 [WARN] Failed to trigger bootstrap: No known peers.
+15:09:18 [WARN] Failed to trigger bootstrap: No known peers.
+15:09:18 [INFO] new listen addr: /ip4/10.146.11.225/tcp/30333/ws
+15:09:18 [INFO] new listen addr: /ip6/fc00:bbbb:bbbb:bb01:d:0:12:be1/tcp/30333/ws
+15:09:18 [WARN] Failed to trigger bootstrap: No known peers.
+15:14:18 [WARN] Failed to trigger bootstrap: No known peers.
+15:24:34 [WARN] Failed to trigger bootstrap: No known peers.
+15:24:34 [INFO] expired listen addr: /ip6/fc00:bbbb:bbbb:bb01:d:0:12:be1/tcp/30333/ws
+15:24:34 [INFO] expired listen addr: /ip4/10.146.11.225/tcp/30333/ws
+15:29:34 [WARN] Failed to trigger bootstrap: No known peers.
+15:38:04 [WARN] Failed to trigger bootstrap: No known peers.
+15:42:19 [INFO] new listen addr: /ip4/169.254.62.34/tcp/30333/ws
+15:42:20 [WARN] Failed to trigger bootstrap: No known peers.
+15:47:20 [WARN] Failed to trigger bootstrap: No known peers.
+16:27:12 [WARN] Failed to trigger bootstrap: No known peers.
+16:27:12 [INFO] expired listen addr: /ip4/169.254.62.34/tcp/30333/ws
+16:28:24 [INFO] expired listen addr: /ip4/192.168.0.185/tcp/30333/ws
+16:28:25 [INFO] new listen addr: /ip4/192.168.0.185/tcp/30333/ws
+16:28:26 [WARN] Failed to trigger bootstrap: No known peers.
+16:33:26 [WARN] Failed to trigger bootstrap: No known peers.
+16:38:26 [WARN] Failed to trigger bootstrap: No known peers.
+17:09:03 [WARN] Failed to trigger bootstrap: No known peers.
+17:09:03 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(4), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/60896/ws }
+17:09:04 [INFO] connection established PeerId("12D3KooWRFJHaYXVMP7qniH1By8deJ3ehmNDZvxTHjNdahczhN7Q"): duration 303.878125ms
+17:09:06 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(5), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/60914/ws }
+17:09:06 [INFO] connection established PeerId("12D3KooWKyyQLgPWCsM3NKJUxiCQZfhJ75ptBkFRuWQsfzACvwKY"): duration 304.004875ms
+17:09:09 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(6), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/60938/ws }
+17:09:09 [INFO] connection established PeerId("12D3KooWDzf225ZKvmP5CraZJYg9fHsDEJnEdpDrF6xWvdZTAFWA"): duration 305.092583ms
+17:09:14 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRFJHaYXVMP7qniH1By8deJ3ehmNDZvxTHjNdahczhN7Q"), renewed: false
+17:09:16 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKyyQLgPWCsM3NKJUxiCQZfhJ75ptBkFRuWQsfzACvwKY"), renewed: false
+17:09:19 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDzf225ZKvmP5CraZJYg9fHsDEJnEdpDrF6xWvdZTAFWA"), renewed: false
+17:09:59 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRFJHaYXVMP7qniH1By8deJ3ehmNDZvxTHjNdahczhN7Q"), renewed: true
+17:10:01 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKyyQLgPWCsM3NKJUxiCQZfhJ75ptBkFRuWQsfzACvwKY"), renewed: true
+17:10:04 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDzf225ZKvmP5CraZJYg9fHsDEJnEdpDrF6xWvdZTAFWA"), renewed: true
+17:10:17 [INFO] connection closed: PeerId("12D3KooWKyyQLgPWCsM3NKJUxiCQZfhJ75ptBkFRuWQsfzACvwKY"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:10:17 [INFO] relay message, reservation closed: PeerId("12D3KooWKyyQLgPWCsM3NKJUxiCQZfhJ75ptBkFRuWQsfzACvwKY")
+17:10:20 [INFO] connection closed: PeerId("12D3KooWDzf225ZKvmP5CraZJYg9fHsDEJnEdpDrF6xWvdZTAFWA"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:10:20 [INFO] relay message, reservation closed: PeerId("12D3KooWDzf225ZKvmP5CraZJYg9fHsDEJnEdpDrF6xWvdZTAFWA")
+17:10:27 [INFO] connection closed: PeerId("12D3KooWRFJHaYXVMP7qniH1By8deJ3ehmNDZvxTHjNdahczhN7Q"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:10:27 [INFO] relay message, reservation closed: PeerId("12D3KooWRFJHaYXVMP7qniH1By8deJ3ehmNDZvxTHjNdahczhN7Q")
+17:12:03 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(7), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/61947/ws }
+17:12:04 [INFO] connection established PeerId("12D3KooWGjthLTFM4BiegdksqGgzpZjZjGVugZpNy51RSmrG1eiJ"): duration 304.36475ms
+17:12:07 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(8), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/61972/ws }
+17:12:07 [INFO] connection established PeerId("12D3KooWHAduB4vynoR39GeCTkBWBVsfrBL3bQagxSx1crB7LqHM"): duration 304.689333ms
+17:12:10 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(9), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/61995/ws }
+17:12:10 [INFO] connection established PeerId("12D3KooWMZTjcyRTVKcCHdzfn7LakKjAnjZ7avVn8gNm4kN8Q7YK"): duration 302.898833ms
+17:12:14 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGjthLTFM4BiegdksqGgzpZjZjGVugZpNy51RSmrG1eiJ"), renewed: false
+17:12:17 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHAduB4vynoR39GeCTkBWBVsfrBL3bQagxSx1crB7LqHM"), renewed: false
+17:12:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWMZTjcyRTVKcCHdzfn7LakKjAnjZ7avVn8gNm4kN8Q7YK"), renewed: false
+17:12:59 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGjthLTFM4BiegdksqGgzpZjZjGVugZpNy51RSmrG1eiJ"), renewed: true
+17:13:02 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHAduB4vynoR39GeCTkBWBVsfrBL3bQagxSx1crB7LqHM"), renewed: true
+17:13:05 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWMZTjcyRTVKcCHdzfn7LakKjAnjZ7avVn8gNm4kN8Q7YK"), renewed: true
+17:13:14 [INFO] connection closed: PeerId("12D3KooWHAduB4vynoR39GeCTkBWBVsfrBL3bQagxSx1crB7LqHM"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:13:14 [INFO] relay message, reservation closed: PeerId("12D3KooWHAduB4vynoR39GeCTkBWBVsfrBL3bQagxSx1crB7LqHM")
+17:13:15 [INFO] connection closed: PeerId("12D3KooWGjthLTFM4BiegdksqGgzpZjZjGVugZpNy51RSmrG1eiJ"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:13:15 [INFO] relay message, reservation closed: PeerId("12D3KooWGjthLTFM4BiegdksqGgzpZjZjGVugZpNy51RSmrG1eiJ")
+17:13:18 [INFO] connection closed: PeerId("12D3KooWMZTjcyRTVKcCHdzfn7LakKjAnjZ7avVn8gNm4kN8Q7YK"), reason Some(IO(Custom { kind: Other, error: Error(Right(Io(Custom { kind: Other, error: Send(Closed) }))) }))
+17:13:18 [INFO] relay message, reservation closed: PeerId("12D3KooWMZTjcyRTVKcCHdzfn7LakKjAnjZ7avVn8gNm4kN8Q7YK")
+17:14:03 [WARN] Failed to trigger bootstrap: No known peers.
+17:20:25 [WARN] Failed to trigger bootstrap: No known peers.
+17:20:25 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(10), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/65290/ws }
+17:20:25 [INFO] connection established PeerId("12D3KooWPyf3JNYVDVoF5AcC6iAhdnG6jELSEcXkbwRsynV7jRCC"): duration 302.801542ms
+17:20:35 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPyf3JNYVDVoF5AcC6iAhdnG6jELSEcXkbwRsynV7jRCC"), renewed: false
+17:21:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPyf3JNYVDVoF5AcC6iAhdnG6jELSEcXkbwRsynV7jRCC"), renewed: true
+17:21:54 [INFO] connection closed: PeerId("12D3KooWPyf3JNYVDVoF5AcC6iAhdnG6jELSEcXkbwRsynV7jRCC"), reason Some(IO(Custom { kind: Other, error: Error(Right(Io(Custom { kind: Other, error: Send(Closed) }))) }))
+17:21:54 [INFO] relay message, reservation closed: PeerId("12D3KooWPyf3JNYVDVoF5AcC6iAhdnG6jELSEcXkbwRsynV7jRCC")
+17:22:25 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(11), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/49703/ws }
+17:22:25 [INFO] connection established PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6"): duration 303.6405ms
+17:22:35 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6"), renewed: false
+17:23:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6"), renewed: true
+17:24:05 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6"), renewed: true
+17:24:25 [INFO] connection closed: PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+17:24:25 [INFO] relay message, reservation closed: PeerId("12D3KooWLj9z7WhcTmLerHc7cvwtC84cgmKN1tUX86qsdyd6cHN6")
+17:25:25 [WARN] Failed to trigger bootstrap: No known peers.
+17:38:04 [WARN] Failed to trigger bootstrap: No known peers.
+18:03:34 [WARN] Failed to trigger bootstrap: No known peers.
+18:03:34 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(12), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/64428/ws }
+18:03:35 [INFO] connection established PeerId("12D3KooWKPcgicQMHPJ3VXimCH2DysTAH74QuSbEbTGaTRA3GVke"): duration 303.592709ms
+18:03:45 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKPcgicQMHPJ3VXimCH2DysTAH74QuSbEbTGaTRA3GVke"), renewed: false
+18:04:05 [INFO] connection closed: PeerId("12D3KooWKPcgicQMHPJ3VXimCH2DysTAH74QuSbEbTGaTRA3GVke"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+18:04:05 [INFO] relay message, reservation closed: PeerId("12D3KooWKPcgicQMHPJ3VXimCH2DysTAH74QuSbEbTGaTRA3GVke")
+18:04:28 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(13), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/64764/ws }
+18:04:28 [INFO] connection established PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym"): duration 304.023667ms
+18:04:38 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym"), renewed: false
+18:05:23 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym"), renewed: true
+18:06:08 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym"), renewed: true
+18:06:28 [INFO] connection closed: PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+18:06:28 [INFO] relay message, reservation closed: PeerId("12D3KooWKSpDy1T1NsLv4r9WAPXRXJsFcAwDCrLw9yrC1pDj71ym")
+18:08:34 [WARN] Failed to trigger bootstrap: No known peers.
+18:38:04 [WARN] Failed to trigger bootstrap: No known peers.
+19:10:34 [WARN] Failed to trigger bootstrap: No known peers.
+19:10:34 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(14), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/54278/ws }
+19:10:34 [INFO] connection established PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs"): duration 302.109167ms
+19:10:44 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs"), renewed: false
+19:11:29 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs"), renewed: true
+19:12:14 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs"), renewed: true
+19:12:34 [INFO] connection closed: PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+19:12:34 [INFO] relay message, reservation closed: PeerId("12D3KooWDA2zo2xnmF3v4L6UH7YF5EFZiZxgpHbH4BkGv5P7i7rs")
+19:15:34 [WARN] Failed to trigger bootstrap: No known peers.
+19:36:30 [WARN] Failed to trigger bootstrap: No known peers.
+19:36:30 [INFO] expired listen addr: /ip4/192.168.0.185/tcp/30333/ws
+19:41:30 [WARN] Failed to trigger bootstrap: No known peers.
+19:57:57 [WARN] Failed to trigger bootstrap: No known peers.
+19:57:57 [INFO] new listen addr: /ip4/192.168.0.185/tcp/30333/ws
+19:57:58 [WARN] Failed to trigger bootstrap: No known peers.
+20:02:58 [WARN] Failed to trigger bootstrap: No known peers.
+20:37:27 [WARN] Failed to trigger bootstrap: No known peers.
+20:37:27 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(15), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55005/ws }
+20:37:28 [INFO] connection established PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ"): duration 302.293166ms
+20:37:38 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ"), renewed: false
+20:38:23 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ"), renewed: true
+20:39:08 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ"), renewed: true
+20:39:28 [INFO] connection closed: PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+20:39:28 [INFO] relay message, reservation closed: PeerId("12D3KooWNzeXMrEdHmWJKsSqdXbxN3HV4ZcEodoCYqKYRK8gv7ZJ")
+20:40:10 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(16), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56078/ws }
+20:40:10 [INFO] connection established PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM"): duration 304.190375ms
+20:40:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM"), renewed: false
+20:41:05 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM"), renewed: true
+20:41:50 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM"), renewed: true
+20:42:10 [INFO] connection closed: PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+20:42:10 [INFO] relay message, reservation closed: PeerId("12D3KooWKEwwmmTDxwWcZVRRsVFGqEoAdAU83HrkuqEPBYeNbAGM")
+20:42:27 [WARN] Failed to trigger bootstrap: No known peers.
+20:45:25 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(17), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/58027/ws }
+20:45:25 [INFO] connection established PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE"): duration 303.61175ms
+20:45:35 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE"), renewed: false
+20:46:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE"), renewed: true
+20:47:05 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE"), renewed: true
+20:47:13 [INFO] connection closed: PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+20:47:13 [INFO] relay message, reservation closed: PeerId("12D3KooWJfxrDmwMxuRnqSjujZmF46dc7fFifRTRVfQGCHVbnPxE")
+20:47:28 [WARN] Failed to trigger bootstrap: No known peers.
+20:48:10 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(18), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59295/ws }
+20:48:10 [INFO] connection established PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx"): duration 302.498917ms
+20:48:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx"), renewed: false
+20:49:05 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx"), renewed: true
+20:49:50 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx"), renewed: true
+20:50:10 [INFO] connection closed: PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+20:50:10 [INFO] relay message, reservation closed: PeerId("12D3KooWRDmPXtYB1TrZ2PTbCPj2H3ktQbGHrx3wbJNYbrcJQvNx")
+20:52:28 [WARN] Failed to trigger bootstrap: No known peers.
+21:50:10 [WARN] Failed to trigger bootstrap: No known peers.
+21:55:10 [WARN] Failed to trigger bootstrap: No known peers.
+22:37:53 [WARN] Failed to trigger bootstrap: No known peers.
+22:37:53 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(19), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/61011/ws }
+22:37:53 [INFO] connection established PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug"): duration 304.545167ms
+22:38:03 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug"), renewed: false
+22:38:48 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug"), renewed: true
+22:39:33 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug"), renewed: true
+22:39:53 [INFO] connection closed: PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+22:39:53 [INFO] relay message, reservation closed: PeerId("12D3KooWHh9sLVzdWp8jTMLRdAyirCYqzMpu9GFXoy2vVgUY53Ug")
+22:42:53 [WARN] Failed to trigger bootstrap: No known peers.
+22:50:10 [WARN] Failed to trigger bootstrap: No known peers.
+22:55:15 [WARN] Failed to trigger bootstrap: No known peers.
+23:06:59 [WARN] Failed to trigger bootstrap: No known peers.
+23:06:59 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(20), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/54477/ws }
+23:06:59 [INFO] connection established PeerId("12D3KooWD9MWMovsXjMV5f4kN71khG3KKMKokZkeHNSJC7Qpyemo"): duration 302.799333ms
+23:07:09 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWD9MWMovsXjMV5f4kN71khG3KKMKokZkeHNSJC7Qpyemo"), renewed: false
+23:07:53 [INFO] connection closed: PeerId("12D3KooWD9MWMovsXjMV5f4kN71khG3KKMKokZkeHNSJC7Qpyemo"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:07:53 [INFO] relay message, reservation closed: PeerId("12D3KooWD9MWMovsXjMV5f4kN71khG3KKMKokZkeHNSJC7Qpyemo")
+23:08:54 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(21), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55348/ws }
+23:08:54 [INFO] connection established PeerId("12D3KooWGU3pR7NGJ9XcKgETomnqzkg2kbZXDenbuXY9ubfbTeUT"): duration 302.898458ms
+23:09:04 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGU3pR7NGJ9XcKgETomnqzkg2kbZXDenbuXY9ubfbTeUT"), renewed: false
+23:09:28 [INFO] connection closed: PeerId("12D3KooWGU3pR7NGJ9XcKgETomnqzkg2kbZXDenbuXY9ubfbTeUT"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:09:28 [INFO] relay message, reservation closed: PeerId("12D3KooWGU3pR7NGJ9XcKgETomnqzkg2kbZXDenbuXY9ubfbTeUT")
+23:11:59 [WARN] Failed to trigger bootstrap: No known peers.
+23:12:16 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(22), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56984/ws }
+23:12:17 [INFO] connection established PeerId("12D3KooWKBdeScPjgBvBoPCrbTDyrbr2P1vuStyYn55CxbuGmUGu"): duration 304.970959ms
+23:12:27 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWKBdeScPjgBvBoPCrbTDyrbr2P1vuStyYn55CxbuGmUGu"), renewed: false
+23:12:51 [INFO] connection closed: PeerId("12D3KooWKBdeScPjgBvBoPCrbTDyrbr2P1vuStyYn55CxbuGmUGu"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:12:51 [INFO] relay message, reservation closed: PeerId("12D3KooWKBdeScPjgBvBoPCrbTDyrbr2P1vuStyYn55CxbuGmUGu")
+23:14:51 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(23), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/57868/ws }
+23:14:52 [INFO] connection established PeerId("12D3KooWQdAB2D7ZLS6N3j5zkPATdJKGhrnqWzHEFokj4QWC8XAg"): duration 302.897458ms
+23:15:01 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWQdAB2D7ZLS6N3j5zkPATdJKGhrnqWzHEFokj4QWC8XAg"), renewed: false
+23:15:32 [INFO] connection closed: PeerId("12D3KooWQdAB2D7ZLS6N3j5zkPATdJKGhrnqWzHEFokj4QWC8XAg"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:15:32 [INFO] relay message, reservation closed: PeerId("12D3KooWQdAB2D7ZLS6N3j5zkPATdJKGhrnqWzHEFokj4QWC8XAg")
+23:16:59 [WARN] Failed to trigger bootstrap: No known peers.
+23:18:30 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(24), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59434/ws }
+23:18:30 [INFO] connection established PeerId("12D3KooWGvGGg21FiGJkBUtXde9jtR74yZ1arqxGRCo6zsQW51q6"): duration 304.718667ms
+23:18:40 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWGvGGg21FiGJkBUtXde9jtR74yZ1arqxGRCo6zsQW51q6"), renewed: false
+23:19:07 [INFO] connection closed: PeerId("12D3KooWGvGGg21FiGJkBUtXde9jtR74yZ1arqxGRCo6zsQW51q6"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:19:07 [INFO] relay message, reservation closed: PeerId("12D3KooWGvGGg21FiGJkBUtXde9jtR74yZ1arqxGRCo6zsQW51q6")
+23:21:59 [WARN] Failed to trigger bootstrap: No known peers.
+23:27:43 [WARN] Failed to trigger bootstrap: No known peers.
+23:27:43 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(25), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/62610/ws }
+23:27:43 [INFO] connection established PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc"): duration 302.981125ms
+23:27:53 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc"), renewed: false
+23:28:38 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc"), renewed: true
+23:29:23 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc"), renewed: true
+23:29:43 [INFO] connection closed: PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:29:43 [INFO] relay message, reservation closed: PeerId("12D3KooWBGMuyRNDy9yPPkfvJTkpUjZv1eZhFYjtB2QnGvEVzGnc")
+23:32:43 [WARN] Failed to trigger bootstrap: No known peers.
+23:34:45 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(26), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/49340/ws }
+23:34:45 [INFO] connection established PeerId("12D3KooWBFE22uBtuLsnStNvbhhCxKWK9F6Zpt9ZwuE3hcZrVYyR"): duration 304.092875ms
+23:34:55 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWBFE22uBtuLsnStNvbhhCxKWK9F6Zpt9ZwuE3hcZrVYyR"), renewed: false
+23:35:12 [INFO] connection closed: PeerId("12D3KooWBFE22uBtuLsnStNvbhhCxKWK9F6Zpt9ZwuE3hcZrVYyR"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:35:12 [INFO] relay message, reservation closed: PeerId("12D3KooWBFE22uBtuLsnStNvbhhCxKWK9F6Zpt9ZwuE3hcZrVYyR")
+23:37:43 [WARN] Failed to trigger bootstrap: No known peers.
+23:45:08 [WARN] Failed to trigger bootstrap: No known peers.
+23:45:08 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(27), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/53357/ws }
+23:45:09 [INFO] connection established PeerId("12D3KooWMmsvx3eXUyp5Uo87BmDpg3iftgghbh7fmgjmb7ML7Eg8"): duration 303.3425ms
+23:45:19 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWMmsvx3eXUyp5Uo87BmDpg3iftgghbh7fmgjmb7ML7Eg8"), renewed: false
+23:45:27 [INFO] connection closed: PeerId("12D3KooWMmsvx3eXUyp5Uo87BmDpg3iftgghbh7fmgjmb7ML7Eg8"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:45:27 [INFO] relay message, reservation closed: PeerId("12D3KooWMmsvx3eXUyp5Uo87BmDpg3iftgghbh7fmgjmb7ML7Eg8")
+23:48:45 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(28), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55017/ws }
+23:48:45 [INFO] connection established PeerId("12D3KooWLFLQLTWwWQZcJ5d5wcvawR9yeyTzoPH2SjsCRWqXif2S"): duration 305.390334ms
+23:48:55 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWLFLQLTWwWQZcJ5d5wcvawR9yeyTzoPH2SjsCRWqXif2S"), renewed: false
+23:49:06 [INFO] connection closed: PeerId("12D3KooWLFLQLTWwWQZcJ5d5wcvawR9yeyTzoPH2SjsCRWqXif2S"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:49:06 [INFO] relay message, reservation closed: PeerId("12D3KooWLFLQLTWwWQZcJ5d5wcvawR9yeyTzoPH2SjsCRWqXif2S")
+23:50:08 [WARN] Failed to trigger bootstrap: No known peers.
+23:51:29 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(29), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/56388/ws }
+23:51:29 [INFO] connection established PeerId("12D3KooWF8njSbuSfXpdDNouXzygPSW9gGF83AXiQrgmRCGvWJ8d"): duration 305.624541ms
+23:51:39 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWF8njSbuSfXpdDNouXzygPSW9gGF83AXiQrgmRCGvWJ8d"), renewed: false
+23:52:02 [INFO] connection closed: PeerId("12D3KooWF8njSbuSfXpdDNouXzygPSW9gGF83AXiQrgmRCGvWJ8d"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:52:02 [INFO] relay message, reservation closed: PeerId("12D3KooWF8njSbuSfXpdDNouXzygPSW9gGF83AXiQrgmRCGvWJ8d")
+23:55:08 [WARN] Failed to trigger bootstrap: No known peers.
+23:55:54 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(30), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/58255/ws }
+23:55:54 [INFO] connection established PeerId("12D3KooWEZHwcSmR6N8zdoM8N7BMskhoKCKnQcosPgP9S3bpR9Jg"): duration 304.54875ms
+23:56:04 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWEZHwcSmR6N8zdoM8N7BMskhoKCKnQcosPgP9S3bpR9Jg"), renewed: false
+23:56:49 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWEZHwcSmR6N8zdoM8N7BMskhoKCKnQcosPgP9S3bpR9Jg"), renewed: true
+23:56:49 [INFO] connection closed: PeerId("12D3KooWEZHwcSmR6N8zdoM8N7BMskhoKCKnQcosPgP9S3bpR9Jg"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+23:56:49 [INFO] relay message, reservation closed: PeerId("12D3KooWEZHwcSmR6N8zdoM8N7BMskhoKCKnQcosPgP9S3bpR9Jg")
+00:00:08 [WARN] Failed to trigger bootstrap: No known peers.
+00:04:25 [INFO] new listen addr: /ip4/169.254.4.58/tcp/30333/ws
+00:04:25 [WARN] Failed to trigger bootstrap: No known peers.
+00:09:25 [WARN] Failed to trigger bootstrap: No known peers.
+00:29:32 [WARN] Failed to trigger bootstrap: No known peers.
+00:29:32 [INFO] expired listen addr: /ip4/169.254.4.58/tcp/30333/ws
+00:34:32 [WARN] Failed to trigger bootstrap: No known peers.
+00:50:16 [WARN] Failed to trigger bootstrap: No known peers.
+00:55:16 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(31), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/63570/ws }
+00:55:16 [INFO] connection established PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro"): duration 304.329084ms
+00:55:16 [WARN] Failed to trigger bootstrap: No known peers.
+00:55:26 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro"), renewed: false
+00:56:11 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro"), renewed: true
+00:56:56 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro"), renewed: true
+00:57:16 [INFO] connection closed: PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+00:57:16 [INFO] relay message, reservation closed: PeerId("12D3KooWSRuAyo28mmQJJ13WqaqhqTiMw2D1iaS1CnQ4YispmJro")
+01:00:16 [WARN] Failed to trigger bootstrap: No known peers.
+01:19:08 [WARN] Failed to trigger bootstrap: No known peers.
+01:19:08 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(32), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55838/ws }
+01:19:08 [INFO] connection established PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc"): duration 303.025833ms
+01:19:18 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc"), renewed: false
+01:20:03 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc"), renewed: true
+01:20:48 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc"), renewed: true
+01:21:08 [INFO] connection closed: PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+01:21:08 [INFO] relay message, reservation closed: PeerId("12D3KooWFmSfL7y8syr6ypt7b764fJfRoKUrZbD2dUNZbkoXN4Lc")
+01:24:08 [WARN] Failed to trigger bootstrap: No known peers.
+01:28:33 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(33), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/60209/ws }
+01:28:33 [INFO] connection established PeerId("12D3KooWPFL9Tq5SzL77RUjrwCFLwfJjnwbDTttAX6ENLVsEa1LJ"): duration 305.683959ms
+01:28:43 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPFL9Tq5SzL77RUjrwCFLwfJjnwbDTttAX6ENLVsEa1LJ"), renewed: false
+01:29:08 [WARN] Failed to trigger bootstrap: No known peers.
+01:29:28 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPFL9Tq5SzL77RUjrwCFLwfJjnwbDTttAX6ENLVsEa1LJ"), renewed: true
+01:29:39 [INFO] connection closed: PeerId("12D3KooWPFL9Tq5SzL77RUjrwCFLwfJjnwbDTttAX6ENLVsEa1LJ"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+01:29:39 [INFO] relay message, reservation closed: PeerId("12D3KooWPFL9Tq5SzL77RUjrwCFLwfJjnwbDTttAX6ENLVsEa1LJ")
+01:34:15 [WARN] Failed to trigger bootstrap: No known peers.
+01:39:23 [WARN] Failed to trigger bootstrap: No known peers.
+01:44:31 [WARN] Failed to trigger bootstrap: No known peers.
+01:50:50 [WARN] Failed to trigger bootstrap: No known peers.
+02:00:11 [WARN] Failed to trigger bootstrap: No known peers.
+02:05:21 [WARN] Failed to trigger bootstrap: No known peers.
+02:10:29 [WARN] Failed to trigger bootstrap: No known peers.
+02:33:15 [WARN] Failed to trigger bootstrap: No known peers.
+02:38:22 [WARN] Failed to trigger bootstrap: No known peers.
+02:52:34 [WARN] Failed to trigger bootstrap: No known peers.
+02:58:56 [WARN] Failed to trigger bootstrap: No known peers.
+03:04:04 [WARN] Failed to trigger bootstrap: No known peers.
+03:09:13 [WARN] Failed to trigger bootstrap: No known peers.
+03:37:36 [WARN] Failed to trigger bootstrap: No known peers.
+03:42:42 [WARN] Failed to trigger bootstrap: No known peers.
+03:47:52 [WARN] Failed to trigger bootstrap: No known peers.
+03:52:59 [WARN] Failed to trigger bootstrap: No known peers.
+03:58:05 [WARN] Failed to trigger bootstrap: No known peers.
+04:19:08 [WARN] Failed to trigger bootstrap: No known peers.
+04:24:15 [WARN] Failed to trigger bootstrap: No known peers.
+04:39:39 [WARN] Failed to trigger bootstrap: No known peers.
+04:44:47 [WARN] Failed to trigger bootstrap: No known peers.
+04:51:23 [WARN] Failed to trigger bootstrap: No known peers.
+04:56:31 [WARN] Failed to trigger bootstrap: No known peers.
+05:57:10 [WARN] Failed to trigger bootstrap: No known peers.
+06:05:19 [WARN] Failed to trigger bootstrap: No known peers.
+06:10:27 [WARN] Failed to trigger bootstrap: No known peers.
+06:44:42 [WARN] Failed to trigger bootstrap: No known peers.
+06:49:50 [WARN] Failed to trigger bootstrap: No known peers.
+06:58:45 [WARN] Failed to trigger bootstrap: No known peers.
+07:07:09 [WARN] Failed to trigger bootstrap: No known peers.
+07:12:16 [WARN] Failed to trigger bootstrap: No known peers.
+07:20:32 [WARN] Failed to trigger bootstrap: No known peers.
+07:25:39 [WARN] Failed to trigger bootstrap: No known peers.
+07:34:17 [WARN] Failed to trigger bootstrap: No known peers.
+07:39:25 [WARN] Failed to trigger bootstrap: No known peers.
+08:00:01 [WARN] Failed to trigger bootstrap: No known peers.
+09:00:11 [WARN] Failed to trigger bootstrap: No known peers.
+11:34:57 [WARN] Failed to trigger bootstrap: No known peers.
+11:35:25 [INFO] new listen addr: /ip4/169.254.33.223/tcp/30333/ws
+11:35:25 [WARN] Failed to trigger bootstrap: No known peers.
+11:40:25 [WARN] Failed to trigger bootstrap: No known peers.
+12:14:08 [WARN] Failed to trigger bootstrap: No known peers.
+12:14:08 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(34), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/59761/ws }
+12:14:08 [INFO] connection established PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6"): duration 303.771084ms
+12:14:18 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6"), renewed: false
+12:15:03 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6"), renewed: true
+12:15:48 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6"), renewed: true
+12:16:08 [INFO] connection closed: PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+12:16:08 [INFO] relay message, reservation closed: PeerId("12D3KooWK4HFLLYipouDHRLuRy46wdnf6t3s2mor92aYV8AGeKc6")
+12:19:08 [WARN] Failed to trigger bootstrap: No known peers.
+12:49:30 [WARN] Failed to trigger bootstrap: No known peers.
+12:49:30 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(35), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/49198/ws }
+12:49:30 [INFO] connection established PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7"): duration 301.689125ms
+12:49:40 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7"), renewed: false
+12:50:25 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7"), renewed: true
+12:51:10 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7"), renewed: true
+12:51:30 [INFO] connection closed: PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+12:51:30 [INFO] relay message, reservation closed: PeerId("12D3KooWM9bW84oXZw7CRdPoyPGpZXp3kA6dT3bpFmVBh6S9s7A7")
+12:54:30 [WARN] Failed to trigger bootstrap: No known peers.
+13:07:24 [WARN] Failed to trigger bootstrap: No known peers.
+13:07:24 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(36), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/52152/ws }
+13:07:25 [INFO] connection established PeerId("12D3KooWK265umENnYQ7dbs1e8FcMNXEmv7Q4ft7YWmzkAWGiwiu"): duration 302.824541ms
+13:07:35 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWK265umENnYQ7dbs1e8FcMNXEmv7Q4ft7YWmzkAWGiwiu"), renewed: false
+13:08:20 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWK265umENnYQ7dbs1e8FcMNXEmv7Q4ft7YWmzkAWGiwiu"), renewed: true
+13:08:48 [INFO] connection closed: PeerId("12D3KooWK265umENnYQ7dbs1e8FcMNXEmv7Q4ft7YWmzkAWGiwiu"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+13:08:48 [INFO] relay message, reservation closed: PeerId("12D3KooWK265umENnYQ7dbs1e8FcMNXEmv7Q4ft7YWmzkAWGiwiu")
+13:12:24 [WARN] Failed to trigger bootstrap: No known peers.
+13:17:24 [WARN] Failed to trigger bootstrap: No known peers.
+14:15:00 [WARN] Failed to trigger bootstrap: No known peers.
+15:22:28 [WARN] Failed to trigger bootstrap: No known peers.
+15:22:28 [INFO] expired listen addr: /ip4/169.254.33.223/tcp/30333/ws
+15:22:46 [INFO] new listen addr: /ip4/169.254.33.223/tcp/30333/ws
+15:22:47 [WARN] Failed to trigger bootstrap: No known peers.
+15:27:47 [WARN] Failed to trigger bootstrap: No known peers.
+16:06:02 [WARN] Failed to trigger bootstrap: No known peers.
+16:06:02 [INFO] expired listen addr: /ip4/169.254.33.223/tcp/30333/ws
+16:11:02 [WARN] Failed to trigger bootstrap: No known peers.
+16:24:16 [WARN] Failed to trigger bootstrap: No known peers.
+17:24:16 [WARN] Failed to trigger bootstrap: No known peers.
+18:24:16 [WARN] Failed to trigger bootstrap: No known peers.
+18:24:47 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(37), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/63595/ws }
+18:24:48 [INFO] connection established PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau"): duration 305.273125ms
+18:24:58 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau"), renewed: false
+18:25:43 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau"), renewed: true
+18:26:28 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau"), renewed: true
+18:26:37 [INFO] connection closed: PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+18:26:37 [INFO] relay message, reservation closed: PeerId("12D3KooWNeLSgsUhGSQftkuUYTCFJvC1uSz9oa63FM5Mhc5GoVau")
+18:29:16 [WARN] Failed to trigger bootstrap: No known peers.
+18:34:48 [WARN] Failed to trigger bootstrap: No known peers.
+18:34:48 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(38), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/65473/ws }
+18:34:48 [INFO] connection established PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn"): duration 303.132458ms
+18:34:58 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn"), renewed: false
+18:35:43 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn"), renewed: true
+18:36:28 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn"), renewed: true
+18:36:38 [INFO] connection closed: PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+18:36:38 [INFO] relay message, reservation closed: PeerId("12D3KooWASBoo2T7WRsyAa461FFMh5TdcH6k2dLReJqoFV6H9cUn")
+18:39:48 [WARN] Failed to trigger bootstrap: No known peers.
+18:54:21 [WARN] Failed to trigger bootstrap: No known peers.
+18:54:21 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(39), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/52576/ws }
+18:54:21 [INFO] connection established PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1"): duration 303.835375ms
+18:54:31 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1"), renewed: false
+18:55:16 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1"), renewed: true
+18:56:01 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1"), renewed: true
+18:56:11 [INFO] connection closed: PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+18:56:11 [INFO] relay message, reservation closed: PeerId("12D3KooWDp4ETcgm9aTyZZf61LJFUxs8FYYSY7uQ2XD1e6Z2Rgb1")
+18:59:21 [WARN] Failed to trigger bootstrap: No known peers.
+19:02:36 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(40), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/54243/ws }
+19:02:37 [INFO] connection established PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW"): duration 305.804375ms
+19:02:47 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW"), renewed: false
+19:03:32 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW"), renewed: true
+19:04:17 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW"), renewed: true
+19:04:21 [WARN] Failed to trigger bootstrap: No known peers.
+19:04:27 [INFO] connection closed: PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+19:04:27 [INFO] relay message, reservation closed: PeerId("12D3KooWFp8fZyhCr5VX5e8Th4Zr6Pom2BMNSEFFK58tn7AkttHW")
+19:09:21 [WARN] Failed to trigger bootstrap: No known peers.
+19:36:53 [WARN] Failed to trigger bootstrap: No known peers.
+20:36:53 [WARN] Failed to trigger bootstrap: No known peers.
+21:36:53 [WARN] Failed to trigger bootstrap: No known peers.
+21:39:45 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(41), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/55982/ws }
+21:39:46 [INFO] connection established PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot"): duration 304.326459ms
+21:39:56 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot"), renewed: false
+21:40:41 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot"), renewed: true
+21:41:26 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot"), renewed: true
+21:41:36 [INFO] connection closed: PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+21:41:36 [INFO] relay message, reservation closed: PeerId("12D3KooWPw3HoLJMpCEU1DEKWwrWhhbVVMcsxeKeZcDgYmcRcuot")
+21:41:53 [WARN] Failed to trigger bootstrap: No known peers.
+21:54:24 [WARN] Failed to trigger bootstrap: No known peers.
+21:54:24 [INFO] swarm event: IncomingConnection { connection_id: ConnectionId(42), local_addr: /ip6/::1/tcp/30333/ws, send_back_addr: /ip6/::1/tcp/58010/ws }
+21:54:24 [INFO] connection established PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM"): duration 304.178708ms
+21:54:34 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM"), renewed: false
+21:55:19 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM"), renewed: true
+21:56:04 [INFO] relay message, reservation req accepted src_peer_id: PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM"), renewed: true
+21:56:14 [INFO] connection closed: PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM"), reason Some(IO(Custom { kind: Other, error: Error(Right(Closed)) }))
+21:56:14 [INFO] relay message, reservation closed: PeerId("12D3KooWDpaiDxCLSz39HpYWeGWmNuojJaRxsFcw1B5Q2REHUsjM")
+21:59:24 [WARN] Failed to trigger bootstrap: No known peers.

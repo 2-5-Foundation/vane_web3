@@ -1,0 +1,20 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "vane-dht-host-functions",
+    "main": "dht.ts",
+    "compatibility_date": "2025-02-04",
+    "observability": {
+      "enabled": true
+    },
+  
+      // Add this to your wrangler.jsonc
+    "kv_namespaces": [
+        {
+        "binding": "KV",
+        "id": "3ea769504537468aa2106a51fb6403e0",
+        
+        // Optional: preview_id used when running `wrangler dev` for local dev
+        "preview_id": "0c927cc170714cacb9033d258d3432cc"
+        }
+  ]
+  }

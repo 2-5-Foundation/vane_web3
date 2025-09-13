@@ -5,3 +5,5 @@
 /integration-test/vane.log
 /integration-test/vane-test.log
 +.env
+
+/integration-test/wasm-e2e-ts/screenshots/*

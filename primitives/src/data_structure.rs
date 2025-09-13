@@ -131,6 +131,14 @@ pub struct WasmDhtResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct DHTResponse {
+    pub success: bool,
+    pub value: Option<String>,
+    pub error: Option<String>,
+    pub random: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct WasmDhtRequest {
     pub key: String,
 }
@@ -273,7 +281,7 @@ pub enum NetworkCommand {
     },
     GetDhtPeer {
         target_acc_id: String,
-        response_sender: tokio_with_wasm::alias::sync::oneshot::Sender<Result<QueryId, Error>>,
+        response_sender: tokio_with_wasm::alias::sync::oneshot::Sender<Result<u32, Error>>,
     },
     AddDhtAccount {
         account_id: String,

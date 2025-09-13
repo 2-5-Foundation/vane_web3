@@ -19,6 +19,9 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
 
+    // Allow any type
+    "noImplicitAny": false,
+
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,

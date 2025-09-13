@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
+use log::info;
 use opfs::persistent;
 use opfs::persistent::{app_specific_dir, DirectoryHandle, FileHandle, WritableFileStream};
 use opfs::{CreateWritableOptions, GetFileHandleOptions};
@@ -8,7 +9,6 @@ use primitives::data_structure::{
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-
 // you must import the traits to call methods on the types
 use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
 
@@ -861,6 +861,7 @@ impl DbWorkerInterface for DbWorker {
         acc_id: String,
         multi_addr: String,
     ) -> Result<(), anyhow::Error> {
+        info!(target: "db-wasm", "recording saved user peers: {:?}", multi_addr);
         match self {
             DbWorker::Opfs(worker) => worker.record_saved_user_peers(acc_id, multi_addr).await,
             DbWorker::InMemory(worker) => worker.record_saved_user_peers(acc_id, multi_addr).await,

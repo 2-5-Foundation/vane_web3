@@ -40,7 +40,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
     wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
     await wasmNodeInstance.promise;
-    await new Promise(resolve => setTimeout(resolve, 20000));
+    await new Promise(resolve => setTimeout(resolve, 10000));
     console.log('✅ WASM node started successfully');
 
   })
