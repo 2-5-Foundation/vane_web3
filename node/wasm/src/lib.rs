@@ -342,7 +342,7 @@ impl WasmMainServiceWorker {
 
                             let maybe_addr = resp
                                 .value
-                                .and_then(|s| (!s.is_empty()).then(|| s.parse::<Multiaddr>().ok()))
+                                .and_then(|s| (!s.is_empty()).then(|| Multiaddr::try_from(s).ok()))
                                 .flatten();
 
                             if let Some(multi_addr) = maybe_addr {

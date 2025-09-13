@@ -36,7 +36,7 @@ echo "✅ WASM package built successfully"
 echo "Adding host functions import to vane_wasm_node.js..."
 if [ -f pkg/vane_wasm_node.js ]; then
     # Create a temporary file with the import at the top
-    echo "import { hostFunctions } from './host_functions/main.ts';" > pkg/vane_wasm_node_temp.js
+    echo "import { hostFunctions } from './main.ts';" > pkg/vane_wasm_node_temp.js
     cat pkg/vane_wasm_node.js >> pkg/vane_wasm_node_temp.js
     mv pkg/vane_wasm_node_temp.js pkg/vane_wasm_node.js
     echo "Host functions import added successfully"
@@ -44,10 +44,13 @@ else
     echo "Warning: vane_wasm_node.js not found"
 fi
 
-# Copy entire host functions directory
-echo "Copying host_functions directory..."
-rm -rf pkg/host_functions
-cp -R host_functions pkg/host_functions
+# Copy required files from host functions
+echo "Copying host function files..."
+cp host_functions/main.ts pkg/
+cp host_functions/cryptography.ts pkg/
+cp host_functions/networking.ts pkg/
+cp host_functions/logging.ts pkg/
+cp host_functions/primitives.ts pkg/
 
 # Create index.ts if it doesn't exist
 if [ ! -f pkg/index.ts ]; then
@@ -57,13 +60,13 @@ if [ ! -f pkg/index.ts ]; then
 export * from './wasm_node.js';
 
 // Export the host functions
-export * from './host_functions/main.ts';
+export * from './main.ts';
 
 // Re-export the WASM module as default for convenience
 export { default as WasmNode } from './wasm_node.js';
 
 // Re-export host functions as default for convenience
-export { default as hostFunctions } from './host_functions/main.ts';
+export { default as hostFunctions } from './main.ts';
 EOF
 fi
 
@@ -79,7 +82,11 @@ pkg.files = [
   'wasm_node.d.ts',
   'vane_wasm_node.js',
   'index.ts',
-  'host_functions/**'
+  'main.ts',
+  'cryptography.ts',
+  'networking.ts',
+  'logging.ts',
+  'primitives.ts'
 ];
 
 pkg.main = 'index.ts';

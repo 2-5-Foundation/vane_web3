@@ -19,10 +19,10 @@ use sp_core::{
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"], js_name = submitTx)]
+    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
     async fn submitTx(tx: JsValue) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"], js_name = createTx)]
+    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
     async fn createTx(tx: JsValue) -> JsValue;
 
 }

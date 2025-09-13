@@ -231,8 +231,7 @@ impl WasmP2pWorker {
                 info!(target:"p2p","🎧 Listening on: {}", &address);
 
                 let account_key = self.user_account_id.clone();
-                let value =
-                    serde_json::to_string(&address).expect("failed to serialize multiaddr value");
+                let value = address.to_string();
 
                 // Use Once to ensure DHT announcement happens only once
                 self.dht_announce_once.call_once(|| {
@@ -816,7 +815,6 @@ pub async fn host_set_dht(key: String, value: String) -> Result<DHTResponse, any
 }
 
 pub async fn host_get_dht(key: String) -> Result<DHTResponse, anyhow::Error> {
-    info!(target: "p2p", "🔍 Calling host_get_dht for key: {}", key);
     let promise = unsafe { get_dht_host(key) };
     info!(target: "p2p", "🔍 Got promise from get_dht_host");
     let jsv = wasm_bindgen_futures::JsFuture::from(promise)

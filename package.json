@@ -13,8 +13,7 @@
     "clean": "cargo clean && rm -rf node/wasm/pkg && rm -rf integration-test/wasm-e2e-ts/relay-info.json"
   },
   "devDependencies": {
-    "bun-types": "latest",
-    "wrangler": "^4.35.0"
+    "bun-types": "latest"
   },
   "engines": {
     "bun": ">=1.0.0"

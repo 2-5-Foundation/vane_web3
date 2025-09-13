@@ -20,6 +20,15 @@ use dotenv::dotenv;
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
 
+/// DHT response structure for host function communication
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub struct DHTResponse {
+    pub success: bool,
+    pub value: Option<String>,
+    pub error: Option<String>,
+    pub random: u32,
+}
+
 /// tx state
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum TxStatus {
@@ -128,14 +137,6 @@ where
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct WasmDhtResponse {
     pub peer_id: Option<PeerId>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct DHTResponse {
-    pub success: bool,
-    pub value: Option<String>,
-    pub error: Option<String>,
-    pub random: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
