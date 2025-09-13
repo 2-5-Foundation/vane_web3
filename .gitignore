@@ -5,3 +5,27 @@
 /integration-test/vane.log
 /integration-test/vane-test.log
 +.env
+
+/integration-test/wasm-e2e-ts/screenshots/*
+
+# Cloudflare Wrangler
+node/wasm/host_functions/.wrangler/
+.wrangler/
+
+# Node modules
+node_modules/
+
+# Build artifacts
+*.lock
+*.lockb
+
+# Test results
+**/test-results/
+**/__screenshots__/
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
