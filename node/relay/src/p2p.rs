@@ -59,17 +59,17 @@ impl RelayP2pWorker {
                 .with(libp2p::multiaddr::Protocol::Ws("/".into()))
                 .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
         } else {
-            Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+            Multiaddr::from(Ipv6Addr::LOCALHOST)
                 .with(libp2p::multiaddr::Protocol::Tcp(port))
                 .with(libp2p::multiaddr::Protocol::Ws("/".into()))
                 .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
         };
 
-        let listening_multi_addr = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
+        let listening_multi_addr = Multiaddr::from(Ipv6Addr::LOCALHOST)
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
 
-        let listening_multi_addr_ipv4 = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+        let listening_multi_addr_ipv4 = Multiaddr::from(Ipv4Addr::LOCALHOST)
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
 

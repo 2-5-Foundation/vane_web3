@@ -320,13 +320,13 @@ impl WasmMainServiceWorker {
                 let txn = txn.clone();
                 let target_id = target_id.clone();
 
-                 wasm_bindgen_futures::spawn_local(async move {
-                     info!("🔍 Starting DHT lookup for target: {}", target_id);
-                     let dht = host_get_dht(target_id.clone()).fuse();
-                     let timeout = TimeoutFuture::new(30_000).fuse(); // 15s
-                     futures::pin_mut!(dht, timeout);
+                wasm_bindgen_futures::spawn_local(async move {
+                    info!("🔍 Starting DHT lookup for target: {}", target_id);
+                    let dht = host_get_dht(target_id.clone()).fuse();
+                    let timeout = TimeoutFuture::new(30_000).fuse(); // 15s
+                    futures::pin_mut!(dht, timeout);
 
-                     match future::select(dht, timeout).await {
+                    match future::select(dht, timeout).await {
                         // DHT returned
                         future::Either::Left((Ok(resp), _)) => {
                             if let Some(err) = resp.error {

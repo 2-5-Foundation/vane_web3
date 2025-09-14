@@ -102,23 +102,13 @@ impl WasmP2pWorker {
             .with(libp2p::multiaddr::Protocol::P2pCircuit);
 
         let (relay_transport, relay_behaviour) = libp2p::relay::client::new(peer_id.clone());
-        let authenticated_relay = relay_transport
+
+        let ws_base = libp2p_websocket_websys::Transport::default();
+
+        let combined_transport = OrTransport::new(relay_transport, ws_base)
             .upgrade(upgrade::Version::V1)
             .authenticate(libp2p::noise::Config::new(&self_keypair)?)
             .multiplex(libp2p::yamux::Config::default())
-            .boxed();
-
-        let authenticated_websocket = libp2p_websocket_websys::Transport::default()
-            .upgrade(upgrade::Version::V1)
-            .authenticate(libp2p::noise::Config::new(&self_keypair)?)
-            .multiplex(libp2p::yamux::Config::default())
-            .boxed();
-
-        let combined_transport = OrTransport::new(authenticated_websocket, authenticated_relay)
-            .map(|either, _| match either {
-                Either::Left((peer, muxer)) => (peer, muxer),
-                Either::Right((peer, muxer)) => (peer, muxer),
-            })
             .boxed();
 
         let request_response_config = libp2p::request_response::Config::default()
@@ -712,7 +702,6 @@ impl P2pNetworkService {
         target_peer_id: PeerId,
         target_multi_addr: Multiaddr,
     ) -> Result<(), Error> {
-        info!(target: "p2p", "IT GOT FIRED KIRK");
         let req = request.borrow().clone();
         let req_command = NetworkCommand::WasmSendRequest {
             request: req,
