@@ -435,12 +435,14 @@ impl WasmMainServiceWorker {
         self.wasm_tx_processing_worker
             .borrow()
             .validate_receiver_sender_address(&txn_inner, "Sender")?;
+        info!(target: "MainServiceWorker","sender confirmation passed");
         // verify multi id
         if self
             .wasm_tx_processing_worker
             .borrow()
             .validate_multi_id(&txn_inner)
         {
+            info!(target: "MainServiceWorker","multiId verification passed");
             // TODO! handle submission errors
             // signed and ready to be submitted to target chain
             match self
@@ -452,6 +454,7 @@ impl WasmMainServiceWorker {
                 Ok(tx_hash) => {
                     // update user via rpc on tx success
                     txn_inner.tx_submission_passed(tx_hash);
+                    info!(target: "MainServiceWorker","tx submission passed");
                     self.rpc_sender_channel
                         .borrow_mut()
                         .send(txn_inner.clone())

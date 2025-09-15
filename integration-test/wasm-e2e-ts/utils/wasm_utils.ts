@@ -54,13 +54,10 @@ export function logWasmExports() {
     console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
 }
 
-  export function setupWasmLogging() {
-    console.log('🔧 Setting up WASM logging...');
-    
+  export function setupWasmLogging() {    
     // Set debug level for comprehensive logging
     try {
       hostFunctions.hostLogging.setLogLevel(hostFunctions.hostLogging.LogLevel.Debug);
-      console.log('✅ WASM logging level set to Debug');
       
       // Log a test message to verify logging works
       hostFunctions.hostLogging.log(
@@ -73,15 +70,18 @@ export function logWasmExports() {
 
       );
       
+      
       console.log('✅ WASM logging system verified');
+      
+      // Return the hostLogging instance for direct access
+      return hostFunctions.hostLogging;
     } catch (error) {
       console.warn('⚠️ Failed to setup WASM logging:', error);
+      return null;
     }
   }
   
-  export async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {
-    console.log('⏳ Waiting for WASM initialization...');
-    
+  export async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {    
     const startTime = Date.now();
     const checkInterval = 500;
     

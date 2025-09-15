@@ -25,14 +25,7 @@ export default defineConfig({
         {
           browser: 'chromium'
         }
-      ],
-      providerOptions: {
-        playwright: {
-          screenshot: 'off',
-          video: 'off',
-          trace: 'off'
-        }
-      }
+      ]
     }
   }
 })

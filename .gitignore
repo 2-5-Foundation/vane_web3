@@ -25,6 +25,10 @@ node_modules/
 
 # Log files
 *.log
+vane.log
+
+# Vite cache
+node_modules/.vite/
 
 # OS files
 .DS_Store

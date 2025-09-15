@@ -669,7 +669,6 @@ impl P2pNetworkService {
         target_url: Multiaddr,
         peer_id: &PeerId,
     ) -> Result<(), anyhow::Error> {
-        info!(target: "p2p", "IT GOT FIRED");
         let dial_command = NetworkCommand::Dial {
             target_multi_addr: target_url.clone(),
             target_peer_id: peer_id.clone(),
@@ -792,7 +791,6 @@ extern "C" {
 }
 
 pub async fn host_set_dht(key: String, value: String) -> Result<DHTResponse, anyhow::Error> {
-    info!(target: "p2p", "reaching host set dht");
     let promise = unsafe { set_dht_host(key, value) };
     let jsv = wasm_bindgen_futures::JsFuture::from(promise)
         .await
@@ -805,11 +803,11 @@ pub async fn host_set_dht(key: String, value: String) -> Result<DHTResponse, any
 
 pub async fn host_get_dht(key: String) -> Result<DHTResponse, anyhow::Error> {
     let promise = unsafe { get_dht_host(key) };
-    info!(target: "p2p", "🔍 Got promise from get_dht_host");
+    debug!(target: "p2p", "🔍 Got promise from get_dht_host");
     let jsv = wasm_bindgen_futures::JsFuture::from(promise)
         .await
         .map_err(|e| anyhow::anyhow!("Host function error: {:?}", e))?;
-    info!(target: "p2p", "🔍 Got JSValue from promise: {:?}", jsv);
+    debug!(target: "p2p", "🔍 Got JSValue from promise: {:?}", jsv);
 
     let response: DHTResponse = serde_wasm_bindgen::from_value(jsv)
         .map_err(|e| anyhow::anyhow!("Deserialization error: {:?}", e))?;

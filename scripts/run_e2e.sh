@@ -179,24 +179,37 @@ else
 fi
 
 echo ""
+echo -e "${BLUE}Starting WebSocket event hub...${NC}"
+
+# Start WebSocket event hub (global_setup.ts)
+echo -e "${YELLOW}Starting WebSocket event hub for cross-node communication...${NC}"
+cd "$PROJECT_ROOT/integration-test/wasm-e2e-ts"
+bun run utils/global_setup.ts &
+HUB_PID=$!
+
+# Wait a moment for the hub to start
+sleep 2
+echo -e "${GREEN}✅ WebSocket event hub started (PID: $HUB_PID)${NC}"
+
+echo ""
 echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 # Start Node 1
 start_node "WASM Node 1" "$GREEN"
 
 # Add delay between node starts to prevent connection conflicts
-echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 3
+# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+# sleep 3
 
-# Start Node 2
-start_node "WASM Node 2" "$BLUE"
+# # Start Node 2
+# start_node "WASM Node 2" "$BLUE"
 
-# Add delay between node starts
-echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 3
+# # Add delay between node starts
+# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+# sleep 3
 
-# Start Malicious Node 3
-start_node "WASM Node 3 (Malicious)" "$RED"
+# # Start Malicious Node 3
+# start_node "WASM Node 3 (Malicious)" "$RED"
 
 echo ""
 echo -e "${GREEN}✅ All WASM nodes have been started in separate terminals!${NC}"
@@ -207,6 +220,7 @@ echo -e "1. Close the terminal windows manually"
 echo -e "2. Or run: pkill -f 'vitest run'"
 echo -e "3. To stop relay node: pkill -f 'start-relay'"
 echo -e "4. To stop HTTP server: pkill -f 'http.server'"
+echo -e "5. To stop WebSocket hub: pkill -f 'global_setup'"
 echo ""
 
 # Keep this script running to show status

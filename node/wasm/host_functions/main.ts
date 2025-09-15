@@ -38,7 +38,6 @@ export const hostDHT = {
         signal: controller.signal,
         headers: { "Accept": "application/json" },
       });
-      console.log(`🔍 DHT GET: Response status: ${res.status}`);
 
       const text = await res.text();            // read as text first
       let data: any;

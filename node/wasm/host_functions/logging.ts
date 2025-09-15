@@ -24,15 +24,19 @@
         private logHistory: LogEntry[] = [];
         private maxHistorySize: number = 1000;
         private logLevelFilter: LogLevel = LogLevel.Info;
+        private logCallback: ((entry: LogEntry) => void) | null = null;
         
         constructor() {
             // Initialize with info level by default
             this.setLogLevel(LogLevel.Info);
         }
 
+        setLogCallback(callback: (entry: LogEntry) => void) {
+            this.logCallback = callback;
+        }
+
         setLogLevel(level: LogLevel) {
             this.logLevelFilter = level;
-            console.log(`🔧 Log level set to: ${LogLevel[level]}`);
         }
 
         private shouldLog(level: LogLevel): boolean {
@@ -85,6 +89,11 @@
             };
 
             this.addToHistory(entry);
+
+            // Call the callback if set
+            if (this.logCallback) {
+                this.logCallback(entry);
+            }
 
             let fileInfo = '';
             if (entry.file && entry.line) {
@@ -179,6 +188,13 @@
          */
         exportLogs(): string {
             return logger.exportLogs();
+        },
+
+        /**
+         * Set a callback function to receive log entries
+         */
+        setLogCallback(callback: (entry: LogEntry) => void) {
+            logger.setLogCallback(callback);
         },
 
         /**
