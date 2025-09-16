@@ -605,15 +605,15 @@ pub async fn start_vane_web3(
     network: String,
     live: bool,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
-    // Set up panic hook for better error reporting
-    console_error_panic_hook::set_once();
-
     // Initialize WASM logging to forward logs to JavaScript
     if live {
         let _ = crate::logging::init_wasm_logging();
     } else {
         let _ = crate::logging::init_debug_logging();
     }
+
+    log::debug!("Rust debug log test from inside WASM");
+    log::info!("Rust info log test from inside WASM");
 
     match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {
         Ok(public_interface_worker) => {

@@ -3,6 +3,7 @@ import { hostFunctions } from '../../node/wasm/host_functions/main.js'
 import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
+import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 
 // THE THIRD NODE IS THE MALICIOUS NODE THAT WILL BE TESTED
 
@@ -13,6 +14,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   let receiver_client_address = "0x63FaC9201494f0bd17B9892B9fae4d52fe3BD377"
   let wasmNodeInstance: WasmNodeInstance | null = null;
+  let nodeCoordinator: NodeCoordinator;
  
  
   
@@ -38,15 +40,23 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         setupWasmLogging();
         logWasmExports();
         await waitForWasmInitialization();
-  
+
       } catch (error) {
         console.error('❌ Failed to initialize WASM module:', error);
       }
   
+      // Coordinator bound to MALICIOUS_NODE
+      nodeCoordinator = NodeCoordinator.getInstance();
+      nodeCoordinator.registerNode('MALICIOUS_NODE');
+      nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
+
       wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
       await wasmNodeInstance.promise;
-      await new Promise(resolve => setTimeout(resolve, 11000));
-      console.log('✅ WASM node started successfully');
+      await nodeCoordinator.waitForEvent(
+        NODE_EVENTS.PEER_CONNECTED,
+        async () => { console.log('🤖 MALICIOUS_NODE READY'); }
+      );
+      console.log('✅ WASM node started and connected successfully');
   
   })
 

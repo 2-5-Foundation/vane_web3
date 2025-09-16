@@ -20,15 +20,35 @@
         line?: number;
     }
 
-    class Logger {
+    export class Logger {
         private logHistory: LogEntry[] = [];
         private maxHistorySize: number = 1000;
         private logLevelFilter: LogLevel = LogLevel.Info;
         private logCallback: ((entry: LogEntry) => void) | null = null;
+        private channel: BroadcastChannel | null = null;
+        private sourceId: string;
         
         constructor() {
             // Initialize with info level by default
             this.setLogLevel(LogLevel.Info);
+
+            // Generate a per-realm source id and wire up cross-realm sync
+            this.sourceId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+                ? (crypto as any).randomUUID()
+                : `${Math.random()}-${Date.now()}`;
+
+            if (typeof BroadcastChannel !== 'undefined') {
+                try {
+                    this.channel = new BroadcastChannel('vane-logs');
+                    this.channel.onmessage = (ev: MessageEvent) => {
+                        const data = ev.data as any;
+                        if (!data || data.type !== 'log' || data.sourceId === this.sourceId) return;
+                        const entry = data.entry as LogEntry;
+                        this.addToHistory(entry);
+                        if (this.logCallback) this.logCallback(entry);
+                    };
+                } catch {}
+            }
         }
 
         setLogCallback(callback: (entry: LogEntry) => void) {
@@ -78,6 +98,7 @@
             if (!this.shouldLog(level)) {
                 return;
             }
+            
 
             const entry: LogEntry = {
                 level,
@@ -89,6 +110,11 @@
             };
 
             this.addToHistory(entry);
+
+            // Broadcast to other realms (e.g., worker <-> page)
+            if (this.channel) {
+                try { this.channel.postMessage({ type: 'log', entry, sourceId: this.sourceId }); } catch {}
+            }
 
             // Call the callback if set
             if (this.logCallback) {
@@ -142,8 +168,10 @@
         }
     }
 
-    // Global logger instance
-    const logger = new Logger();
+    // Global logger singleton attached to globalThis to avoid duplicate instances per module load
+    const globalKey = '__vaneLogger__';
+    const g = (typeof globalThis !== 'undefined' ? (globalThis as any) : ({} as any));
+    export const logger: Logger = g[globalKey] instanceof Logger ? g[globalKey] : (g[globalKey] = new Logger());
 
     // Host functions exposed to WASM
     export const hostLogging = {
@@ -172,8 +200,9 @@
         /**
          * Get log history as JSON string
          */
-        getLogHistory(): string {
-            return JSON.stringify(logger.getLogHistory());
+        getLogHistory(): LogEntry[] {
+            console.log("Getting log history WOOOOH", logger.getLogHistory());
+            return logger.getLogHistory();
         },
 
         /**
@@ -197,6 +226,10 @@
             logger.setLogCallback(callback);
         },
 
+        getLogInstance() {
+            return logger;
+        },
+
         /**
          * Log level constants for JavaScript usage
          */
@@ -213,3 +246,5 @@
             LogLevel,
         };
     }
+
+    

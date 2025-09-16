@@ -546,7 +546,7 @@ impl WasmP2pWorker {
                                     swarm.behaviour_mut().app_json.send_request(&peer_id,request);
                                     info!("request sent to peer: {peer_id:?}");
                                 } else {
-                                    info!("re dialing");
+                                    info!("re-dialing as the peer is not connected: {peer_id:?}");
                                     swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to re dial; {err:?}"));
                                     swarm.behaviour_mut().app_json.send_request(&peer_id,request);
                                     info!("request sent to peer: {peer_id:?}");

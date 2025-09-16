@@ -4,6 +4,7 @@ import { createTestClient, http, TestClient } from 'viem';
 import { foundry } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { PublicInterfaceWorkerJs } from '../../../node/wasm/pkg/vane_wasm_node.js';
+import { logger } from '../../../node/wasm/host_functions/logging.js';
 
 
 export function logWasmExports() {
@@ -54,32 +55,19 @@ export function logWasmExports() {
     console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
 }
 
-  export function setupWasmLogging() {    
-    // Set debug level for comprehensive logging
-    try {
-      hostFunctions.hostLogging.setLogLevel(hostFunctions.hostLogging.LogLevel.Debug);
-      
-      // Log a test message to verify logging works
-      hostFunctions.hostLogging.log(
-        hostFunctions.hostLogging.LogLevel.Debug,
-        "TestFramework",
-        "WASM logging system initialized successfully",
-        "test-module",
-        "wasm-node.test.ts",
-        1,
+export function setupWasmLogging() {    
+  try {
+    hostFunctions.hostLogging.setLogLevel(
+      hostFunctions.hostLogging.LogLevel.Debug
+    );
 
-      );
-      
-      
-      console.log('✅ WASM logging system verified');
-      
-      // Return the hostLogging instance for direct access
-      return hostFunctions.hostLogging;
-    } catch (error) {
-      console.warn('⚠️ Failed to setup WASM logging:', error);
-      return null;
-    }
+    // ✅ always return the same logger instance used by hostLogging
+    return hostFunctions.hostLogging.getLogInstance();
+  } catch (error) {
+    console.warn('⚠️ Failed to setup WASM logging:', error);
+    return null;
   }
+}
   
   export async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {    
     const startTime = Date.now();

@@ -3,6 +3,7 @@ import { hostFunctions } from '../../node/wasm/host_functions/main.js'
 import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
+import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -12,47 +13,55 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let wasm_client_address: string | undefined = undefined;
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   let wasmNodeInstance: WasmNodeInstance | null = null;
- 
- 
+  let nodeCoordinator: NodeCoordinator;
+  let wasmLogger: any | null = null;
   
   beforeAll(async () => {
     try {
       relayInfo = await loadRelayNodeInfo();
-      console.log('✅ Relay node info loaded');
     } catch (error) {
-      console.error('❌ Failed to load relay node info:', error);
-      console.error('💡 Make sure to start the relay node first: bun run start-relay');
       throw error;
     }
 
     walletClient = getWallets()[1];
     wasm_client_address = walletClient!.account!.address;
-    console.log("2 wasm client address", wasm_client_address);
 
     try {
         await init();
-        console.log('✅ WASM module initialized');
-        setupWasmLogging();
-        logWasmExports();
+        wasmLogger = setupWasmLogging();
         await waitForWasmInitialization();
-  
       } catch (error) {
-        console.error('❌ Failed to initialize WASM module:', error);
+        throw error;
       }
-  
-      wasmNodeInstance = startWasmNode(relayInfo.multiAddr, wasm_client_address!, "Ethereum", false);
+
+      // Coordinator bound to RECEIVER_NODE
+      nodeCoordinator = NodeCoordinator.getInstance();
+      nodeCoordinator.registerNode('RECEIVER_NODE');
+      nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
+
+      // Start WASM node
+      wasmNodeInstance = startWasmNode(relayInfo!.multiAddr, wasm_client_address!, "Ethereum", false);
+
       await wasmNodeInstance.promise;
-      await new Promise(resolve => setTimeout(resolve, 11000));
-      console.log('✅ WASM node started successfully');
-  
+
+      // Wait until receiver node is connected to a peer
+      await nodeCoordinator.waitForEvent(
+        NODE_EVENTS.PEER_CONNECTED,
+        async () => { console.log('👂 RECEIVER_NODE READY'); }
+      );
   })
 
-  it("should assert",async() => {
-    expect(1 + 1).toEqual(2)
-    
-    // Keep the node connected for other nodes to interact with it
-    console.log('⏳ Keeping WASM node 2 connected for other nodes to interact...');
+  it("it should receive a transaction and confirm it successfully",async() => {
+    // Wait for receipt log/event if produced by the flow
+    await nodeCoordinator.waitForEvent(
+      NODE_EVENTS.TRANSACTION_RECEIVED,
+      async () => { console.log('👂 TRANSACTION_RECEIVED'); },
+      60000
+    );
     await new Promise(resolve => setTimeout(resolve, 60000));
-})
+  })
 
+  afterAll(() => {
+    nodeCoordinator.stop();
+  })
 })
