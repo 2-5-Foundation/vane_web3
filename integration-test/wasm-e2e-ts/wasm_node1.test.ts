@@ -57,7 +57,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       console.log('✅ SENDER_NODE READY');
     });
     // arbitrary wait for receiver node to be ready ( we dont do cross test events yet)
-    await new Promise(resolve => setTimeout(resolve, 15000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
   });
 
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {

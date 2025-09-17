@@ -171,9 +171,9 @@ pub struct TxStateMachine {
     /// signed call payload (signed hash of the transaction)
     #[serde(rename = "signedCallPayload")]
     pub signed_call_payload: Option<Vec<u8>>,
-    /// call payload (hash of transaction)
+    /// call payload (hash of transaction and raw transaction bytes)
     #[serde(rename = "callPayload")]
-    pub call_payload: Option<[u8; 32]>,
+    pub call_payload: Option<([u8; 32], Vec<u8>)>,
     // /// used for simplifying tx identification
     // pub code_word: String,
     // pub sender_name: String,

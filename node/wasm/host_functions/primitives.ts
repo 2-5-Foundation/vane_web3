@@ -38,7 +38,7 @@ export interface TxStateMachine {
     status: TxStatus;
     amount: bigint; // For u128
     signedCallPayload?: Uint8Array;
-    callPayload?: Uint8Array; // Fixed 32 bytes
+    callPayload?: [Uint8Array, Uint8Array] | null; // [hash (32 bytes), raw transaction bytes]
     inboundReqId?: number; // u64
     outboundReqId?: number; // u64
     txNonce: number;
@@ -56,7 +56,7 @@ export class TxStateMachineManager {
       this.tx.recvSignature = signature;
     }
    
-    setCallPayload(payload: Uint8Array): void {
+    setCallPayload(payload: [Uint8Array, Uint8Array] | null): void {
       this.tx.callPayload = payload;
     }
    

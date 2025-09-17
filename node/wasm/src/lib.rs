@@ -236,7 +236,14 @@ impl WasmMainServiceWorker {
                             info!(target: "MainServiceWorker", "receiver confirmation passed");
 
                             let mut tx_processing = self.wasm_tx_processing_worker.borrow_mut();
-                            tx_processing.create_tx(&mut decoded_resp).await?;
+                            if let Err(e) = tx_processing.create_tx(&mut decoded_resp).await {
+                                // send the error to the rpc layer
+                                // there should be error reporting worker
+                                error!(target: "MainServiceWorker", "failed to create tx: {e}");
+                                // should not continue with the tx
+                                return Ok(());
+
+                            }
                         }
                         Err(err) => {
                             decoded_resp.recv_confirmation_failed();

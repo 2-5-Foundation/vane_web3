@@ -2,11 +2,13 @@ import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
 import { hostFunctions } from '../../node/wasm/host_functions/main.js'
 import init, * as wasmModule from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
-import { TestClient } from 'viem'
+import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
+import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/host_functions/primitives.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
+
 
 describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let relayInfo: RelayNodeInfo | null = null;
@@ -61,9 +63,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
          console.log('👂 TRANSACTION_RECEIVED');
          await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
            // Set up the transaction watcher (await the Promise)
-           await vaneWasm?.watchTxUpdates((tx: any) => {
-             
-           });
+           await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+            if (!walletClient) throw new Error('walletClient not initialized');
+            const account = walletClient.account!;
+            // @ts-ignore
+            const signature = await account.signMessage({ message: tx.receiverAddress });
+            const txManager = new TxStateMachineManager(tx);
+            txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+            const updatedTx = txManager.getTx();
+            console.log('🔑 UPDATED TX', updatedTx);
+            await vaneWasm?.receiverConfirm(updatedTx);
+          });
            
            // Fetch current pending transactions
            const receivedTx = await vaneWasm?.fetchPendingTxUpdates();

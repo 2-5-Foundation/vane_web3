@@ -3,7 +3,7 @@ import {
   http, 
   parseEther, 
   keccak256,
-  serializeTransaction,
+  serializeTransaction as serializeEthTransaction,
   recoverPublicKey,
   type Address,
   type TransactionRequest,
@@ -21,6 +21,12 @@ import {
 import { ChainSupported, type TxStateMachine } from './primitives';
 
 
+// Toggle Anvil (local) vs Live RPC via env. Works with Vite/Bun.
+const USE_ANVIL = (typeof process !== 'undefined' && (process.env?.VITE_USE_ANVIL === 'true'))
+  || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_USE_ANVIL === 'true');
+
+const pickRpc = (liveUrl: string): string => USE_ANVIL ? 'http://127.0.0.1:8545' : liveUrl;
+
 const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Polygon | ChainSupported.Bnb | ChainSupported.Arbitrum, {
   chain: Chain;
   rpcUrl: string;
@@ -28,22 +34,22 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Polygon | C
 }> = {
   [ChainSupported.Ethereum]: {
     chain: mainnet,
-    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/demo',
+    rpcUrl: pickRpc('https://eth-mainnet.g.alchemy.com/v2/demo'),
     chainId: 1
   },
   [ChainSupported.Polygon]: {
     chain: polygon,
-    rpcUrl: 'https://polygon-rpc.com', 
+    rpcUrl: pickRpc('https://polygon-rpc.com'), 
     chainId: 137
   },
   [ChainSupported.Bnb]: {
     chain: bsc,
-    rpcUrl: 'https://bsc-dataseed.binance.org', 
+    rpcUrl: pickRpc('https://bsc-dataseed.binance.org'), 
     chainId: 56
   },
   [ChainSupported.Arbitrum]: {
     chain: arbitrum,
-    rpcUrl: 'https://arb1.arbitrum.io/rpc', 
+    rpcUrl: pickRpc('https://arb1.arbitrum.io/rpc'), 
     chainId: 42161
   }
 };
@@ -55,11 +61,17 @@ const createPublicClientForChain = (chain: Chain, rpcUrl: string): PublicClient 
   });
 };
 
-function isSupportedEVMChain(chain: ChainSupported): chain is ChainSupported.Ethereum | ChainSupported.Polygon | ChainSupported.Bnb | ChainSupported.Arbitrum {
-  return chain === ChainSupported.Ethereum || 
-         chain === ChainSupported.Polygon || 
-         chain === ChainSupported.Bnb || 
-         chain === ChainSupported.Arbitrum;
+function isSupportedChain(chain: ChainSupported): boolean {
+  return Object.prototype.hasOwnProperty.call(CHAIN_CONFIGS, chain);
+}
+
+function getChainFamily(chain: ChainSupported): 'evm' | 'polkadot' | 'solana' | 'unknown' {
+  if (isSupportedChain(chain)) return 'evm';
+  // These comparisons are safe even if enums are not yet defined for non-EVM
+  if ((ChainSupported as any).Polkadot !== undefined && chain === (ChainSupported as any).Polkadot) return 'polkadot';
+  if ((ChainSupported as any).Kusama !== undefined && chain === (ChainSupported as any).Kusama) return 'polkadot';
+  if ((ChainSupported as any).Solana !== undefined && chain === (ChainSupported as any).Solana) return 'solana';
+  return 'unknown';
 }
 
 
@@ -67,8 +79,9 @@ export const hostNetworking = {
   async submitTx(tx: TxStateMachine): Promise<Uint8Array> {
     
     try {
-      if (!isSupportedEVMChain(tx.network)) {
-        throw new Error(`Unsupported EVM chain: ${tx.network}`);
+      const family = getChainFamily(tx.network);
+      if (family === 'unknown') {
+        throw new Error(`Unsupported chain: ${tx.network}`);
       }
       
       if (!tx.signedCallPayload) {
@@ -79,17 +92,16 @@ export const hostNetworking = {
         throw new Error("No call payload found - transaction must be created first");
       }
       
-      const chainConfig = CHAIN_CONFIGS[tx.network];
-      const publicClient = createPublicClientForChain(chainConfig.chain, chainConfig.rpcUrl);
+      if (family === 'evm') {
+        const chainConfig = CHAIN_CONFIGS[tx.network as keyof typeof CHAIN_CONFIGS];
+        const publicClient = createPublicClientForChain(chainConfig.chain, chainConfig.rpcUrl);
       
       const senderAddress = tx.senderAddress as Address;
       
-      const signatureHashBytes = tx.callPayload.slice(0, 32);
+      const [signatureHashBytes, serializedTxBytes] = tx.callPayload;
       
-      const serializedTxBytes = tx.callPayload.slice(32);
-      
-      const serializedTxHex = '0x' + Array.from(serializedTxBytes)
-        .map(b => b.toString(16).padStart(2, '0'))
+      const serializedTxHex = '0x' + Array.from(serializedTxBytes as unknown as number[])
+        .map((b: number) => b.toString(16).padStart(2, '0'))
         .join('');
       
       const signatureBytes = tx.signedCallPayload;
@@ -100,7 +112,7 @@ export const hostNetworking = {
       
       try {
         const recoveredPublicKey = await recoverPublicKey({
-          hash: '0x' + Array.from(signatureHashBytes).map(b => b.toString(16).padStart(2, '0')).join('') as `0x${string}`,
+          hash: '0x' + Array.from(signatureHashBytes as unknown as number[]).map((b: number) => b.toString(16).padStart(2, '0')).join('') as `0x${string}`,
           signature: signatureHex as `0x${string}`
         });
         
@@ -129,6 +141,17 @@ export const hostNetworking = {
       );
       
       return hashBytes;
+      }
+
+      if (family === 'polkadot') {
+        throw new Error('Polkadot submission not implemented in host functions yet');
+      }
+
+      if (family === 'solana') {
+        throw new Error('Solana submission not implemented in host functions yet');
+      }
+
+      throw new Error(`Unhandled chain family: ${family}`);
       
     } catch (error) {
       console.error(`Failed to submit transaction for ${tx.network}:`, error);
@@ -136,71 +159,70 @@ export const hostNetworking = {
     }
   },
 
-  async createTx(tx: TxStateMachine): Promise<[Uint8Array, Uint8Array]> {
+  async createTx(tx: TxStateMachine): Promise<TxStateMachine> {
     console.log("Creating transaction:", tx);
     
     try {
-      // Check if the chain is supported for EVM transactions
-      if (!isSupportedEVMChain(tx.network)) {
-        throw new Error(`Unsupported EVM chain: ${tx.network}`);
+      const family = getChainFamily(tx.network);
+      if (family === 'unknown') {
+        throw new Error(`Unsupported chain: ${tx.network}`);
       }
       
-      const chainConfig = CHAIN_CONFIGS[tx.network];
-
-      const publicClient = createPublicClientForChain(chainConfig.chain, chainConfig.rpcUrl);
-      
-      // Parse addresses and amount
-      const senderAddress = tx.senderAddress as Address;
-      const receiverAddress = tx.receiverAddress as Address;
-      const value = parseEther(tx.amount.toString());
-
-      const nonce = await publicClient.getTransactionCount({
-        address: senderAddress
-      });
-
-      const gasEstimate = await publicClient.estimateGas({
-        account: senderAddress,
-        to: receiverAddress,
-        value: value
-      });
-
-      let maxFeePerGas: bigint;
-      let maxPriorityFeePerGas: bigint;
-
-      try {
-        const feeData = await publicClient.estimateFeesPerGas();
-        maxFeePerGas = feeData.maxFeePerGas!;
-        maxPriorityFeePerGas = feeData.maxPriorityFeePerGas!;
-      } catch (error) {
-        const gasPrice = await publicClient.getGasPrice();
-        maxFeePerGas = gasPrice;
-        maxPriorityFeePerGas = gasPrice;
+      if (family === 'evm') {
+        return await createTxEvm(tx);
+      }
+      if (family === 'polkadot') {
+        return await createTxPolkadot(tx);
+      }
+      if (family === 'solana') {
+        return await createTxSolana(tx);
       }
 
-      let transactionRequest: TransactionRequest;
+      throw new Error(`Unhandled chain family: ${family}`);
 
-      switch (tx.network) {
-        case ChainSupported.Ethereum:
-        case ChainSupported.Polygon:
-        case ChainSupported.Arbitrum:
-        case ChainSupported.Bnb:
-          transactionRequest = {
-            to: receiverAddress,
-            value: value,
-            chainId: chainConfig.chainId,
-            nonce: nonce,
-            gas: gasEstimate,
-            maxFeePerGas: maxFeePerGas,
-            maxPriorityFeePerGas: maxPriorityFeePerGas,
-            type: 'eip1559'
-          } as TransactionRequest;
-          break;
+    } catch (error) {
+      console.error(`Failed to create transaction for ${tx.network}:`, error);
+      throw error;
+    }
+  },
+};
 
-        default:
-          throw new Error(`Unsupported chain: ${tx.network}`);
-      }
+// ===== Family-specific createTx implementations =====
+async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
+  const chainConfig = CHAIN_CONFIGS[tx.network as keyof typeof CHAIN_CONFIGS];
+  const publicClient = createPublicClientForChain(chainConfig.chain, chainConfig.rpcUrl);
 
-      const serializedTx = serializeTransaction({
+  const senderAddress = tx.senderAddress as Address;
+  const receiverAddress = tx.receiverAddress as Address;
+  const value = parseEther(tx.amount.toString());
+
+  const nonce = await publicClient.getTransactionCount({ address: senderAddress });
+
+  const gasEstimate = await publicClient.estimateGas({
+    account: senderAddress,
+    to: receiverAddress,
+    value: value
+  });
+
+  let maxFeePerGas: bigint;
+  let maxPriorityFeePerGas: bigint;
+  try {
+    const feeData = await publicClient.estimateFeesPerGas();
+    maxFeePerGas = feeData.maxFeePerGas!;
+    maxPriorityFeePerGas = feeData.maxPriorityFeePerGas!;
+  } catch (error) {
+    const gasPrice = await publicClient.getGasPrice();
+    maxFeePerGas = gasPrice;
+    maxPriorityFeePerGas = gasPrice;
+  }
+
+  let transactionRequest: TransactionRequest;
+  switch (tx.network) {
+    case ChainSupported.Ethereum:
+    case ChainSupported.Polygon:
+    case ChainSupported.Arbitrum:
+    case ChainSupported.Bnb:
+      transactionRequest = {
         to: receiverAddress,
         value: value,
         chainId: chainConfig.chainId,
@@ -209,23 +231,44 @@ export const hostNetworking = {
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
         type: 'eip1559'
-      });
-      
-      const signatureHash = keccak256(serializedTx);
-      
-      const hashBytes = new Uint8Array(
-        signatureHash.slice(2).match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
-      );
-      
-      const serializedBytes = new Uint8Array(
-        serializedTx.slice(2).match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
-      );
-      
-      return [hashBytes, serializedBytes];
+      } as TransactionRequest;
+      break;
+    default:
+      throw new Error(`Unsupported EVM chain: ${tx.network}`);
+  }
 
-    } catch (error) {
-      console.error(`Failed to create transaction for ${tx.network}:`, error);
-      throw error;
-    }
-  },
-};
+  const serializedTx = serializeEthTransaction({
+    to: receiverAddress,
+    value: value,
+    chainId: chainConfig.chainId,
+    nonce: nonce,
+    gas: gasEstimate,
+    maxFeePerGas: maxFeePerGas,
+    maxPriorityFeePerGas: maxPriorityFeePerGas,
+    type: 'eip1559'
+  });
+
+  const signatureHash = keccak256(serializedTx);
+  const hashBytes = new Uint8Array(
+    signatureHash.slice(2).match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+  );
+
+  const serializedBytes = new Uint8Array(
+    serializedTx.slice(2).match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+  );
+
+  const updated: TxStateMachine = {
+    ...tx,
+    callPayload: [hashBytes, serializedBytes]
+  };
+
+  return updated;
+}
+
+async function createTxPolkadot(_tx: TxStateMachine): Promise<TxStateMachine> {
+  throw new Error('Polkadot transaction creation not implemented in host functions yet');
+}
+
+async function createTxSolana(_tx: TxStateMachine): Promise<TxStateMachine> {
+  throw new Error('Solana transaction creation not implemented in host functions yet');
+}

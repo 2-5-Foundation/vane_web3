@@ -43,17 +43,18 @@ start_node() {
     cat > "$temp_script" << EOF
 #!/bin/bash
 cd "$PROJECT_ROOT/integration-test/wasm-e2e-ts"
+export VITE_USE_ANVIL=true
 echo -e "${color}=== ${node_name} Terminal ===${NC}"
 echo -e "${color}Starting in 2 seconds...${NC}"
 sleep 2
 
 # Run the specific test file based on node name
 if [[ "${node_name}" == "WASM Node 1" ]]; then
-    bunx vitest run wasm_node1.test.ts --reporter=verbose
+    VITE_USE_ANVIL=true bunx vitest run wasm_node1.test.ts --reporter=verbose
 elif [[ "${node_name}" == "WASM Node 2" ]]; then
-    bunx vitest run wasm_node2.test.ts --reporter=verbose
+    VITE_USE_ANVIL=true bunx vitest run wasm_node2.test.ts --reporter=verbose
 elif [[ "${node_name}" == "WASM Node 3 (Malicious)" ]]; then
-    bunx vitest run wasm_node3_mal.test.ts --reporter=verbose
+    VITE_USE_ANVIL=true bunx vitest run wasm_node3_mal.test.ts --reporter=verbose
 fi
 
 echo -e "${color}${node_name} finished. Press any key to close this terminal...${NC}"

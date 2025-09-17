@@ -19,11 +19,11 @@ use sp_core::{
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
-    async fn submitTx(tx: JsValue) -> JsValue;
+    #[wasm_bindgen(catch, js_namespace = ["hostFunctions", "hostNetworking"], js_name = submitTx)]
+    async fn submit_tx_js(tx: JsValue) -> Result<JsValue, JsValue>;
 
-    #[wasm_bindgen(js_namespace = ["hostFunctions", "hostNetworking"])]
-    async fn createTx(tx: JsValue) -> JsValue;
+    #[wasm_bindgen(catch, js_namespace = ["hostFunctions", "hostNetworking"], js_name = createTx)]
+    async fn create_tx_js(tx: JsValue) -> Result<JsValue, JsValue>;
 
 }
 
@@ -98,12 +98,13 @@ impl WasmTxProcessingWorker {
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
 
-            let msg = tx
+            let (msg_hash, _raw_tx) = tx
                 .call_payload
+                .as_ref()
                 .expect("unexpected error, call payload should be available");
             let sender_address = tx.sender_address.clone();
 
-            (network, signature, msg.to_vec(), sender_address)
+            (network, signature, msg_hash.to_vec(), sender_address)
         };
         match network {
             ChainSupported::Ethereum => {
@@ -157,25 +158,44 @@ impl WasmTxProcessingWorker {
     }
 
     pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
-        let tx_hash = unsafe {
+        let tx_hash_result = unsafe {
             let tx_value =
                 to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value: {:?}", e))?;
-            let res: JsValue = submitTx(tx_value).await;
-            from_value::<[u8; 32]>(res)
-                .map_err(|e| anyhow!("failed to convert tx hash to bytes: {:?}", e))?
+            submit_tx_js(tx_value).await
         };
-        Ok(tx_hash)
+
+        match tx_hash_result {
+            Ok(res) => {
+                let tx_hash = from_value::<[u8; 32]>(res)
+                    .map_err(|e| anyhow!("failed to convert tx hash to bytes: {:?}", e))?;
+                Ok(tx_hash)
+            }
+            Err(js_err) => {
+                error!("submitTx JS error: {:?}", js_err);
+                Err(anyhow!("submitTx failed: {:?}", js_err))
+            }
+        }
     }
 
     pub async fn create_tx(&mut self, tx: &mut TxStateMachine) -> Result<(), anyhow::Error> {
-        let unsigned_tx_call = unsafe {
+        let unsigned_tx_result = unsafe {
             let tx_value =
                 to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value: {:?}", e))?;
-            let res: JsValue = createTx(tx_value).await;
-            from_value::<[u8; 32]>(res)
-                .map_err(|e| anyhow!("failed to convert unsigned tx call to bytes: {:?}", e))?
+            create_tx_js(tx_value).await
         };
-        tx.call_payload = Some(unsigned_tx_call);
-        Ok(())
+
+        match unsigned_tx_result {
+            Ok(res) => {
+                // JS now returns the full TxStateMachine with callPayload set
+                let updated_tx = from_value::<TxStateMachine>(res)
+                    .map_err(|e| anyhow!("failed to convert JS TxStateMachine: {:?}", e))?;
+                *tx = updated_tx;
+                Ok(())
+            }
+            Err(js_err) => {
+                error!("createTx JS error: {:?}", js_err);
+                Err(anyhow!("createTx failed: {:?}", js_err))
+            }
+        }
     }
 }
