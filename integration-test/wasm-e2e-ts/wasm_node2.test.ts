@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
 import { hostFunctions } from '../../node/wasm/host_functions/main.js'
-import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
+import init, * as wasmModule from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
-import { PublicInterfaceWorkerJs } from '../../node/wasm/pkg/vane_wasm_node.js';
+import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -62,7 +62,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
          await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
            // Set up the transaction watcher (await the Promise)
            await vaneWasm?.watchTxUpdates((tx: any) => {
-             console.log('👂 WATCH TX UPDATES', tx);
+             
            });
            
            // Fetch current pending transactions

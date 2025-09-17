@@ -49,52 +49,87 @@ echo "Copying host_functions directory..."
 rm -rf pkg/host_functions
 cp -R host_functions pkg/
 
-# Create index.ts if it doesn't exist
-if [ ! -f pkg/index.ts ]; then
-    echo "Creating index.ts..."
-    cat > pkg/index.ts << 'EOF'
-// Export the WASM module
-export * from './wasm_node.js';
-
-// Export the host functions
-export * from './host_functions/main.ts';
-
-// Re-export the WASM module as default for convenience
-export { default as WasmNode } from './wasm_node.js';
-
-// Re-export host functions as default for convenience
-export { default as hostFunctions } from './host_functions/main.ts';
-EOF
+# Move pkg directory into vane_lib FIRST
+echo "Moving pkg directory into vane_lib..."
+if [ -d "vane_lib" ]; then
+    rm -rf vane_lib/pkg
+    mv pkg vane_lib/
+    echo "✅ pkg directory moved into vane_lib"
+    
+    # Now build vane_lib (after pkg is inside it)
+    echo "Building vane_lib..."
+    cd vane_lib
+    if [ -f package.json ]; then
+        echo "Building vane_lib..."
+        bun install
+        bun run build
+        echo "✅ vane_lib built successfully"
+        cd ..
+    else
+        echo "Warning: vane_lib package.json not found"
+        cd ..
+    fi
+else
+    echo "Warning: vane_lib directory not found"
 fi
 
-# Update package.json to include only essential files
-echo "Updating package.json..."
-node -e "
-const fs = require('fs');
-const pkg = JSON.parse(fs.readFileSync('pkg/package.json', 'utf8'));
+# Update vane_lib's package.json to include pkg in files
+echo "Updating vane_lib package.json..."
+if [ -f "vane_lib/package.json" ]; then
+    node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('vane_lib/package.json', 'utf8'));
+    
+    // Add files field with pkg included
+    pkg.files = ['pkg', 'dist', 'main.ts', 'networking.ts', 'primitives.ts'];
+    
+    // Set main entry point
+    pkg.main = 'main.ts';
+    pkg.types = 'main.ts';
+    
+    fs.writeFileSync('vane_lib/package.json', JSON.stringify(pkg, null, 2));
+    "
+    echo "✅ vane_lib package.json updated"
+else
+    echo "Warning: vane_lib package.json not found"
+fi
 
-pkg.files = [
-  'wasm_node_bg.wasm',
-  'wasm_node.js',
-  'wasm_node.d.ts',
-  'vane_wasm_node.js',
-  'index.ts',
-  'host_functions'
-];
+# Update vane_lib/pkg package.json to include only essential files
+echo "Updating vane_lib/pkg package.json..."
+if [ -f "vane_lib/pkg/package.json" ]; then
+    node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('vane_lib/pkg/package.json', 'utf8'));
 
-pkg.main = 'index.ts';
+    pkg.files = [
+      'wasm_node_bg.wasm',
+      'wasm_node.js',
+      'wasm_node.d.ts',
+      'vane_wasm_node.js',
+      'host_functions'
+    ];
 
-// Add dependencies from host_functions if present
-try {
-  const hostPkg = JSON.parse(fs.readFileSync('host_functions/package.json', 'utf8'));
-  pkg.dependencies = { ...pkg.dependencies, ...hostPkg.dependencies };
-} catch (e) {
-  // optional
-}
+    pkg.main = 'wasm_node.js';
+    pkg.types = 'wasm_node.d.ts';
 
-fs.writeFileSync('pkg/package.json', JSON.stringify(pkg, null, 2));
-"
+    // Add dependencies from host_functions if present
+    try {
+      const hostPkg = JSON.parse(fs.readFileSync('host_functions/package.json', 'utf8'));
+      pkg.dependencies = { ...pkg.dependencies, ...hostPkg.dependencies };
+    } catch (e) {
+      // optional
+    }
+
+    fs.writeFileSync('vane_lib/pkg/package.json', JSON.stringify(pkg, null, 2));
+    "
+    echo "✅ vane_lib/pkg package.json updated"
+else
+    echo "Warning: vane_lib/pkg/package.json not found"
+fi
 
 echo "Package built successfully!"
-echo "Files included:"
-ls -la pkg/
+echo "Final vane_lib structure:"
+ls -la vane_lib/
+echo ""
+echo "vane_lib/pkg contents:"
+ls -la vane_lib/pkg/

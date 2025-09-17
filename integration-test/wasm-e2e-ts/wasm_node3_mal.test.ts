@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
 import { hostFunctions } from '../../node/wasm/host_functions/main.js'
-import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
+import init, * as wasmModule from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'

@@ -1,9 +1,9 @@
-import init, * as wasmModule from '../../../node/wasm/pkg/vane_wasm_node.js';
+import init, * as wasmModule from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { hostFunctions } from '../../../node/wasm/host_functions/main';
 import { createTestClient, http, TestClient } from 'viem';
 import { foundry } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PublicInterfaceWorkerJs } from '../../../node/wasm/pkg/vane_wasm_node.js';
+import { PublicInterfaceWorkerJs } from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { logger } from '../../../node/wasm/host_functions/logging.js';
 
 

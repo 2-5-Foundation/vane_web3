@@ -26,7 +26,7 @@ if ! "$PROJECT_ROOT/scripts/build-wasm-package.sh"; then
 fi
 
 # Return to test directory
-cd ../../integration-test/wasm-e2e-ts
+cd "$PROJECT_ROOT/integration-test/wasm-e2e-ts"
 echo -e "${GREEN}✅ All components built successfully${NC}"
 echo ""
 

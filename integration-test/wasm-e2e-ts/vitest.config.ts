@@ -9,7 +9,9 @@ export default defineConfig({
         // Current directory
         '.',
         // WASM package directory
-        '../../node/wasm/pkg'
+        '../../node/wasm/pkg',
+        // vane_lib package directory
+        '../../node/wasm/vane_lib'
       ]
     }
   },

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import init from '../../node/wasm/pkg/vane_wasm_node.js';
+import init from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import {
   loadRelayNodeInfo,
   setupWasmLogging,
