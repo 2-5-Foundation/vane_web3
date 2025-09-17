@@ -23,7 +23,7 @@ use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
 use futures::{future, FutureExt};
 use gloo_timers::future::TimeoutFuture;
 use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
     ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
@@ -54,7 +54,7 @@ pub struct WasmMainServiceWorker {
     pub dht_query_context: Rc<RefCell<HashMap<u32, (Rc<RefCell<TxStateMachine>>, String)>>>,
 
     // moka cache
-    pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>,
+    pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>,
 }
 
 impl WasmMainServiceWorker {
@@ -91,8 +91,8 @@ impl WasmMainServiceWorker {
 
         // Use bounded cache to prevent memory overflow in WASM environment
         // 10,000 entries should be sufficient for most use cases while preventing unbounded growth
-        let lru_cache: LruCache<u64, TxStateMachine> =
-            LruCache::new(std::num::NonZeroUsize::new(10).unwrap());
+        let lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>> =
+            Rc::new(RefCell::new(LruCache::new(std::num::NonZeroUsize::new(10).unwrap())));
 
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
@@ -149,7 +149,7 @@ impl WasmMainServiceWorker {
             p2p_network_service: Rc::new(RefCell::new(p2p_network_service)),
             rpc_sender_channel: Rc::new(RefCell::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Rc::new(RefCell::new(user_rpc_update_recv_channel)),
-            lru_cache: RefCell::new(lru_cache),
+            lru_cache,
             dht_query_result_channel: Rc::new(RefCell::new(dht_query_result_recv)),
             dht_query_context: Rc::new(RefCell::new(HashMap::new())),
         })
@@ -175,13 +175,16 @@ impl WasmMainServiceWorker {
         let tx_worker = self.wasm_tx_processing_worker.borrow().clone();
 
         wasm_bindgen_futures::spawn_local(async move {
-            while let Some(swarm_msg_result) = recv_channel.recv().await {
-                // Process directly in this task
-                if let Err(e) = self_clone
-                    .handle_swarm_message(swarm_msg_result, &tx_worker)
-                    .await
-                {
-                    error!("Error processing swarm message: {}", e);
+            loop {
+                while let Some(swarm_msg_result) = recv_channel.recv().await {
+                    // Process directly in this task
+                    // system failures should result in shutting down the node and reporting
+                    if let Err(e) = self_clone
+                        .handle_swarm_message(swarm_msg_result, &tx_worker)
+                        .await
+                    {
+                        error!("Error processing swarm message: {}", e);
+                    }
                 }
             }
         });
@@ -201,6 +204,8 @@ impl WasmMainServiceWorker {
                     let inbound_req_id = inbound_id.get_hash_id();
                     decoded_req.inbound_req_id = Some(inbound_req_id);
 
+                    debug!(target: "MainServiceWorker",
+                          "decoded request: {:?}", &decoded_req);
                     // Use non-blocking try_send for WASM environment
                     if let Err(e) = self
                         .rpc_sender_channel
@@ -208,7 +213,6 @@ impl WasmMainServiceWorker {
                         .try_send(decoded_req.clone())
                     {
                         error!("Failed to send to RPC channel: {}", e);
-                        return Err(e.into());
                     }
 
                     self.lru_cache
@@ -216,7 +220,7 @@ impl WasmMainServiceWorker {
                         .push(decoded_req.tx_nonce.into(), decoded_req.clone());
 
                     info!(target: "MainServiceWorker",
-                          "propagating txn msg as request: {decoded_req:?}");
+                          "propagating txn msg as request");
                 }
 
                 SwarmMessage::WasmResponse { data, outbound_id } => {
@@ -321,7 +325,7 @@ impl WasmMainServiceWorker {
                 let target_id = target_id.clone();
 
                 wasm_bindgen_futures::spawn_local(async move {
-                    info!("🔍 Starting DHT lookup for target: {}", target_id);
+                    info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
                     let dht = host_get_dht(target_id.clone()).fuse();
                     let timeout = TimeoutFuture::new(30_000).fuse(); // 15s
                     futures::pin_mut!(dht, timeout);
@@ -490,11 +494,12 @@ impl WasmMainServiceWorker {
             let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
             receiver.recv().await
         } {
+            info!(target:"MainServiceWorker","received txn testing: {:?}",txn);
             // handle the incoming transaction per its state
             let status = txn.status.clone();
             match status {
                 TxStatus::Genesis => {
-                    info!(target:"MainServiceWorker","handling incoming genesis tx updates: {:?} \n",txn.clone());
+                    info!(target:"MainServiceWorker","handling incoming genesis tx updates: {:?}",txn.clone());
                     self.handle_genesis_tx_state(Rc::new(RefCell::new(txn.clone())))
                         .await?;
                 }

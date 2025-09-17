@@ -4,6 +4,7 @@ import init, * as wasmModule from '../../node/wasm/pkg/vane_wasm_node.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
 import { TestClient } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
+import { PublicInterfaceWorkerJs } from '../../node/wasm/pkg/vane_wasm_node.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -53,11 +54,24 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
   it("it should receive a transaction and confirm it successfully",async() => {
     // Wait for receipt log/event if produced by the flow
+   
     await nodeCoordinator.waitForEvent(
-      NODE_EVENTS.TRANSACTION_RECEIVED,
-      async () => { console.log('👂 TRANSACTION_RECEIVED'); },
-      60000
-    );
+        NODE_EVENTS.TRANSACTION_RECEIVED,
+        async () => {
+         console.log('👂 TRANSACTION_RECEIVED');
+         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+           // Set up the transaction watcher (await the Promise)
+           await vaneWasm?.watchTxUpdates((tx: any) => {
+             console.log('👂 WATCH TX UPDATES', tx);
+           });
+           
+           // Fetch current pending transactions
+           const receivedTx = await vaneWasm?.fetchPendingTxUpdates();
+           expect(receivedTx.length).toBeGreaterThan(0);
+         });
+       },
+        60000
+      );
     await new Promise(resolve => setTimeout(resolve, 60000));
   })
 

@@ -404,7 +404,7 @@ pub enum ChainSupported {
     Polkadot,
     Ethereum,
     Bnb,
-    Solana,
+    Solana
 }
 
 impl Default for ChainSupported {

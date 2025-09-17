@@ -12,7 +12,7 @@ use async_stream::stream;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId};
-use log::{info, trace};
+use log::{error, info, trace};
 use lru::LruCache;
 use reqwasm::http::{Request, RequestMode};
 use serde_wasm_bindgen;
@@ -22,7 +22,7 @@ use tokio_with_wasm::alias::sync::{
     mpsc::{Receiver, Sender},
     {Mutex, MutexGuard},
 };
-use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
+use wasm_bindgen::prelude::*;
 
 use crate::{
     cryptography::verify_public_bytes,
@@ -33,6 +33,7 @@ use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
     TxStatus, UserAccount, UserMetrics,
 };
+
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -51,7 +52,7 @@ pub struct PublicInterfaceWorker {
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     //// tx pending store
-    pub lru_cache: RefCell<LruCache<u64, TxStateMachine>>, // initial fees, after dry running tx initialy without optimization
+    pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
 }
 
 impl PublicInterfaceWorker {
@@ -62,7 +63,7 @@ impl PublicInterfaceWorker {
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
-        lru_cache: LruCache<u64, TxStateMachine>,
+        lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>,
     ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
@@ -71,7 +72,7 @@ impl PublicInterfaceWorker {
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
             peer_id,
-            lru_cache: RefCell::new(lru_cache),
+            lru_cache,
         })
     }
 }
@@ -122,6 +123,7 @@ impl PublicInterfaceWorker {
             sender_recv.extend_from_slice(receiver.as_bytes());
             let multi_addr = blake2_256(&sender_recv[..]);
 
+            // failure to this should stop the node and not continue
             let nonce = self
                 .db_worker
                 .get_nonce()
@@ -129,6 +131,7 @@ impl PublicInterfaceWorker {
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
                 + 1;
             // update the db on nonce
+            // failure to this should stop the node and not continue
             self.db_worker
                 .increment_nonce()
                 .await
@@ -158,16 +161,13 @@ impl PublicInterfaceWorker {
 
             let sender = sender_channel.clone();
             sender
-                .send(tx_state_machine)
+                .send(tx_state_machine.clone())
                 .await
                 .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
-            Err(anyhow!(
-                "sender and receiver should be correct accounts for the specified token"
-            ))
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+            error!("sender and receiver should be correct accounts for the specified token: sender:{:?}, receiver:{:?}, token:{:?}, network:{:?}", sender, receiver, token, network);  
         }
         Ok(())
     }
@@ -200,7 +200,34 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
-    pub async fn watch_tx_updates(&self) -> Result<(), JsError> {
+    pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
+        let receiver_channel = self.rpc_receiver_channel.clone();
+        let callback = callback.clone();
+        
+        // Spawn a background task to continuously poll for transaction updates
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut receiver = receiver_channel.borrow_mut();
+            
+            loop {
+                match receiver.recv().await {
+                    Some(tx_update) => {
+                        info!("Received transaction update: {:?}", tx_update);
+                        
+                        // Convert transaction to JS value and call the callback
+                        let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
+                            .unwrap_or_else(|_| JsValue::NULL);
+                        
+                        // Call the callback with the transaction update
+                        let _ = callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &tx_js_value);
+                    }
+                    None => {
+                        info!("Transaction update channel closed");
+                        break;
+                    }
+                }
+            }
+        });
+        
         Ok(())
     }
 
@@ -321,8 +348,8 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "watchTxUpdates")]
-    pub async fn watch_tx_updates(&self) -> Result<(), JsError> {
-        self.inner.borrow().watch_tx_updates().await?;
+    pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
+        self.inner.borrow().watch_tx_updates(callback).await?;
         Ok(())
     }
 

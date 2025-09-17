@@ -17,6 +17,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let wasmNodeInstance: any;
   let walletClient: any;
   let wasm_client_address: string;
+  let receiver_client_address: string = "0x63FaC9201494f0bd17B9892B9fae4d52fe3BD377";
   let wasmLogger: any | null = null;
 
 
@@ -52,14 +53,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     );
     await wasmNodeInstance.promise;
 
-    // Wait until *this* node is actually ready (sticky)
-    // await nodeCoordinator.waitForNodeReady(
-    //   'SENDER_NODE',
-    //   async () => {
-    //     console.log('✅ SENDER_NODE READY');
-    //   }
-    // );
-
     await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
       console.log('✅ SENDER_NODE READY');
     });
@@ -68,12 +61,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
-
-    // Kick off the transaction (no arbitrary sleep)
+    
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
-        '0x63FaC9201494f0bd17B9892B9fae4d52fe3BD377',
+        receiver_client_address,
         BigInt(1),
         'Eth',
         'Ethereum',

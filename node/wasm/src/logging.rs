@@ -59,6 +59,8 @@ impl Log for WasmLogger {
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
+                    || target.starts_with("MainServiceWorker")
+                    || target.starts_with("interface")
                     || target.contains("connection")
                     || target.contains("failed")
             }
@@ -66,6 +68,8 @@ impl Log for WasmLogger {
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
+                    || target.starts_with("MainServiceWorker")
+                    || target.starts_with("interface")
                     || target.contains("connection")
                     || target.contains("established")
                     || target.contains("dial")
@@ -74,6 +78,8 @@ impl Log for WasmLogger {
                 target.starts_with("wasm_node")
                     || target.starts_with("p2p")
                     || target.starts_with("vane")
+                    || target.starts_with("MainServiceWorker")
+                    || target.starts_with("interface")
             }
         }
     }
