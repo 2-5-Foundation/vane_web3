@@ -10,7 +10,7 @@ import {
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js';
 import hostFunctions from '../../node/wasm/host_functions/main.js';
 import { logger, Logger } from '../../node/wasm/host_functions/logging.js';
-import { TxStateMachine, TxStateMachineManager, UnsignedEip1559 } from '../../node/wasm/host_functions/primitives.js';
+import { TxStateMachine, TxStateMachineManager, UnsignedEip1559,StorageExport,StorageExportManager } from '../../node/wasm/vane_lib/primitives.js';
 import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, PublicActions, formatEther } from 'viem';
 import { sign, serializeSignature } from 'viem/accounts';
 
@@ -163,9 +163,57 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     expect(balanceChange).toEqual(10);
 
     // assert storage updates
+    const storage:StorageExport = await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      return await vaneWasm?.exportStorage();
+    });
+    const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
 
+    const storageManager = new StorageExportManager(storage);
+    const metrics = storageManager.getSummary();
+    console.log('🔑 STORAGE METRICS', metrics);
+    expect(metrics.totalTransactions).toEqual(1);
+    expect(metrics.successfulTransactions).toEqual(1);
+    expect(metrics.failedTransactions).toEqual(0);
+    expect(metrics.successRate).toEqual('100.00%');
+    expect(metrics.totalValueSuccess).toEqual(10);
+    expect(metrics.totalValueFailed).toEqual(0);
+    expect(metrics.peersCount).toEqual(1);
+    expect(metrics.accountsCount).toEqual(1);
+    expect(metrics.currentNonce).toEqual(1);
     // assert metrics
    
+  });
+
+  test("should notify if the receiver is not registered", async () => {
+    
+  });
+
+  test("should succesfully revert and cancel transaction if wrong address is confirmed by receiver", async () => {
+    
+  });
+
+  test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
+    
+  });
+
+  test("should be able to successfully revert even when wrong address is selected by sender", async () => {
+    
+  });
+
+  test("should be able to successfully revert even when incorrect address is selected by sender", async () => {
+    
+  });
+
+  test("should successfully revert and cancel transaction if sender tries to wrongfully send cross chain transaction", async () => {
+    
+  });
+
+  test("should successfully send cross chain transaction", async () => {
+    
+  });
+
+  test("should successfully handle fees conversion via intents", async () => {
+    
   });
 
   afterAll(() => {

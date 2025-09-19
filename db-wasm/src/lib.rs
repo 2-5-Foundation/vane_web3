@@ -585,6 +585,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
     }
 
     async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        // Add transaction to list
         let tx_data = tx_state.encode();
         let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
             let mut saved_txs = saved_txs.clone();
@@ -596,10 +597,36 @@ impl DbWorkerInterface for InMemoryDbWorker {
         self.transactions
             .borrow_mut()
             .insert(TXS_KEY.to_string(), to_store);
+
+        // Update total success value
+        let current_data = self
+            .transactions_data
+            .borrow()
+            .get(TXS_DATA_KEY)
+            .map(|v| {
+                let decoded_val: TransactionsData =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .unwrap_or(TransactionsData {
+                success_value: 0,
+                failed_value: 0,
+            });
+
+        let new_data = TransactionsData {
+            success_value: current_data.success_value + tx_state.amount as i64,
+            ..current_data
+        };
+
+        self.transactions_data
+            .borrow_mut()
+            .insert(TXS_DATA_KEY.to_string(), new_data.encode());
+
         Ok(())
     }
 
     async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
+        // Add transaction to list
         let tx_data = tx_state.encode();
         let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
             let mut saved_txs = saved_txs.clone();
@@ -611,6 +638,31 @@ impl DbWorkerInterface for InMemoryDbWorker {
         self.transactions
             .borrow_mut()
             .insert(TXS_KEY.to_string(), to_store);
+
+        // Update total failed value
+        let current_data = self
+            .transactions_data
+            .borrow()
+            .get(TXS_DATA_KEY)
+            .map(|v| {
+                let decoded_val: TransactionsData =
+                    Decode::decode(&mut &v[..]).expect("failed to decode");
+                decoded_val
+            })
+            .unwrap_or(TransactionsData {
+                success_value: 0,
+                failed_value: 0,
+            });
+
+        let new_data = TransactionsData {
+            failed_value: current_data.failed_value + tx_state.amount as i64,
+            ..current_data
+        };
+
+        self.transactions_data
+            .borrow_mut()
+            .insert(TXS_DATA_KEY.to_string(), new_data.encode());
+
         Ok(())
     }
 

@@ -353,6 +353,10 @@ pub struct DbTxStateMachine {
     pub amount: u128,
     // chain network
     pub network: ChainSupported,
+    // sender
+    pub sender: String,
+    // receiver
+    pub receiver: String,
     // status
     pub success: bool,
 }
@@ -588,4 +592,46 @@ pub struct NodeError {
     pub error_type: String, // "network", "database", "execution", "rpc"
     pub message: String,
     pub details: Option<String>,
+}
+
+/// Information about a saved peer
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct SavedPeerInfo {
+    /// The peer's multi-address
+    pub peer_id: String,
+    /// All account IDs associated with this peer
+    pub account_ids: Vec<String>,
+}
+
+/// Complete database storage export structure
+/// Contains all data from the database using getter methods
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub struct StorageExport {
+    /// User account information (multi-address and associated chain accounts)
+    pub user_account: Option<UserAccount>,
+    
+    /// Current nonce value for transaction ordering
+    pub nonce: u32,
+    
+    /// All successful transactions
+    pub success_transactions: Vec<DbTxStateMachine>,
+    
+    /// All failed transactions  
+    pub failed_transactions: Vec<DbTxStateMachine>,
+    
+    /// Total value of all successful transactions (in wei/smallest unit)
+    pub total_value_success: u64,
+    
+    /// Total value of all failed transactions (in wei/smallest unit)
+    pub total_value_failed: u64,
+    
+    /// Multiple saved peers, each with their own account IDs
+    /// Example with 2 separate peers, each having 2 addresses:
+    /// [
+    ///   { peer_id: "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1", 
+    ///     account_ids: ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"] },
+    ///   { peer_id: "/ip4/192.168.1.100/tcp/8080/p2p/12D3KooWPeer2", 
+    ///     account_ids: ["0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", "0x90F79bf6EB2c4f870365E785982E1f101E45bF15"] }
+    /// ]
+    pub all_saved_peers: Vec<SavedPeerInfo>,
 }

@@ -252,8 +252,10 @@ impl WasmMainServiceWorker {
 
                             let db_tx = DbTxStateMachine {
                                 tx_hash: vec![],
-                                amount: decoded_resp.amount,
-                                network: decoded_resp.network,
+                                amount: decoded_resp.amount.clone(),
+                                network: decoded_resp.network.clone(),
+                                sender: decoded_resp.sender_address.clone(),
+                                receiver: decoded_resp.receiver_address.clone(),
                                 success: false,
                             };
                             self.db_worker.update_failed_tx(db_tx).await?;
@@ -331,6 +333,7 @@ impl WasmMainServiceWorker {
                 let lru_cache = lru_cache.clone();
                 let txn = txn.clone();
                 let target_id = target_id.clone();
+                let db_worker = db.clone();
 
                 wasm_bindgen_futures::spawn_local(async move {
                     info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
@@ -365,6 +368,13 @@ impl WasmMainServiceWorker {
                                         return;
                                     }
                                 };
+
+                                // record to db
+                                if let Err(e) = db_worker.record_saved_user_peers(target_id.clone(), multi_addr.to_string()).await {
+                                    // the failure should be return to user or system as a failure metrics which shouldnt happen
+                                    error!("record_saved_user_peers failed: {e:?}");
+                                    return;
+                                }
 
                                 if let Err(e) = p2p_network_service
                                     .borrow_mut()
@@ -473,6 +483,8 @@ impl WasmMainServiceWorker {
                         tx_hash: tx_hash.to_vec(),
                         amount: txn_inner.amount.clone(),
                         network: txn_inner.network.clone(),
+                        sender: txn_inner.sender_address.clone(),
+                        receiver: txn_inner.receiver_address.clone(),
                         success: true,
                     };
                     self.db_worker.update_success_tx(db_tx).await?;
@@ -492,8 +504,19 @@ impl WasmMainServiceWorker {
                         "{err:?}: the tx will be resubmitted rest assured"
                     ));
                     self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
-                    self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
-
+                    self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner.clone());
+                    // if retries fails
+                     // update local db on failed tx
+                     let db_tx = DbTxStateMachine {
+                        tx_hash: vec![],
+                        amount: txn_inner.amount.clone(),
+                        network: txn_inner.network.clone(),
+                        sender: txn_inner.sender_address.clone(),
+                        receiver: txn_inner.receiver_address.clone(),
+                        success: false,
+                    };
+                    self.db_worker.update_failed_tx(db_tx).await?;
+                    info!(target: "MainServiceWorker","Db recorded failed tx");
                 }
             }
         } else {
@@ -501,7 +524,17 @@ impl WasmMainServiceWorker {
             txn_inner.sender_confirmation_failed();
             error!(target: "MainServiceWorker","Non original sender signed");
             self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
-            self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
+            self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner.clone());
+            let db_tx = DbTxStateMachine {
+                tx_hash: vec![],
+                amount: txn_inner.amount.clone(),
+                network: txn_inner.network.clone(),
+                sender: txn_inner.sender_address.clone(),
+                receiver: txn_inner.receiver_address.clone(),
+                success: false,
+            };
+            self.db_worker.update_failed_tx(db_tx).await?;
+            info!(target: "MainServiceWorker","Db recorded failed tx"); 
 
         }
 

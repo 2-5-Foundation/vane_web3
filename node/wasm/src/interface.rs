@@ -31,7 +31,7 @@ use crate::{
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
-    TxStatus, UserAccount, UserMetrics,
+    TxStatus, UserAccount, UserMetrics, SavedPeerInfo, StorageExport,
 };
 
 
@@ -270,6 +270,42 @@ impl PublicInterfaceWorker {
         }
     }
 
+    // export all storage
+    pub async fn export_storage(&self) -> Result<JsValue, JsError> {
+        // Call all getter methods and collect data
+        let user_account = self.db_worker.get_user_account().await.ok();
+        let nonce = self.db_worker.get_nonce().await.unwrap_or(0);
+        let success_transactions = self.db_worker.get_success_txs().await.unwrap_or_default();
+        let failed_transactions = self.db_worker.get_failed_txs().await.unwrap_or_default();
+        let total_value_success = self.db_worker.get_total_value_success().await.unwrap_or(0);
+        let total_value_failed = self.db_worker.get_total_value_failed().await.unwrap_or(0);
+        
+        // Get saved peers and convert to SavedPeerInfo format
+        let all_saved_peers = if let Ok((account_ids, peer_multiaddr)) = self.db_worker.get_all_saved_peers().await {
+            vec![SavedPeerInfo {
+                peer_id: peer_multiaddr,
+                account_ids,
+            }]
+        } else {
+            Vec::new()
+        };
+        
+        // Create the export structure
+        let storage_export = StorageExport {
+            user_account,
+            nonce,
+            success_transactions,
+            failed_transactions,
+            total_value_success,
+            total_value_failed,
+            all_saved_peers,
+        };
+        
+        // Convert to JSON and return as JsValue
+        serde_wasm_bindgen::to_value(&storage_export)
+            .map_err(|e| JsError::new(&format!("Failed to serialize storage data: {}", e)))
+    }
+
     // user metrics
     pub async fn get_user_metrics(&self) -> Result<JsValue, JsError> {
         let user_account = self
@@ -364,6 +400,12 @@ impl PublicInterfaceWorkerJs {
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         self.inner.borrow().receiver_confirm(tx).await?;
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "exportStorage")]
+    pub async fn export_storage(&self) -> Result<JsValue, JsError> {
+        let storage_export = self.inner.borrow().export_storage().await?;
+        Ok(storage_export)
     }
 
     #[wasm_bindgen(js_name = "getMetrics")]
