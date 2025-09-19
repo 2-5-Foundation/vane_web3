@@ -11,8 +11,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let relayInfo: RelayNodeInfo | null = null;
   let walletClient: TestClient | null = null;
   let wasm_client_address: string | undefined = undefined;
+  let privkey: string | undefined = undefined;
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-  let receiver_client_address = "0x63FaC9201494f0bd17B9892B9fae4d52fe3BD377"
+  let receiver_client_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
   let wasmNodeInstance: WasmNodeInstance | null = null;
   let nodeCoordinator: NodeCoordinator;
  
@@ -28,7 +29,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       throw error;
     }
 
-    walletClient = getWallets()[2];
+    walletClient = getWallets()[2][0];
+    privkey = getWallets()[2][1];
     wasm_client_address = walletClient!.account!.address;
     console.log("3 wasm client address", wasm_client_address);
 

@@ -1,6 +1,6 @@
 import init, * as wasmModule from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { hostFunctions } from '../../../node/wasm/host_functions/main';
-import { createTestClient, http, TestClient } from 'viem';
+import { createTestClient, http, TestClient,walletActions, publicActions, WalletActions, PublicActions } from 'viem';
 import { foundry } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { PublicInterfaceWorkerJs } from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
@@ -163,29 +163,29 @@ export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<Rela
   });
 }
 
-export function getWallets(): TestClient[] {
-  const walletClient1 = createTestClient({
+export function getWallets(): [TestClient & WalletActions & PublicActions,string][] {
+  const [walletClient1,privkey1] = [createTestClient({
     account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
     chain: foundry,
     mode: 'anvil',
     transport: http(),
-  })
+  }).extend(walletActions).extend(publicActions),'0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80']
 
-  const walletClient2 = createTestClient({
-    account: privateKeyToAccount('0x8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f'), 
+  const [walletClient2,privkey2] = [createTestClient({
+    account: privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'), 
     chain: foundry,
     mode: 'anvil',
     transport: http(),
-  })
+  }).extend(walletActions).extend(publicActions),'0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d']
 
-  const walletClient3 = createTestClient({
-    account: privateKeyToAccount('0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae1f3f9e2a55b3b19'), 
+  const [walletClient3,privkey3] = [createTestClient({
+    account: privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'), 
     chain: foundry,
     mode: 'anvil',
     transport: http(),
-  })
+  }).extend(walletActions).extend(publicActions),'0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a']
   
-  return [walletClient1, walletClient2, walletClient3];
+  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3]];
 }
 
 export function startWasmNode(

@@ -152,6 +152,7 @@ impl PublicInterfaceWorker {
                 tx_nonce: nonce,
                 token,
                 code_word,
+                eth_unsigned_tx_fields: None,
             };
 
             // dry run the tx

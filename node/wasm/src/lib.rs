@@ -265,6 +265,7 @@ impl WasmMainServiceWorker {
                         .borrow_mut()
                         .try_send(decoded_resp.clone())
                     {
+                        //handle this error on the error worker
                         error!("Failed to send response to RPC channel: {}", e);
                         return Err(e.into());
                     }
@@ -274,7 +275,7 @@ impl WasmMainServiceWorker {
                         .push(decoded_resp.tx_nonce.into(), decoded_resp.clone());
 
                     info!(target: "MainServiceWorker",
-                          "propagating txn msg as response: {decoded_resp:?}");
+                          "propagating txn msg as response to rpc layer for user interaction: {decoded_resp:?}");
                 }
                 _ => {}
             },
@@ -466,10 +467,7 @@ impl WasmMainServiceWorker {
                     // update user via rpc on tx success
                     txn_inner.tx_submission_passed(tx_hash);
                     info!(target: "MainServiceWorker","tx submission passed");
-                    self.rpc_sender_channel
-                        .borrow_mut()
-                        .send(txn_inner.clone())
-                        .await?;
+                    
                     // update local db on success tx
                     let db_tx = DbTxStateMachine {
                         tx_hash: tx_hash.to_vec(),
@@ -478,19 +476,33 @@ impl WasmMainServiceWorker {
                         success: true,
                     };
                     self.db_worker.update_success_tx(db_tx).await?;
+                    info!(target: "MainServiceWorker","Db recorded success tx");
+
+                    self.rpc_sender_channel
+                        .borrow_mut()
+                        .send(txn_inner.clone())
+                        .await?;
+
+                    self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
                 }
                 Err(err) => {
+                    // here some errors wont get the tx to be resubmitted
+                    error!(target: "MainServiceWorker","tx submission failed: {err:?}");
                     txn_inner.tx_submission_failed(format!(
                         "{err:?}: the tx will be resubmitted rest assured"
                     ));
-                    self.rpc_sender_channel.borrow_mut().send(txn_inner).await?;
+                    self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
+                    self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
+
                 }
             }
         } else {
             // non original sender confirmed, return error, send to rpc
             txn_inner.sender_confirmation_failed();
             error!(target: "MainServiceWorker","Non original sender signed");
-            self.rpc_sender_channel.borrow_mut().send(txn_inner).await?;
+            self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
+            self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
+
         }
 
         Ok(())

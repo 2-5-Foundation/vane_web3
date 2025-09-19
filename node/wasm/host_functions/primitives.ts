@@ -27,6 +27,19 @@ export type TxStatus =
     | { type: "ReceiverNotRegistered" }
     | { type: "Reverted" }
 
+export interface UnsignedEip1559 {
+    to: string;
+    value: bigint;
+    chainId: number;
+    nonce: number;
+    gas: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    data?: string;
+    accessList?: any[];
+    type: 'eip1559';
+}
+
 export interface TxStateMachine {
 
     senderAddress: string;
@@ -37,12 +50,13 @@ export interface TxStateMachine {
     token: string;
     status: TxStatus;
     amount: bigint; // For u128
-    signedCallPayload?: Uint8Array;
-    callPayload?: [Uint8Array, Uint8Array] | null; // [hash (32 bytes), raw transaction bytes]
+    signedCallPayload?: Uint8Array; // signed tx
+    callPayload?: [Uint8Array, Uint8Array] | null; // [unsigned tx hash (32 bytes), raw unsigned transaction bytes]
     inboundReqId?: number; // u64
     outboundReqId?: number; // u64
     txNonce: number;
     codeword: string;
+    ethUnsignedTxFields?: UnsignedEip1559 | null;
 }
 
 export class TxStateMachineManager {

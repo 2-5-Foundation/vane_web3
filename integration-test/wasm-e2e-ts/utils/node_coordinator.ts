@@ -9,15 +9,18 @@ export enum NODE_EVENTS {
   NODE_STARTED = 'node_started',
   NODE_READY = 'node_ready',
   PEER_CONNECTED = 'peer_connected',
-  PEER_DISCONNECTED = 'peer_disconnected',
+  PEER_DISCONNECTED = 'Connection closed with peer',
   RESERVATION_ACCEPTED = 'reservation_accepted',
   LISTENING_ESTABLISHED = 'listening_established',
   TRANSACTION_INITIATED = 'initiated sending transaction',
   SENDER_CONFIRMED = 'successfully initially verified sender and receiver',
   TRANSACTION_SUBMITTED = 'propagated initiated transaction',
+  TRANSACTION_SUBMITTED_FAILED = 'tx submission failed',
+  TRANSACTION_SUBMITTED_PASSED = 'tx submission passed',
   TRANSACTION_SENT = 'request sent to peer',
   TRANSACTION_RECEIVED = 'received message',
   RECEIVER_CONFIRMED = 'receiver confirmation passed',
+  SENDER_RECEIVED_RESPONSE = 'propagating txn msg as response',
   RECEIVER_CONFIRMATION_FAILED = 'receiver confirmation failed',
   SENDER_CONFIRMATION_FAILED = 'non original sender signed',
   TRANSACTION_SUCCESS = 'tx submission passed',
@@ -163,6 +166,11 @@ export class NodeCoordinator {
     // Map log messages to events
     if (log.message.includes('Connected to peer')) {
       this.emitEvent(NODE_EVENTS.PEER_CONNECTED, { log });
+    } else if (log.message.includes('Connection closed with peer') || 
+               log.message.includes('peer disconnected') ||
+               log.message.includes('connection closed') ||
+               log.message.includes('disconnected from peer')) {
+      this.emitEvent(NODE_EVENTS.PEER_DISCONNECTED, { log });
     } else if (log.message.includes('reservation request accepted')) {
       this.emitEvent(NODE_EVENTS.RESERVATION_ACCEPTED, { log });
     } else if (log.message.includes('Listening on:')) {
@@ -171,6 +179,12 @@ export class NodeCoordinator {
       this.emitEvent(NODE_EVENTS.TRANSACTION_INITIATED, { log });
     } else if (log.message.includes('received message')) {
       this.emitEvent(NODE_EVENTS.TRANSACTION_RECEIVED, { log });
+    } else if (log.message.includes('propagating txn msg as response')) {
+      this.emitEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, { log });
+    } else if (log.message.includes('tx submission failed')) {
+      this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, { log });
+    } else if (log.message.includes('tx submission passed')) {
+      this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, { log });
     } else if (log.message.includes('error')) {
       this.emitEvent(NODE_EVENTS.ERROR, { log });
     }
@@ -313,9 +327,7 @@ export class NodeCoordinator {
     return this.waitForEvent(NODE_EVENTS.PEER_CONNECTED, () => {}, timeout);
   }
 
-  async waitForTransactionReceived(timeout: number = 30000): Promise<any> {
-    return this.waitForEvent(NODE_EVENTS.TRANSACTION_RECEIVED, () => {}, timeout);
-  }
+
 }
 
 export const nodeCoordinator = NodeCoordinator.getInstance();

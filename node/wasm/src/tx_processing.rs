@@ -77,7 +77,7 @@ impl WasmTxProcessingWorker {
         who: &str,
     ) -> Result<(), anyhow::Error> {
         let (network, signature, msg, address) = if who == "Receiver" {
-            info!("\n receiver address verification \n");
+            info!(target: "WasmTxProcessingWorker", "receiver address verification");
 
             let network = tx.network;
             let signature = tx
@@ -90,7 +90,7 @@ impl WasmTxProcessingWorker {
 
             (network, signature, msg, recv_address)
         } else {
-            info!("\n sender address verification \n");
+            info!(target: "WasmTxProcessingWorker", "sender address verification");
             // who == Sender
             let network = tx.network;
             let signature = tx
@@ -98,6 +98,7 @@ impl WasmTxProcessingWorker {
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
 
+                // TODO: how to handle this panic
             let (msg_hash, _raw_tx) = tx
                 .call_payload
                 .as_ref()
@@ -119,6 +120,7 @@ impl WasmTxProcessingWorker {
 
                         keccak_256(signable_msg.as_slice())
                     } else {
+                        //TODO: handle this panic as system shutdown or error reporting
                         msg.try_into().unwrap()
                     }
                 };

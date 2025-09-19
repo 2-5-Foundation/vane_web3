@@ -144,6 +144,26 @@ pub struct WasmDhtRequest {
     pub key: String,
 }
 
+/// Unsigned EIP-1559 transaction fields
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub struct UnsignedEip1559 {
+    pub to: String,
+    pub value: u128,
+    #[serde(rename = "chainId")]
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub gas: u64,
+    #[serde(rename = "maxFeePerGas")]
+    pub max_fee_per_gas: u64,
+    #[serde(rename = "maxPriorityFeePerGas")]
+    pub max_priority_fee_per_gas: u64,
+    pub data: Option<String>,
+    #[serde(rename = "accessList")]
+    pub access_list: Option<Vec<()>>,
+    #[serde(rename = "type")]
+    pub tx_type: String, // "eip1559"
+}
+
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
@@ -190,6 +210,9 @@ pub struct TxStateMachine {
     /// stores the current nonce of the transaction per vane not the nonce for the blockchain network
     #[serde(rename = "txNonce")]
     pub tx_nonce: u32,
+    /// unsigned transaction fields for EIP-1559 transactions
+    #[serde(rename = "ethUnsignedTxFields")]
+    pub eth_unsigned_tx_fields: Option<UnsignedEip1559>,
 }
 
 #[cfg(feature = "wasm")]

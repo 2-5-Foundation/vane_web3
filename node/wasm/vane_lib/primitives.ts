@@ -22,6 +22,19 @@ export type TxStatus =
     | { type: "ReceiverNotRegistered" }
     | { type: "Reverted" }
 
+export interface UnsignedEip1559 {
+    to: string;
+    value: bigint;
+    chainId: number;
+    nonce: number;
+    gas: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    data?: string;
+    accessList?: any[];
+    type: 'eip1559';
+}
+
 export interface TxStateMachine {
 
     senderAddress: string;
@@ -38,6 +51,7 @@ export interface TxStateMachine {
     outboundReqId?: number; // u64
     txNonce: number;
     codeword: string;
+    ethUnsignedTxFields?: UnsignedEip1559 | null;
 }
 
 export class TxStateMachineManager {
