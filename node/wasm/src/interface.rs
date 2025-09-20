@@ -53,6 +53,10 @@ pub struct PublicInterfaceWorker {
     // HashMap<txn_counter,Integrity hash>
     //// tx pending store
     pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
+    /// Flag to track if a watcher is already active to prevent multiple concurrent watchers
+    pub watcher_active: Rc<RefCell<bool>>,
+    /// List of registered callbacks for transaction updates
+    pub tx_callbacks: Rc<RefCell<Vec<js_sys::Function>>>,
 }
 
 impl PublicInterfaceWorker {
@@ -73,6 +77,8 @@ impl PublicInterfaceWorker {
             user_rpc_update_sender_channel,
             peer_id,
             lru_cache,
+            watcher_active: Rc::new(RefCell::new(false)),
+            tx_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
     }
 }
@@ -201,28 +207,58 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
+    /// Register a callback for transaction updates. Multiple callbacks can be registered.
+    /// The background watcher will be started automatically if it's not already running.
     pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
-        let receiver_channel = self.rpc_receiver_channel.clone();
         let callback = callback.clone();
         
-        // Spawn a background task to continuously poll for transaction updates
+        // Add the callback to our list
+        self.tx_callbacks.borrow_mut().push(callback);
+        
+        // Start the background watcher if it's not already running
+        if !*self.watcher_active.borrow() {
+            self.start_background_watcher().await?;
+        }
+        
+        Ok(())
+    }
+
+    /// Start the background watcher task (internal method)
+    async fn start_background_watcher(&self) -> Result<(), JsError> {
+        if *self.watcher_active.borrow() {
+            return Ok(()); // Already running
+        }
+
+        // Mark watcher as active
+        *self.watcher_active.borrow_mut() = true;
+
+        let receiver_channel = self.rpc_receiver_channel.clone();
+        let callbacks = self.tx_callbacks.clone();
+        let watcher_active = self.watcher_active.clone();
+        
+        // Spawn a single background task to continuously poll for transaction updates
         wasm_bindgen_futures::spawn_local(async move {
             let mut receiver = receiver_channel.borrow_mut();
             
             loop {
                 match receiver.recv().await {
                     Some(tx_update) => {
-                        info!("Received transaction update: {:?}", tx_update);
+                        info!("watch_tx_updates: {:?}", tx_update);
                         
-                        // Convert transaction to JS value and call the callback
+                        // Convert transaction to JS value
                         let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
                             .unwrap_or_else(|_| JsValue::NULL);
                         
-                        // Call the callback with the transaction update
-                        let _ = callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &tx_js_value);
+                        // Call all registered callbacks
+                        let callbacks_guard = callbacks.borrow();
+                        for callback in callbacks_guard.iter() {
+                            let _ = callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &tx_js_value);
+                        }
                     }
                     None => {
                         info!("Transaction update channel closed");
+                        // Mark watcher as inactive when done
+                        *watcher_active.borrow_mut() = false;
                         break;
                     }
                 }
@@ -230,6 +266,13 @@ impl PublicInterfaceWorker {
         });
         
         Ok(())
+    }
+
+    /// Unsubscribe from all transaction updates (stops watcher and clears all callbacks)
+    pub fn unsubscribe_watch_tx_updates(&self) {
+        *self.watcher_active.borrow_mut() = false;
+        self.tx_callbacks.borrow_mut().clear();
+        info!("Unsubscribed from all transaction updates");
     }
 
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
@@ -388,6 +431,11 @@ impl PublicInterfaceWorkerJs {
     pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
         self.inner.borrow().watch_tx_updates(callback).await?;
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "unsubscribeWatchTxUpdates")]
+    pub fn unsubscribe_watch_tx_updates(&self) {
+        self.inner.borrow().unsubscribe_watch_tx_updates();
     }
 
     #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]

@@ -94,7 +94,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
                                   (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
             
             if (!isRecvConfirmed) {
-              console.log("Skipping - not receiver confirmed yet");
               return;
             }
             
@@ -186,6 +185,26 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   test("should notify if the receiver is not registered", async () => {
     
+    await wasmNodeInstance.promise.then((vaneWasm: any) => {
+      return vaneWasm?.initiateTransaction(
+        wasm_client_address,
+        '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
+        BigInt(10),
+        'Eth',
+        'Ethereum',
+        'Maji'
+      );
+    });
+
+    await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
+      console.log('👂 RECEIVER_NOT_REGISTERED');
+      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+        await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+          expect(tx.status).toHaveProperty('ReceiverNotRegistered');
+        });
+      });
+    },60000);
+      
   });
 
   test("should succesfully revert and cancel transaction if wrong address is confirmed by receiver", async () => {

@@ -22,6 +22,7 @@ export enum NODE_EVENTS {
   RECEIVER_CONFIRMED = 'receiver confirmation passed',
   SENDER_RECEIVED_RESPONSE = 'propagating txn msg as response',
   RECEIVER_CONFIRMATION_FAILED = 'receiver confirmation failed',
+  RECEIVER_NOT_REGISTERED = 'DHT returned no address',
   SENDER_CONFIRMATION_FAILED = 'non original sender signed',
   TRANSACTION_SUCCESS = 'tx submission passed',
   TRANSACTION_FAILED = 'tx submission failed',
@@ -185,6 +186,8 @@ export class NodeCoordinator {
       this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, { log });
     } else if (log.message.includes('tx submission passed')) {
       this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, { log });
+    } else if (log.message.includes('DHT returned no address')) {
+      this.emitEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, { log });
     } else if (log.message.includes('error')) {
       this.emitEvent(NODE_EVENTS.ERROR, { log });
     }

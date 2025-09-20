@@ -338,14 +338,14 @@ impl WasmMainServiceWorker {
                 wasm_bindgen_futures::spawn_local(async move {
                     info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
                     let dht = host_get_dht(target_id.clone()).fuse();
-                    let timeout = TimeoutFuture::new(30_000).fuse(); // 15s
+                    let timeout = TimeoutFuture::new(30_000).fuse(); 
                     futures::pin_mut!(dht, timeout);
 
                     match future::select(dht, timeout).await {
                         // DHT returned
                         future::Either::Left((Ok(resp), _)) => {
                             if let Some(err) = resp.error {
-                                error!("DHT failed: {}", err);
+                                error!("DHT failed receiver not registered: {}", err);
 
                                 let mut t = txn.borrow_mut().clone();
                                 t.recv_not_registered();
