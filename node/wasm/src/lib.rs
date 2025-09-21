@@ -576,18 +576,19 @@ impl WasmMainServiceWorker {
             let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
             receiver.recv().await
         } {
-            info!(target:"MainServiceWorker","received txn testing: {:?}",txn);
             // handle the incoming transaction per its state
             let status = txn.status.clone();
             match status {
                 TxStatus::Genesis => {
-                    info!(target:"MainServiceWorker","handling incoming genesis tx updates: {:?}",txn.clone());
+                    info!(target:"MainServiceWorker","handling incoming genesis tx updates");
+                    debug!(target:"MainServiceWorker","handling incoming genesis tx updates: {:?}",txn.clone());
                     self.handle_genesis_tx_state(Rc::new(RefCell::new(txn.clone())))
                         .await?;
                 }
 
                 TxStatus::RecvAddrConfirmed => {
-                    info!(target:"MainServiceWorker","handling incoming receiver addr-confirmation tx updates: {:?} \n",txn.clone());
+                    info!(target:"MainServiceWorker","handling incoming receiver addr-confirmation tx updates");
+                    debug!(target:"MainServiceWorker","handling incoming receiver addr-confirmation tx updates: {:?}",txn.clone());
 
                     let inbound_id = txn.inbound_req_id.expect("no inbound req id found");
                     self.handle_recv_addr_confirmed_tx_state(
@@ -602,14 +603,16 @@ impl WasmMainServiceWorker {
                 }
 
                 TxStatus::SenderConfirmed => {
-                    info!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates: {:?} \n",txn.clone());
+                    info!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates");
+                    debug!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates: {:?}",txn.clone());
 
                     self.handle_sender_confirmed_tx_state(Rc::new(RefCell::new(txn.clone())))
                         .await?;
                 }
 
                 TxStatus::Reverted(_) => {
-                    info!(target:"MainServiceWorker","handling incoming reverted tx updates: {:?} \n",txn.clone());
+                    info!(target:"MainServiceWorker","handling incoming reverted tx updates");
+                    debug!(target:"MainServiceWorker","handling incoming reverted tx updates: {:?}",txn.clone());
 
                     self.handle_reverted_tx_state(Rc::new(RefCell::new(txn.clone())))
                         .await?;

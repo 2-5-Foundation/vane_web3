@@ -67,6 +67,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
+    console.log(" \n \n TEST CASE: should successfully initiate and confirm a transaction and submit it to the network");
     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
@@ -185,7 +186,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test("should notify if the receiver is not registered", async () => {
-    
+    console.log(" \n \n TEST CASE: should notify if the receiver is not registered");
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
@@ -214,17 +215,18 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test("should succesfully revert and cancel transaction if wrong address is confirmed by receiver", async () => {
-    //  const _intendedReceiverAddress = receiver_client_address;
-    //  await wasmNodeInstance.promise.then((vaneWasm: any) => {
-    //   return vaneWasm?.initiateTransaction(
-    //     wasm_client_address,
-    //     wrong_receiver_client_address,
-    //     BigInt(10),
-    //     'Eth',
-    //     'Ethereum',
-    //     'Wrong'
-    //   );
-    // });
+    console.log(" \n \n TEST CASE: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
+    const _intendedReceiverAddress = receiver_client_address;
+     await wasmNodeInstance.promise.then((vaneWasm: any) => {
+      return vaneWasm?.initiateTransaction(
+        wasm_client_address,
+        wrong_receiver_client_address,
+        BigInt(10),
+        'Eth',
+        'Ethereum',
+        'Wrong'
+      );
+    });
 
     // await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
     //   console.log('👂 SENDER_RECEIVED_RESPONSE');
@@ -259,7 +261,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     //   });
     // },60000);
 
-    // await new Promise(resolve => setTimeout(resolve, 60000));
+    await new Promise(resolve => setTimeout(resolve, 60000));
 
   });
 

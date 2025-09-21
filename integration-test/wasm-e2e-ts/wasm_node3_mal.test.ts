@@ -58,32 +58,32 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   })
 
   it("it should receive a transaction and confirm it successfully",async() => {
-   
-    // await nodeCoordinator.waitForEvent(
-    //     NODE_EVENTS.TRANSACTION_RECEIVED,
-    //     async () => {
-    //      console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
-    //      await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-    //        // Set up the transaction watcher (await the Promise)
-    //        await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-    //         if (!walletClient) throw new Error('walletClient not initialized');
-    //         const account = walletClient.account!;
-    //         // @ts-ignore
-    //         const signature = await account.signMessage({ message: tx.receiverAddress });
-    //         const txManager = new TxStateMachineManager(tx);
-    //         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-    //         const updatedTx = txManager.getTx();
-    //         console.log('🔑 UPDATED TX', updatedTx);
-    //         await vaneWasm?.receiverConfirm(updatedTx);
-    //       });
+    console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (MALICIOUS_NODE)");
+    await nodeCoordinator.waitForEvent(
+        NODE_EVENTS.TRANSACTION_RECEIVED,
+        async () => {
+         console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
+         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+           // Set up the transaction watcher (await the Promise)
+           await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+            if (!walletClient) throw new Error('walletClient not initialized');
+            const account = walletClient.account!;
+            // @ts-ignore
+            const signature = await account.signMessage({ message: tx.receiverAddress });
+            const txManager = new TxStateMachineManager(tx);
+            txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+            const updatedTx = txManager.getTx();
+            console.log('🔑 Malicious node confirmed the transaction');
+            await vaneWasm?.receiverConfirm(updatedTx);
+          });
            
-    //       // Fetch current pending transactions
-    //        const receivedTx = await vaneWasm?.fetchPendingTxUpdates();
-    //        expect(receivedTx.length).toBeGreaterThan(0);
-    //      });
-    //    },
-    //     60000
-    //   );
+          // Fetch current pending transactions
+           const receivedTx = await vaneWasm?.fetchPendingTxUpdates();
+           expect(receivedTx.length).toBeGreaterThan(0);
+         });
+       },
+        60000
+      );
 
     // await new Promise(resolve => setTimeout(resolve, 60000));
 

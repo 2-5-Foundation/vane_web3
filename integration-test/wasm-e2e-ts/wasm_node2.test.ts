@@ -57,6 +57,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   })
 
   it("it should receive a transaction and confirm it successfully",async() => {
+    console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
    
     await nodeCoordinator.waitForEvent(
@@ -86,7 +87,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       );
 
     await nodeCoordinator.waitForEvent(
-      NODE_EVENTS.PEER_DISCONNECTED, async () => { 
+      NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
+          // abritray wait for the sender node to submit the transaction
+          await new Promise(resolve => setTimeout(resolve, 10000));
           console.log('sender finished its job and disconnected');
           const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
           const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);

@@ -10,6 +10,7 @@ export enum NODE_EVENTS {
   NODE_READY = 'node_ready',
   PEER_CONNECTED = 'peer_connected',
   PEER_DISCONNECTED = 'Connection closed with peer',
+  P2P_SENT_TO_EVENT = 'response sent to', // this can be used to indicate the receiver node that your job is done after sending a reposne
   RESERVATION_ACCEPTED = 'reservation_accepted',
   LISTENING_ESTABLISHED = 'listening_established',
   TRANSACTION_INITIATED = 'initiated sending transaction',
@@ -174,6 +175,8 @@ export class NodeCoordinator {
       this.emitEvent(NODE_EVENTS.PEER_DISCONNECTED, { log });
     } else if (log.message.includes('reservation request accepted')) {
       this.emitEvent(NODE_EVENTS.RESERVATION_ACCEPTED, { log });
+    } else if (log.message.includes('response sent to')) {
+      this.emitEvent(NODE_EVENTS.P2P_SENT_TO_EVENT, { log });
     } else if (log.message.includes('Listening on:')) {
       this.emitEvent(NODE_EVENTS.LISTENING_ESTABLISHED, { log });
     } else if (log.message.includes('initiated sending transaction')) {
