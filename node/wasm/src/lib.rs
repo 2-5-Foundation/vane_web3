@@ -541,6 +541,36 @@ impl WasmMainServiceWorker {
         Ok(())
     }
 
+    pub async fn handle_reverted_tx_state(
+        &self,
+        txn: Rc<RefCell<TxStateMachine>>,
+    ) -> Result<(), Error> {
+        let txn_inner = txn.borrow().clone();
+        // diconnect the peer
+        // fetch the peerId from db
+        let multi_addr = Multiaddr::try_from(self.db_worker.get_saved_user_peers(txn_inner.receiver_address.clone()).await?)?;
+        let peer_id = match multi_addr.clone().pop() {
+            Some(Protocol::P2p(id)) => id,
+            _ => return Err(anyhow::anyhow!("peer id not found")),
+        };
+        self.p2p_worker.borrow_mut().wasm_swarm.borrow_mut().disconnect_peer_id(peer_id).map_err(|e| anyhow::anyhow!("failed to disconnect peer: {e:?}"))?;
+        self.db_worker.delete_saved_peer(multi_addr.to_string().as_str()).await?;
+        let db_tx = DbTxStateMachine {
+            tx_hash: vec![],
+            amount: txn_inner.amount.clone(),
+            network: txn_inner.network.clone(),
+            sender: txn_inner.sender_address.clone(),
+            receiver: txn_inner.receiver_address.clone(),
+            success: false,
+        };
+        self.db_worker.update_failed_tx(db_tx).await?;
+        info!(target: "MainServiceWorker","Db recorded failed: reverted tx");
+        self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
+        self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner.clone());
+
+        Ok(())
+    }
+
     pub async fn handle_public_interface_tx_updates(&mut self) -> Result<(), anyhow::Error> {
         while let Some(txn) = {
             let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
@@ -577,6 +607,14 @@ impl WasmMainServiceWorker {
                     self.handle_sender_confirmed_tx_state(Rc::new(RefCell::new(txn.clone())))
                         .await?;
                 }
+
+                TxStatus::Reverted(_) => {
+                    info!(target:"MainServiceWorker","handling incoming reverted tx updates: {:?} \n",txn.clone());
+
+                    self.handle_reverted_tx_state(Rc::new(RefCell::new(txn.clone())))
+                        .await?;
+                }
+
                 _ => {}
             };
         }

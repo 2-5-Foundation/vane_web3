@@ -193,11 +193,11 @@ sleep 3
 start_node "WASM Node 2" "$BLUE"
 
 # Add delay between node starts
-# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-# sleep 3
+echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+sleep 3
 
-# # Start Malicious Node 3
-# start_node "WASM Node 3 (Malicious)" "$RED"
+# Start Malicious Node 3
+start_node "WASM Node 3 (Malicious)" "$RED"
 
 echo ""
 echo -e "${GREEN}✅ All WASM nodes have been started in separate terminals!${NC}"

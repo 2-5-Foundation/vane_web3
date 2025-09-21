@@ -53,12 +53,21 @@ pub enum TxStatus {
     /// if the receiver has not registered to vane yet
     ReceiverNotRegistered,
     /// if the transaction is reverted
-    Reverted,
+    Reverted(String),
 }
 
 impl Default for TxStatus {
     fn default() -> Self {
         Self::Genesis
+    }
+}
+
+impl From<TxStatus> for String {
+    fn from(status: TxStatus) -> Self {
+        match status {
+            TxStatus::RecvAddrFailed => "Receiver address failed".to_string(),
+            _ => unimplemented!("not used")
+        }
     }
 }
 
@@ -229,7 +238,9 @@ impl TxStateMachine {
         self.status = TxStatus::RecvAddrConfirmationPassed
     }
     pub fn recv_confirmation_failed(&mut self) {
-        self.status = TxStatus::RecvAddrFailed
+        let reason:String = TxStatus::RecvAddrFailed.into();
+        self.status = TxStatus::Reverted(reason)
+
     }
     pub fn recv_confirmed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmed
@@ -251,6 +262,9 @@ impl TxStateMachine {
     }
     pub fn recv_not_registered(&mut self) {
         self.status = TxStatus::ReceiverNotRegistered
+    }
+    pub fn reverted(&mut self, reason: String) {
+
     }
     pub fn increment_nonce(&mut self) {
         self.tx_nonce += 1

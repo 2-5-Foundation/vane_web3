@@ -22,6 +22,7 @@ export enum Token {
 interface TxStatusData {
     FailedToSubmitTxn: string;
     TxSubmissionPassed: { hash: Uint8Array };
+    Reverted: string;
 }
    
 export type TxStatus = 
@@ -35,7 +36,7 @@ export type TxStatus =
     | { type: "FailedToSubmitTxn", data: TxStatusData["FailedToSubmitTxn"] }
     | { type: "TxSubmissionPassed", data: TxStatusData["TxSubmissionPassed"] }
     | { type: "ReceiverNotRegistered" }
-    | { type: "Reverted" }
+    | { type: "Reverted", data: TxStatusData["Reverted"] }
 
 export interface UnsignedEip1559 {
     to: string;
@@ -99,6 +100,9 @@ export class TxStateMachineManager {
    
     setSignedCallPayload(payload: Uint8Array): void {
       this.tx.signedCallPayload = payload;
+    }
+    setRevertedReason(reason: string): void {
+      this.tx.status = {type: "Reverted", data: reason};
     }
    
     updateStatus(status: TxStatus): void {

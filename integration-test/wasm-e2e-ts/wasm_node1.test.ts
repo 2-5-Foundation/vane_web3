@@ -21,7 +21,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let walletClient: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string;
   let privkey: string;
-  let receiver_client_address: string = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const receiver_client_address: string = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const wrong_receiver_client_address: string = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
   let wasmLogger: any | null = null;
 
 
@@ -197,18 +198,69 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     });
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
-      console.log('👂 RECEIVER_NOT_REGISTERED');
+      console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
       await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-        await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-          expect(tx.status).toHaveProperty('ReceiverNotRegistered');
-        });
+        // await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+        //   expect(tx.status).toHaveProperty('ReceiverNotRegistered');
+        //   console.log('🔑 asserted receiver not registered', tx.status);
+        // });
+        const tx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+        expect(tx).toBeDefined();
+        expect(tx[0].status).toBe('ReceiverNotRegistered');
+        console.log('🔑 asserted receiver not registered', tx[0].status);
       });
-    },60000);
+    },70000);
       
   });
 
   test("should succesfully revert and cancel transaction if wrong address is confirmed by receiver", async () => {
-    
+    //  const _intendedReceiverAddress = receiver_client_address;
+    //  await wasmNodeInstance.promise.then((vaneWasm: any) => {
+    //   return vaneWasm?.initiateTransaction(
+    //     wasm_client_address,
+    //     wrong_receiver_client_address,
+    //     BigInt(10),
+    //     'Eth',
+    //     'Ethereum',
+    //     'Wrong'
+    //   );
+    // });
+
+    // await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
+    //   console.log('👂 SENDER_RECEIVED_RESPONSE');
+    //   await wasmNodeInstance.promise.then((vaneWasm: PublicInterfaceWorkerJs | null) => {
+    //     return vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+            
+    //         // Skip if we already have a signature
+    //         if (tx.signedCallPayload) {
+    //           return;
+    //         }
+            
+    //         // Only process when receiver has confirmed
+    //         const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+    //                               (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+            
+    //         if (!isRecvConfirmed) {
+    //           return;
+    //         }
+            
+    //         console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
+    //         // check if the transaction is reverted
+    //         if (tx.status.type === 'Reverted') {
+    //           await vaneWasm?.revertTransaction(tx);
+    //         }else{
+    //           let txManager = new TxStateMachineManager(tx);
+    //           txManager.setRevertedReason("Intended receiver not met");
+    //           const updatedTx = txManager.getTx();
+    //           await vaneWasm?.revertTransaction(updatedTx);
+    //         }
+
+    //     });
+    //   });
+    // },60000);
+
+    // await new Promise(resolve => setTimeout(resolve, 60000));
+
   });
 
   test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {

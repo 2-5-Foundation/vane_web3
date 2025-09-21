@@ -5,7 +5,7 @@ import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayN
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/host_functions/primitives.js';
+import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -15,7 +15,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let walletClient: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string | undefined = undefined;
   let privkey: string | undefined = undefined;
-  let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
   let wasmNodeInstance: WasmNodeInstance | null = null;
   let nodeCoordinator: NodeCoordinator;
   let wasmLogger: any | null = null;

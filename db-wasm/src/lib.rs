@@ -470,19 +470,19 @@ impl DbWorkerInterface for OpfsRedbWorker {
     }
 
     /// Delete a specific saved peer by peer_id
-    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), Error> {
+    async fn delete_saved_peer(&self, multi_addr: &str) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SAVED_PEERS_TABLE)?;
 
-            // Find all account IDs mapped to this peer_id and remove them
+            // Find all account IDs mapped to this multi_addr and remove them
             let mut keys_to_remove = Vec::new();
 
             for entry in table.iter()? {
                 let (key, value) = entry?;
                 let stored_peer_id = value.value().to_string();
 
-                if stored_peer_id == peer_id {
+                if stored_peer_id == multi_addr {
                     let account_id = key.value().to_string();
                     keys_to_remove.push(account_id);
                 }
@@ -778,14 +778,14 @@ impl DbWorkerInterface for InMemoryDbWorker {
         Ok((all_account_ids, peer_id))
     }
 
-    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), Error> {
+    async fn delete_saved_peer(&self, multi_addr: &str) -> Result<(), Error> {
         // Find all account IDs mapped to this peer_id and remove them
         let keys_to_remove: Vec<String> = self
             .saved_peers
             .borrow()
             .iter()
-            .filter_map(|(account_id, stored_peer_id)| {
-                if stored_peer_id == peer_id {
+            .filter_map(|(account_id, stored_multi_addr)| {
+                if stored_multi_addr == multi_addr {
                     Some(account_id.clone())
                 } else {
                     None
@@ -933,10 +933,10 @@ impl DbWorkerInterface for DbWorker {
         }
     }
 
-    async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
+    async fn delete_saved_peer(&self, multi_addr: &str) -> Result<(), anyhow::Error> {
         match self {
-            DbWorker::Opfs(worker) => worker.delete_saved_peer(peer_id).await,
-            DbWorker::InMemory(worker) => worker.delete_saved_peer(peer_id).await,
+            DbWorker::Opfs(worker) => worker.delete_saved_peer(multi_addr).await,
+            DbWorker::InMemory(worker) => worker.delete_saved_peer(multi_addr).await,
         }
     }
 }

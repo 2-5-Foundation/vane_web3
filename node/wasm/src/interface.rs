@@ -12,7 +12,7 @@ use async_stream::stream;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId};
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use lru::LruCache;
 use reqwasm::http::{Request, RequestMode};
 use serde_wasm_bindgen;
@@ -243,7 +243,7 @@ impl PublicInterfaceWorker {
             loop {
                 match receiver.recv().await {
                     Some(tx_update) => {
-                        info!("watch_tx_updates: {:?}", tx_update);
+                        debug!("watch_tx_updates: {:?}", tx_update);
                         
                         // Convert transaction to JS value
                         let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
@@ -282,7 +282,7 @@ impl PublicInterfaceWorker {
             .iter()
             .map(|(_k, v)| v.clone())
             .collect::<Vec<TxStateMachine>>();
-        info!("lru: {tx_updates:?}");
+        debug!("lru: {tx_updates:?}");
 
         serde_wasm_bindgen::to_value(&tx_updates)
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
@@ -310,6 +310,20 @@ impl PublicInterfaceWorker {
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
             Ok(())
+        }
+    }
+
+    pub async fn revert_transaction(&self, tx: JsValue) -> Result<(), JsError> {
+        let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
+        
+        match tx.status {
+            TxStatus::Reverted(ref reason) => {
+                let sender = self.user_rpc_update_sender_channel.borrow_mut();
+                sender.send(tx).await.map_err(|_| anyhow!("failed to send revert transaction tx state to sender channel")).map_err(|e| JsError::new(&format!("{:?}", e)))?;
+                Ok(())            }
+            _ => {
+                Err(anyhow!("Transaction is not in reverted state")).map_err(|e| JsError::new(&format!("{:?}", e)))
+            }
         }
     }
 
@@ -447,6 +461,12 @@ impl PublicInterfaceWorkerJs {
     #[wasm_bindgen(js_name = "receiverConfirm")]
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         self.inner.borrow().receiver_confirm(tx).await?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "revertTransaction")]
+    pub async fn revert_transaction(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().revert_transaction(tx).await?;
         Ok(())
     }
 
