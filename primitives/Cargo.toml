@@ -16,6 +16,7 @@ sp-core                                         = { workspace = true, default-fe
 wasm-bindgen                                    = { version = "0.2.99", optional = true }
 serde-wasm-bindgen                              = { version = "0.6.5", optional = true }
 tokio_with_wasm                                 = { workspace = true }
+hex                                             = "0.4.3"
 
 # Native dependencies
 libp2p                                          = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "macros","tokio","ecdsa","ed25519","serde"] }

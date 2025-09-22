@@ -5817,6 +5817,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dotenv",
+ "hex",
  "libp2p",
  "log",
  "parity-scale-codec",

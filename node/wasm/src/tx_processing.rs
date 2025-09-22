@@ -98,7 +98,7 @@ impl WasmTxProcessingWorker {
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
 
-                // TODO: how to handle this panic
+            // TODO: how to handle this panic
             let (msg_hash, _raw_tx) = tx
                 .call_payload
                 .as_ref()

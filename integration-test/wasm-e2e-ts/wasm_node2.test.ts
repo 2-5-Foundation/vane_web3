@@ -30,6 +30,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     walletClient = getWallets()[1][0];
     privkey = getWallets()[1][1];
     wasm_client_address = walletClient!.account!.address;
+    console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     try {
         await init();
@@ -74,7 +75,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
             const txManager = new TxStateMachineManager(tx);
             txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
             const updatedTx = txManager.getTx();
-            console.log('🔑 UPDATED TX', updatedTx);
             await vaneWasm?.receiverConfirm(updatedTx);
           });
            

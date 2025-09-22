@@ -30,7 +30,7 @@ pub struct DHTResponse {
 }
 
 /// tx state
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Encode, Decode)]
 pub enum TxStatus {
     /// initial state,
     Genesis,
@@ -62,11 +62,109 @@ impl Default for TxStatus {
     }
 }
 
+impl<'de> Deserialize<'de> for TxStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Helper to map string tag -> variant
+        fn from_tag<'a, E: SerdeError>(tag: &'a str, val: Option<&serde_json::Value>) -> Result<TxStatus, E> {
+            match tag {
+                "Genesis" => Ok(TxStatus::Genesis),
+                "RecvAddrConfirmed" => Ok(TxStatus::RecvAddrConfirmed),
+                "RecvAddrConfirmationPassed" => Ok(TxStatus::RecvAddrConfirmationPassed),
+                "NetConfirmed" => Ok(TxStatus::NetConfirmed),
+                "SenderConfirmed" => Ok(TxStatus::SenderConfirmed),
+                "SenderConfirmationfailed" => Ok(TxStatus::SenderConfirmationfailed),
+                "RecvAddrFailed" => Ok(TxStatus::RecvAddrFailed),
+                "ReceiverNotRegistered" => Ok(TxStatus::ReceiverNotRegistered),
+                "FailedToSubmitTxn" => {
+                    let reason = val
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Submission failed")
+                        .to_string();
+                    Ok(TxStatus::FailedToSubmitTxn(reason))
+                }
+                "TxSubmissionPassed" => {
+                    // Accept hex string or byte array
+                    if let Some(v) = val {
+                        if let Some(s) = v.as_str() {
+                            // hex string
+                            let s = s.strip_prefix("0x").unwrap_or(s);
+                            let bytes = hex::decode(s).map_err(|e| E::custom(format!("invalid hex: {e}")))?;
+                            let mut arr = [0u8; 32];
+                            let copy_len = core::cmp::min(32, bytes.len());
+                            arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
+                            Ok(TxStatus::TxSubmissionPassed(arr))
+                        } else if let Some(arrv) = v.as_array() {
+                            // numeric array
+                            let mut arr = [0u8; 32];
+                            for (i, byte) in arrv.iter().take(32).enumerate() {
+                                arr[i] = byte.as_u64().unwrap_or(0) as u8;
+                            }
+                            Ok(TxStatus::TxSubmissionPassed(arr))
+                        } else {
+                            Err(E::custom("invalid TxSubmissionPassed value"))
+                        }
+                    } else {
+                        Err(E::custom("missing TxSubmissionPassed value"))
+                    }
+                }
+                "Reverted" => {
+                    let reason = val
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Intended receiver not met")
+                        .to_string();
+                    Ok(TxStatus::Reverted(reason))
+                }
+                other => Err(E::custom(format!("unknown TxStatus variant: {other}"))),
+            }
+        }
+
+        match value {
+            // Simple string variant name
+            serde_json::Value::String(s) => from_tag::<D::Error>(&s, None),
+
+            // Object forms: { Variant: value } or { type: Variant, value: X }
+            serde_json::Value::Object(map) => {
+                if let Some(t) = map.get("type").and_then(|v| v.as_str()) {
+                    let val = map.get("value");
+                    return from_tag::<D::Error>(t, val);
+                }
+
+                // Single-key map: { "Variant": value }
+                if map.len() == 1 {
+                    let (k, v) = map.iter().next().unwrap();
+                    return from_tag::<D::Error>(k, Some(v));
+                }
+
+                Err(D::Error::custom("invalid object for TxStatus"))
+            }
+
+            // Array forms: ["Variant"], ["Variant", value]
+            serde_json::Value::Array(arr) => {
+                if arr.is_empty() {
+                    return Err(D::Error::custom("empty array for TxStatus"));
+                }
+                let tag = arr[0]
+                    .as_str()
+                    .ok_or_else(|| D::Error::custom("first element must be string variant"))?;
+                let val = if arr.len() > 1 { Some(&arr[1]) } else { None };
+                from_tag::<D::Error>(tag, val)
+            }
+
+            _ => Err(D::Error::custom("invalid type for TxStatus")),
+        }
+    }
+}
+
 impl From<TxStatus> for String {
     fn from(status: TxStatus) -> Self {
         match status {
             TxStatus::RecvAddrFailed => "Receiver address failed".to_string(),
-            _ => unimplemented!("not used")
+            _ => unimplemented!("not used"),
         }
     }
 }
@@ -238,9 +336,8 @@ impl TxStateMachine {
         self.status = TxStatus::RecvAddrConfirmationPassed
     }
     pub fn recv_confirmation_failed(&mut self) {
-        let reason:String = TxStatus::RecvAddrFailed.into();
+        let reason: String = TxStatus::RecvAddrFailed.into();
         self.status = TxStatus::Reverted(reason)
-
     }
     pub fn recv_confirmed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmed
@@ -263,9 +360,7 @@ impl TxStateMachine {
     pub fn recv_not_registered(&mut self) {
         self.status = TxStatus::ReceiverNotRegistered
     }
-    pub fn reverted(&mut self, reason: String) {
-
-    }
+    pub fn reverted(&mut self, reason: String) {}
     pub fn increment_nonce(&mut self) {
         self.tx_nonce += 1
     }
@@ -445,7 +540,7 @@ pub enum ChainSupported {
     Polkadot,
     Ethereum,
     Bnb,
-    Solana
+    Solana,
 }
 
 impl Default for ChainSupported {
@@ -623,28 +718,28 @@ pub struct SavedPeerInfo {
 pub struct StorageExport {
     /// User account information (multi-address and associated chain accounts)
     pub user_account: Option<UserAccount>,
-    
+
     /// Current nonce value for transaction ordering
     pub nonce: u32,
-    
+
     /// All successful transactions
     pub success_transactions: Vec<DbTxStateMachine>,
-    
+
     /// All failed transactions  
     pub failed_transactions: Vec<DbTxStateMachine>,
-    
+
     /// Total value of all successful transactions (in wei/smallest unit)
     pub total_value_success: u64,
-    
+
     /// Total value of all failed transactions (in wei/smallest unit)
     pub total_value_failed: u64,
-    
+
     /// Multiple saved peers, each with their own account IDs
     /// Example with 2 separate peers, each having 2 addresses:
     /// [
-    ///   { peer_id: "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1", 
+    ///   { peer_id: "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1",
     ///     account_ids: ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"] },
-    ///   { peer_id: "/ip4/192.168.1.100/tcp/8080/p2p/12D3KooWPeer2", 
+    ///   { peer_id: "/ip4/192.168.1.100/tcp/8080/p2p/12D3KooWPeer2",
     ///     account_ids: ["0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", "0x90F79bf6EB2c4f870365E785982E1f101E45bF15"] }
     /// ]
     pub all_saved_peers: Vec<SavedPeerInfo>,

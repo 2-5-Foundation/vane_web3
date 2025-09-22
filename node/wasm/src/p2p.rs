@@ -561,6 +561,9 @@ impl WasmP2pWorker {
                                     swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial; {err:?}"));
                                 }
                             },
+                            Some(NetworkCommand::Close {peer_id}) => {
+                                swarm.disconnect_peer_id(peer_id).map_err(|err|anyhow!("failed to disconnect peer: {err:?}"));
+                            },
                             Some(NetworkCommand::AddDhtAccount {account_id,value}) => {
                                 // NO ACTUAL DHT FOR NOW
 

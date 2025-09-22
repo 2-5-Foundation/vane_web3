@@ -30,10 +30,9 @@ use crate::{
 };
 
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, Token, TxStateMachine,
-    TxStatus, UserAccount, UserMetrics, SavedPeerInfo, StorageExport,
+    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, SavedPeerInfo, StorageExport,
+    Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
 };
-
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -174,7 +173,7 @@ impl PublicInterfaceWorker {
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             info!("propagated initiated transaction to tx handling layer")
         } else {
-            error!("sender and receiver should be correct accounts for the specified token: sender:{:?}, receiver:{:?}, token:{:?}, network:{:?}", sender, receiver, token, network);  
+            error!("sender and receiver should be correct accounts for the specified token: sender:{:?}, receiver:{:?}, token:{:?}, network:{:?}", sender, receiver, token, network);
         }
         Ok(())
     }
@@ -211,15 +210,15 @@ impl PublicInterfaceWorker {
     /// The background watcher will be started automatically if it's not already running.
     pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
         let callback = callback.clone();
-        
+
         // Add the callback to our list
         self.tx_callbacks.borrow_mut().push(callback);
-        
+
         // Start the background watcher if it's not already running
         if !*self.watcher_active.borrow() {
             self.start_background_watcher().await?;
         }
-        
+
         Ok(())
     }
 
@@ -235,20 +234,20 @@ impl PublicInterfaceWorker {
         let receiver_channel = self.rpc_receiver_channel.clone();
         let callbacks = self.tx_callbacks.clone();
         let watcher_active = self.watcher_active.clone();
-        
+
         // Spawn a single background task to continuously poll for transaction updates
         wasm_bindgen_futures::spawn_local(async move {
             let mut receiver = receiver_channel.borrow_mut();
-            
+
             loop {
                 match receiver.recv().await {
                     Some(tx_update) => {
                         debug!("watch_tx_updates: {:?}", tx_update);
-                        
+
                         // Convert transaction to JS value
                         let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
                             .unwrap_or_else(|_| JsValue::NULL);
-                        
+
                         // Call all registered callbacks
                         let callbacks_guard = callbacks.borrow();
                         for callback in callbacks_guard.iter() {
@@ -264,7 +263,7 @@ impl PublicInterfaceWorker {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -313,16 +312,37 @@ impl PublicInterfaceWorker {
         }
     }
 
-    pub async fn revert_transaction(&self, tx: JsValue) -> Result<(), JsError> {
+    pub async fn revert_transaction(
+        &self,
+        tx: JsValue,
+        reason: Option<String>,
+    ) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
-        
+
         match tx.status {
             TxStatus::Reverted(ref reason) => {
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
-                sender.send(tx).await.map_err(|_| anyhow!("failed to send revert transaction tx state to sender channel")).map_err(|e| JsError::new(&format!("{:?}", e)))?;
-                Ok(())            }
+                sender
+                    .send(tx)
+                    .await
+                    .map_err(|_| {
+                        anyhow!("failed to send revert transaction tx state to sender channel")
+                    })
+                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+                Ok(())
+            }
             _ => {
-                Err(anyhow!("Transaction is not in reverted state")).map_err(|e| JsError::new(&format!("{:?}", e)))
+                tx.status =
+                    TxStatus::Reverted(reason.unwrap_or("Intended receiver not met".to_string()));
+                let sender = self.user_rpc_update_sender_channel.borrow_mut();
+                sender
+                    .send(tx)
+                    .await
+                    .map_err(|_| {
+                        anyhow!("failed to send revert transaction tx state to sender channel")
+                    })
+                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+                Ok(())
             }
         }
     }
@@ -336,17 +356,18 @@ impl PublicInterfaceWorker {
         let failed_transactions = self.db_worker.get_failed_txs().await.unwrap_or_default();
         let total_value_success = self.db_worker.get_total_value_success().await.unwrap_or(0);
         let total_value_failed = self.db_worker.get_total_value_failed().await.unwrap_or(0);
-        
+
         // Get saved peers and convert to SavedPeerInfo format
-        let all_saved_peers = if let Ok((account_ids, peer_multiaddr)) = self.db_worker.get_all_saved_peers().await {
-            vec![SavedPeerInfo {
-                peer_id: peer_multiaddr,
-                account_ids,
-            }]
-        } else {
-            Vec::new()
-        };
-        
+        let all_saved_peers =
+            if let Ok((account_ids, peer_multiaddr)) = self.db_worker.get_all_saved_peers().await {
+                vec![SavedPeerInfo {
+                    peer_id: peer_multiaddr,
+                    account_ids,
+                }]
+            } else {
+                Vec::new()
+            };
+
         // Create the export structure
         let storage_export = StorageExport {
             user_account,
@@ -357,7 +378,7 @@ impl PublicInterfaceWorker {
             total_value_failed,
             all_saved_peers,
         };
-        
+
         // Convert to JSON and return as JsValue
         serde_wasm_bindgen::to_value(&storage_export)
             .map_err(|e| JsError::new(&format!("Failed to serialize storage data: {}", e)))
@@ -465,8 +486,12 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "revertTransaction")]
-    pub async fn revert_transaction(&self, tx: JsValue) -> Result<(), JsError> {
-        self.inner.borrow().revert_transaction(tx).await?;
+    pub async fn revert_transaction(
+        &self,
+        tx: JsValue,
+        reason: Option<String>,
+    ) -> Result<(), JsError> {
+        self.inner.borrow().revert_transaction(tx, reason).await?;
         Ok(())
     }
 

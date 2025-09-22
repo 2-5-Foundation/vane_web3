@@ -10,6 +10,7 @@ export enum NODE_EVENTS {
   NODE_READY = 'node_ready',
   PEER_CONNECTED = 'peer_connected',
   PEER_DISCONNECTED = 'Connection closed with peer',
+  PEER_DISCONNECTED_MALICIOUS_NODE = 'peer disconnected',
   P2P_SENT_TO_EVENT = 'response sent to', // this can be used to indicate the receiver node that your job is done after sending a reposne
   RESERVATION_ACCEPTED = 'reservation_accepted',
   LISTENING_ESTABLISHED = 'listening_established',
@@ -23,7 +24,7 @@ export enum NODE_EVENTS {
   RECEIVER_CONFIRMED = 'receiver confirmation passed',
   SENDER_RECEIVED_RESPONSE = 'propagating txn msg as response',
   RECEIVER_CONFIRMATION_FAILED = 'receiver confirmation failed',
-  RECEIVER_NOT_REGISTERED = 'DHT returned no address',
+  RECEIVER_NOT_REGISTERED = 'DHT: receiver did not register',
   SENDER_CONFIRMATION_FAILED = 'non original sender signed',
   TRANSACTION_SUCCESS = 'tx submission passed',
   TRANSACTION_FAILED = 'tx submission failed',
@@ -189,7 +190,11 @@ export class NodeCoordinator {
       this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, { log });
     } else if (log.message.includes('tx submission passed')) {
       this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, { log });
-    } else if (log.message.includes('DHT returned no address')) {
+    } else if (
+      log.message.includes('DHT returned no address') ||
+      log.message.includes('DHT: receiver did not register') ||
+      log.message.toLowerCase().includes('receiver not registered')
+    ) {
       this.emitEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, { log });
     } else if (log.message.includes('error')) {
       this.emitEvent(NODE_EVENTS.ERROR, { log });

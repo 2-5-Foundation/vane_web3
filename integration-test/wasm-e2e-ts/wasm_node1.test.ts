@@ -39,6 +39,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     walletClient = getWallets()[0][0] as TestClient & WalletActions & PublicActions;
     privkey = getWallets()[0][1];
     wasm_client_address = walletClient.account!.address;
+    console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     // Init WASM + logging
     await init();
@@ -67,7 +68,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
-    console.log(" \n \n TEST CASE: should successfully initiate and confirm a transaction and submit it to the network");
+    console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
@@ -83,47 +84,45 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
       console.log('👂 SENDER_RECEIVED_RESPONSE');
-      await wasmNodeInstance.promise.then((vaneWasm: PublicInterfaceWorkerJs | null) => {
-        return vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-            
-            // Skip if we already have a signature
-            if (tx.signedCallPayload) {
-              return;
-            }
-            
-            // Only process when receiver has confirmed
-            const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-                                  (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
-            
-            if (!isRecvConfirmed) {
-              return;
-            }
-            
-            console.log("Processing - receiver confirmed, signing transaction");
+      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+        const txUpdates: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+        const tx = txUpdates[0]; // latest tx
+         // Skip if we already have a signature
+         if (tx.signedCallPayload) {
+          return;
+        }
+        
+        // Only process when receiver has confirmed
+        const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+                              (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+        
+        if (!isRecvConfirmed) {
+          return;
+        }
+        
+        console.log("Processing - receiver confirmed, signing transaction");
 
-            if (!walletClient) throw new Error('walletClient not initialized');
-            if (!walletClient.account) throw new Error('walletClient account not available');
-            if (!tx.callPayload) {
-              throw new Error('No call payload found');
-            }
-            if (!tx.ethUnsignedTxFields) {
-              throw new Error('No unsigned transaction fields found');
-            }
+        if (!walletClient) throw new Error('walletClient not initialized');
+        if (!walletClient.account) throw new Error('walletClient account not available');
+        if (!tx.callPayload) {
+          throw new Error('No call payload found');
+        }
+        if (!tx.ethUnsignedTxFields) {
+          throw new Error('No unsigned transaction fields found');
+        }
 
-            const account = walletClient.account!;
-            if (!account.signMessage) {
-              throw new Error('Account signMessage function not available');
-            }
-            const [txHash, txBytes] = tx.callPayload!;
-            const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
-            
-            const txManager = new TxStateMachineManager(tx);
-            txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-            const updatedTx = txManager.getTx();
-            console.log('🔑 TX UPDATED');
-            await vaneWasm?.senderConfirm(updatedTx);
-
-        });
+        const account = walletClient.account!;
+        if (!account.signMessage) {
+          throw new Error('Account signMessage function not available');
+        }
+        const [txHash, txBytes] = tx.callPayload!;
+        const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+        
+        const txManager = new TxStateMachineManager(tx);
+        txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+        const updatedTx = txManager.getTx();
+        console.log('🔑 TX UPDATED', updatedTx.status);
+        await vaneWasm?.senderConfirm(updatedTx);
       });
     },120000);
 
@@ -186,7 +185,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test("should notify if the receiver is not registered", async () => {
-    console.log(" \n \n TEST CASE: should notify if the receiver is not registered");
+    console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
@@ -201,10 +200,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
       console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
       await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-        // await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-        //   expect(tx.status).toHaveProperty('ReceiverNotRegistered');
-        //   console.log('🔑 asserted receiver not registered', tx.status);
-        // });
+
         const tx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
         expect(tx).toBeDefined();
         expect(tx[0].status).toBe('ReceiverNotRegistered');
@@ -214,8 +210,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       
   });
 
-  test("should succesfully revert and cancel transaction if wrong address is confirmed by receiver", async () => {
-    console.log(" \n \n TEST CASE: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
+  test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
+    console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
     const _intendedReceiverAddress = receiver_client_address;
      await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
@@ -228,41 +224,57 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       );
     });
 
-    // await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
-    //   console.log('👂 SENDER_RECEIVED_RESPONSE');
-    //   await wasmNodeInstance.promise.then((vaneWasm: PublicInterfaceWorkerJs | null) => {
-    //     return vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-            
-    //         // Skip if we already have a signature
-    //         if (tx.signedCallPayload) {
-    //           return;
-    //         }
-            
-    //         // Only process when receiver has confirmed
-    //         const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-    //                               (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
-            
-    //         if (!isRecvConfirmed) {
-    //           return;
-    //         }
-            
-    //         console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
-    //         // check if the transaction is reverted
-    //         if (tx.status.type === 'Reverted') {
-    //           await vaneWasm?.revertTransaction(tx);
-    //         }else{
-    //           let txManager = new TxStateMachineManager(tx);
-    //           txManager.setRevertedReason("Intended receiver not met");
-    //           const updatedTx = txManager.getTx();
-    //           await vaneWasm?.revertTransaction(updatedTx);
-    //         }
+    await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
+      console.log('👂 SENDER_RECEIVED_RESPONSE');
+      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+        const txUpdates: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+        const latestTx = txUpdates[0]; 
+        if (latestTx.codeWord !== 'Wrong') {
+          return;
+        }
+        console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
+        console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
+        // check if the transaction is reverted
+        if (latestTx.status.type === 'Reverted') {
+            await vaneWasm?.revertTransaction(latestTx);
+        }else{
+          // revert the transaction with a reason
+          await vaneWasm?.revertTransaction(latestTx, "Intended receiver not met");
+        }
+        
+      });
+    },60000);
 
-    //     });
-    //   });
-    // },60000);
+    
+    await new Promise(resolve => setTimeout(resolve, 12000));
 
-    await new Promise(resolve => setTimeout(resolve, 60000));
-
+    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      const latestTx = tx[0];
+      if(latestTx.codeWord === 'Wrong'){
+        if (latestTx.status.type === 'Reverted') {
+          await vaneWasm?.revertTransaction(latestTx);
+        }else{
+          let txManager = new TxStateMachineManager(latestTx);
+          txManager.setRevertedReason("Intended receiver not met");
+          const updatedTx = txManager.getTx();
+          await vaneWasm?.revertTransaction(updatedTx);
+        }
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      const latestTx = tx[0];
+      const s = latestTx.status as any;
+      const isReverted =
+        (typeof s === 'string' && s === 'Reverted') ||
+        (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
+      expect(isReverted).toBe(true);
+    });
+  
   });
 
   test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
@@ -286,6 +298,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   });
 
   test("should successfully handle fees conversion via intents", async () => {
+    
+  });
+
+  test("should be able to collect fees from different chains based on transactions", async () => {
     
   });
 

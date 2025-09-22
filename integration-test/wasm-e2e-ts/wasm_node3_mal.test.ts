@@ -31,6 +31,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     walletClient = getWallets()[2][0];
     privkey = getWallets()[2][1];
     wasm_client_address = walletClient!.account!.address;
+    console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     try {
         await init();
@@ -59,6 +60,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
   it("it should receive a transaction and confirm it successfully",async() => {
     console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (MALICIOUS_NODE)");
+    const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    
     await nodeCoordinator.waitForEvent(
         NODE_EVENTS.TRANSACTION_RECEIVED,
         async () => {
@@ -82,11 +85,20 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
            expect(receivedTx.length).toBeGreaterThan(0);
          });
        },
-        60000
+        150000
       );
 
-    // await new Promise(resolve => setTimeout(resolve, 60000));
-
+      // wait for disconnect event
+      await nodeCoordinator.waitForEvent(
+        NODE_EVENTS.PEER_DISCONNECTED,
+        async () => { 
+          console.log('👂 PEER_DISCONNECTED ON MALICIOUS_NODE'); 
+          const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+          const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
+          expect(balanceChange).toEqual(0);
+        },
+        30000
+      );
   })
 
   afterAll(() => {
