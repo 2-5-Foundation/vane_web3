@@ -108,7 +108,7 @@ impl PublicInterfaceWorker {
         token: String,
         network: String,
         code_word: String,
-    ) -> Result<(), JsError> {
+    ) -> Result<JsValue, JsError> {
         info!("initiated sending transaction: receiver: {}, amount: {}, token: {}, network: {}, code_word: {}", receiver, amount, token, network, code_word);
         let token = token.as_str().into();
 
@@ -172,11 +172,14 @@ impl PublicInterfaceWorker {
                 .await
                 .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-            info!("propagated initiated transaction to tx handling layer")
+            info!("propagated initiated transaction to tx handling layer");
+            // Return the constructed tx to JS so callers can keep a handle
+            return serde_wasm_bindgen::to_value(&tx_state_machine)
+                .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)));
         } else {
             error!("sender and receiver should be correct accounts for the specified token: sender:{:?}, receiver:{:?}, token:{:?}, network:{:?}", sender, receiver, token, network);
+            return Err(JsError::new("Invalid sender/receiver for specified token/network"));
         }
-        Ok(())
     }
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
@@ -324,11 +327,18 @@ impl PublicInterfaceWorker {
         tx: JsValue,
         reason: Option<String>,
     ) -> Result<(), JsError> {
+        if tx.is_null() || tx.is_undefined() {
+            return Err(JsError::new("revertTransaction: missing TxStateMachine (got null/undefined)"));
+        }
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
 
         match tx.status {
             TxStatus::Reverted(ref reason) => {
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
+                // Immediately reflect in local cache for UI/state reads
+                self.lru_cache
+                    .borrow_mut()
+                    .push(tx.tx_nonce.into(), tx.clone());
                 sender
                     .send(tx)
                     .await
@@ -341,6 +351,10 @@ impl PublicInterfaceWorker {
             _ => {
                 tx.status =
                     TxStatus::Reverted(reason.unwrap_or("Intended receiver not met".to_string()));
+                // Immediately reflect in local cache for UI/state reads
+                self.lru_cache
+                    .borrow_mut()
+                    .push(tx.tx_nonce.into(), tx.clone());
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
                 sender
                     .send(tx)
@@ -423,6 +437,43 @@ impl PublicInterfaceWorker {
         serde_wasm_bindgen::to_value(&user_metrics)
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
+
+    // Cache maintenance
+    pub fn clear_reverted_from_cache(&self) {
+        let keys: Vec<u64> = self
+            .lru_cache
+            .borrow()
+            .iter()
+            .filter_map(|(k, v)| match v.status {
+                TxStatus::Reverted(_) => Some(*k),
+                _ => None,
+            })
+            .collect();
+
+        let mut cache = self.lru_cache.borrow_mut();
+        for key in keys {
+            let _ = cache.pop(&key);
+        }
+        info!("Cleared reverted transactions from cache");
+    }
+
+    pub fn clear_finalized_from_cache(&self) {
+        let keys: Vec<u64> = self
+            .lru_cache
+            .borrow()
+            .iter()
+            .filter_map(|(k, v)| match v.status {
+                TxStatus::Reverted(_) | TxStatus::TxSubmissionPassed(_) => Some(*k),
+                _ => None,
+            })
+            .collect();
+
+        let mut cache = self.lru_cache.borrow_mut();
+        for key in keys {
+            let _ = cache.pop(&key);
+        }
+        info!("Cleared finalized (reverted/submitted) transactions from cache");
+    }
 }
 
 // =================== The interface =================== //
@@ -455,12 +506,11 @@ impl PublicInterfaceWorkerJs {
         token: String,
         network: String,
         code_word: String,
-    ) -> Result<(), JsError> {
+    ) -> Result<JsValue, JsError> {
         self.inner
             .borrow()
             .initiate_transaction(sender, receiver, amount, token, network, code_word)
-            .await?;
-        Ok(())
+            .await
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]
@@ -512,5 +562,15 @@ impl PublicInterfaceWorkerJs {
     pub async fn get_metrics(&self) -> Result<JsValue, JsError> {
         let metrics = self.inner.borrow().get_user_metrics().await?;
         Ok(metrics)
+    }
+
+    #[wasm_bindgen(js_name = "clearRevertedFromCache")]
+    pub fn clear_reverted_from_cache(&self) {
+        self.inner.borrow().clear_reverted_from_cache();
+    }
+
+    #[wasm_bindgen(js_name = "clearFinalizedFromCache")]
+    pub fn clear_finalized_from_cache(&self) {
+        self.inner.borrow().clear_finalized_from_cache();
     }
 }

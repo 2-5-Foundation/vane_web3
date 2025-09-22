@@ -301,36 +301,41 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   test("should be able to successfully revert even when wrong address is selected by sender", async () => {
     console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
-    await wasmNodeInstance.promise.then((vaneWasm: any) => {
-      return vaneWasm?.initiateTransaction(
+    
+    const vaneWasm = await wasmNodeInstance.promise as PublicInterfaceWorkerJs | null;
+    if (!vaneWasm) throw new Error('WASM node not started');
+
+    let returnedTx: TxStateMachine;
+    try {
+      returnedTx = await vaneWasm.initiateTransaction(
         wasm_client_address,
         wrong_receiver_client_address,
         BigInt(10),
         'Eth',
         'Ethereum',
         'mistaken'
-      );
-    });
+      ) as unknown as TxStateMachine;
+    } catch (e) {
+      console.error('initiateTransaction failed', e);
+      throw e;
+    }
 
-    // immediately revert the transaction
-    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+    await vaneWasm.revertTransaction(returnedTx, "Changed my mind");
+
+    await wasmNodeInstance.promise.then(async (v: PublicInterfaceWorkerJs | null) => {
+      const tx:TxStateMachine[] = await v?.fetchPendingTxUpdates();
       expect(tx).toBeDefined();
       const latestTx = tx[0];
-      await vaneWasm?.revertTransaction(latestTx, "Intended receiver not met");
-    });
-
-    // wait briefly and assert it's reverted and remains in cache for viewing
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-      expect(tx).toBeDefined();
-      const latestTx = tx[0];
-      const s = latestTx.status as any;
-      const isReverted =
-        (typeof s === 'string' && s === 'Reverted') ||
-        (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
-      expect(isReverted).toBe(true);
+       const s = latestTx.status as any;
+       const isReverted =
+         (typeof s === 'string' && s === 'Reverted') ||
+         (typeof s === 'object' && ('Reverted' in s));
+       expect(isReverted).toBe(true);
+       if (typeof s === 'object' && ('Reverted' in s)) {
+         expect(s.Reverted).toBe('Changed my mind');
+       }
+       expect(latestTx.codeWord).toBe('mistaken');
+       console.log("asserted reverted transaction, midway");
     });
   });
 
