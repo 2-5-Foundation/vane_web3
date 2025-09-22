@@ -212,6 +212,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
     console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
+    const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
     const _intendedReceiverAddress = receiver_client_address;
      await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
@@ -273,15 +274,46 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         (typeof s === 'string' && s === 'Reverted') ||
         (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
       expect(isReverted).toBe(true);
+      
     });
+    const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
+    expect(balanceChange).toEqual(0);
+    // assert storage updates
+    const storage:StorageExport = await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      return await vaneWasm?.exportStorage();
+    });
+    const storageManager = new StorageExportManager(storage);
+    const metrics = storageManager.getSummary();
+    console.log('🔑 STORAGE METRICS', metrics);
+    expect(metrics.totalTransactions).toEqual(2);
+    expect(metrics.successfulTransactions).toEqual(1);
+    expect(metrics.failedTransactions).toEqual(1);
+    expect(metrics.successRate).toEqual('50.00%');
+    expect(metrics.totalValueSuccess).toEqual(10);
+    expect(metrics.totalValueFailed).toEqual(10);
+    expect(metrics.peersCount).toEqual(1);
+    expect(metrics.accountsCount).toEqual(1);
+    expect(metrics.currentNonce).toEqual(3);
+    // assert metrics
   
   });
 
-  test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
-    
+  test("should be able to successfully revert even when wrong address is selected by sender", async () => {
+    console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
+    // await wasmNodeInstance.promise.then((vaneWasm: any) => {
+    //   return vaneWasm?.initiateTransaction(
+    //     wasm_client_address,
+    //     wrong_receiver_client_address,
+    //     BigInt(10),
+    //     'Eth',
+    //     'Ethereum',
+    //     'mistaken'
+    //   );
+    // });
   });
 
-  test("should be able to successfully revert even when wrong address is selected by sender", async () => {
+  test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
     
   });
 
