@@ -317,6 +317,9 @@ pub struct TxStateMachine {
     /// stores the current nonce of the transaction per vane not the nonce for the blockchain network
     #[serde(rename = "txNonce")]
     pub tx_nonce: u32,
+    /// monotonic version for conflict/race resolution across async boundaries
+    #[serde(rename = "txVersion")]
+    pub tx_version: u32,
     /// unsigned transaction fields for EIP-1559 transactions
     #[serde(rename = "ethUnsignedTxFields")]
     pub eth_unsigned_tx_fields: Option<UnsignedEip1559>,
@@ -332,6 +335,7 @@ impl TxStateMachine {
 }
 
 impl TxStateMachine {
+    pub fn increment_version(&mut self) { self.tx_version = self.tx_version.saturating_add(1); }
     pub fn recv_confirmation_passed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmationPassed
     }

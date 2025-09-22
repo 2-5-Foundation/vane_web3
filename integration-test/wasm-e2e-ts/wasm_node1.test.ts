@@ -301,16 +301,37 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   test("should be able to successfully revert even when wrong address is selected by sender", async () => {
     console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
-    // await wasmNodeInstance.promise.then((vaneWasm: any) => {
-    //   return vaneWasm?.initiateTransaction(
-    //     wasm_client_address,
-    //     wrong_receiver_client_address,
-    //     BigInt(10),
-    //     'Eth',
-    //     'Ethereum',
-    //     'mistaken'
-    //   );
-    // });
+    await wasmNodeInstance.promise.then((vaneWasm: any) => {
+      return vaneWasm?.initiateTransaction(
+        wasm_client_address,
+        wrong_receiver_client_address,
+        BigInt(10),
+        'Eth',
+        'Ethereum',
+        'mistaken'
+      );
+    });
+
+    // immediately revert the transaction
+    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      const latestTx = tx[0];
+      await vaneWasm?.revertTransaction(latestTx, "Intended receiver not met");
+    });
+
+    // wait briefly and assert it's reverted and remains in cache for viewing
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
+      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      const latestTx = tx[0];
+      const s = latestTx.status as any;
+      const isReverted =
+        (typeof s === 'string' && s === 'Reverted') ||
+        (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
+      expect(isReverted).toBe(true);
+    });
   });
 
   test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {

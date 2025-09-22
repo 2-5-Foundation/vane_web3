@@ -109,7 +109,7 @@ impl PublicInterfaceWorker {
         network: String,
         code_word: String,
     ) -> Result<(), JsError> {
-        info!("initiated sending transaction");
+        info!("initiated sending transaction: receiver: {}, amount: {}, token: {}, network: {}, code_word: {}", receiver, amount, token, network, code_word);
         let token = token.as_str().into();
 
         let network = network.as_str().into();
@@ -155,6 +155,7 @@ impl PublicInterfaceWorker {
                 inbound_req_id: None,
                 outbound_req_id: None,
                 tx_nonce: nonce,
+                tx_version: 0,
                 token,
                 code_word,
                 eth_unsigned_tx_fields: None,
@@ -181,6 +182,8 @@ impl PublicInterfaceWorker {
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
+        // Guard: ignore if already reverted
+        if let TxStatus::Reverted(_) = tx.status { return Ok(()); }
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
@@ -194,6 +197,7 @@ impl PublicInterfaceWorker {
             // TODO
             // update the TxStatus to TxStatus::SenderConfirmed
             tx.sender_confirmation();
+            tx.increment_version();
             let sender = sender_channel.clone();
             sender
                 .send(tx)
@@ -290,6 +294,8 @@ impl PublicInterfaceWorker {
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
+        // Guard: ignore if already reverted
+        if let TxStatus::Reverted(_) = tx.status { return Ok(()); }
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))
@@ -301,6 +307,7 @@ impl PublicInterfaceWorker {
             // TODO
             // tx status to TxStatus::RecvAddrConfirmed
             tx.recv_confirmed();
+            tx.increment_version();
             let sender = sender_channel.clone();
             sender
                 .send(tx)

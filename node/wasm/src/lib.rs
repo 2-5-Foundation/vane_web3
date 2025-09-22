@@ -229,11 +229,25 @@ impl WasmMainServiceWorker {
                     let outbound_req_id = outbound_id.get_hash_id();
                     decoded_resp.outbound_req_id = Some(outbound_req_id);
 
+                    // Drop updates if already reverted in cache (authoritative sender state)
+                    if let Some(existing) = self.lru_cache.borrow().peek(&decoded_resp.tx_nonce.into()).cloned() {
+                        if let TxStatus::Reverted(_) = existing.status {
+                            warn!(target: "MainServiceWorker", "ignoring inbound response for reverted tx: {}", decoded_resp.tx_nonce);
+                            return Ok(());
+                        }
+                        // Version gating: ignore stale updates
+                        if decoded_resp.tx_version < existing.tx_version {
+                            warn!(target: "MainServiceWorker", "ignoring stale inbound response (version {}) < (local {})", decoded_resp.tx_version, existing.tx_version);
+                            return Ok(());
+                        }
+                    }
+
                     match txn_processing_worker
                         .validate_receiver_sender_address(&decoded_resp, "Receiver")
                     {
                         Ok(_) => {
                             decoded_resp.recv_confirmation_passed();
+                            decoded_resp.increment_version();
                             info!(target: "MainServiceWorker", "receiver confirmation passed");
 
                             let mut tx_processing = self.wasm_tx_processing_worker.borrow_mut();
@@ -247,6 +261,7 @@ impl WasmMainServiceWorker {
                         }
                         Err(err) => {
                             decoded_resp.recv_confirmation_failed();
+                            decoded_resp.increment_version();
                             error!(target: "MainServiceWorker",
                                   "receiver confirmation failed: {err}");
 
@@ -556,7 +571,7 @@ impl WasmMainServiceWorker {
         let txn_inner = txn.borrow().clone();
         info!(target: "MainServiceWorker", "handle_reverted_tx_state called for tx: {:?}, status: {:?}", txn_inner.tx_nonce, txn_inner.status);
 
-        // diconnect the peer
+        // disconnect the peer if known (skip DHT dial on revert)
         // fetch the peerId from db
         let multi_addr: Multiaddr = if let Ok(multi_addr) = self
             .db_worker
@@ -565,21 +580,33 @@ impl WasmMainServiceWorker {
         {
             Multiaddr::try_from(multi_addr)?
         } else {
+            // Best-effort: fetch via DHT with a short timeout to disconnect cleanly
             let dht = host_get_dht(txn_inner.receiver_address.clone()).fuse();
-            let timeout = TimeoutFuture::new(20_000).fuse();
+            let timeout = TimeoutFuture::new(3_000).fuse();
             futures::pin_mut!(dht, timeout);
 
-            match future::select(dht, timeout).await {
-                future::Either::Left((Ok(resp), _)) => match resp.value {
-                    Some(value) => Multiaddr::try_from(value)?,
-                    None => return Err(anyhow::anyhow!("dht returned no value for the key: {}", txn_inner.receiver_address.clone())),
-                },
+            let addr_opt: Option<String> = match future::select(dht, timeout).await {
+                future::Either::Left((Ok(resp), _)) => resp.value,
                 future::Either::Right((_elapsed, _)) => {
-                    return Err(anyhow::anyhow!("dht timed out"));
+                    warn!(target:"MainServiceWorker","revert: DHT lookup timed out for {}", txn_inner.receiver_address);
+                    None
                 }
                 future::Either::Left((Err(e), _)) => {
-                    return Err(anyhow::anyhow!("dht internal error: {e:?}"));
+                    warn!(target:"MainServiceWorker","revert: DHT lookup error for {}: {:?}", txn_inner.receiver_address, e);
+                    None
                 }
+            };
+
+            if let Some(addr) = addr_opt {
+                match Multiaddr::try_from(addr) {
+                    Ok(ma) => ma,
+                    Err(e) => {
+                        warn!(target:"MainServiceWorker","revert: invalid multiaddr from DHT: {:?}", e);
+                        return Ok(());
+                    }
+                }
+            } else {
+                return Ok(());
             }
         };
 
