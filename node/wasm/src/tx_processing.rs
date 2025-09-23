@@ -71,7 +71,7 @@ impl WasmTxProcessingWorker {
         })
     }
 
-    pub fn validate_receiver_sender_address(
+    pub fn validate_receiver_and_sender_address(
         &self,
         tx: &TxStateMachine,
         who: &str,
@@ -79,7 +79,7 @@ impl WasmTxProcessingWorker {
         let (network, signature, msg, address) = if who == "Receiver" {
             info!(target: "WasmTxProcessingWorker", "receiver address verification");
 
-            let network = tx.network;
+            let network = tx.receiver_address_network;
             let signature = tx
                 .clone()
                 .recv_signature
@@ -92,7 +92,7 @@ impl WasmTxProcessingWorker {
         } else {
             info!(target: "WasmTxProcessingWorker", "sender address verification");
             // who == Sender
-            let network = tx.network;
+            let network = tx.sender_address_network;
             let signature = tx
                 .clone()
                 .signed_call_payload

@@ -59,8 +59,6 @@ export interface TxStateMachine {
     multiId: number[]; // [u8; 32] in Rust -> number[] in TS
     /** Signature of the receiver id */
     recvSignature?: Uint8Array;
-    /** Chain network */
-    network: ChainSupported;
     /** Token type */
     token: Token;
     /** State Machine status */
@@ -79,8 +77,14 @@ export interface TxStateMachine {
     outboundReqId?: number; // Option<u64> in Rust -> number | undefined in TS
     /** Stores the current nonce of the transaction per vane not the nonce for the blockchain network */
     txNonce: number; // u32 in Rust -> number in TS
+    /** Monotonic version for conflict/race resolution across async boundaries */
+    txVersion: number; // u32 in Rust -> number in TS
     /** Unsigned transaction fields for EIP-1559 transactions */
     ethUnsignedTxFields?: UnsignedEip1559 | null;
+    /** Sender address network */
+    senderAddressNetwork: ChainSupported;
+    /** Receiver address network */
+    receiverAddressNetwork: ChainSupported;
 }
 
 export class TxStateMachineManager {
@@ -132,7 +136,8 @@ export class TxStateMachineManager {
     static create(
       senderAddress: string,
       receiverAddress: string,
-      network: ChainSupported,
+      senderNetwork: ChainSupported,
+      receiverNetwork: ChainSupported,
       token: Token,
       amount: bigint,
       codeWord: string
@@ -141,12 +146,14 @@ export class TxStateMachineManager {
         senderAddress,
         receiverAddress,
         multiId: [], // Generate hash of sender+receiver
-        network,
         token,
         status: {type: "Genesis"},
         amount,
         txNonce: 0,
-        codeWord
+        txVersion: 0,
+        codeWord,
+        senderAddressNetwork: senderNetwork,
+        receiverAddressNetwork: receiverNetwork
       });
     }
 }
@@ -174,12 +181,14 @@ export interface DbTxStateMachine {
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
     amount: bigint; // u128 in Rust -> bigint in TS
-    /** Blockchain network used */
-    network: ChainSupported;
     /** Sender address */
     sender: string;
     /** Receiver address */
     receiver: string;
+    /** Sender address network */
+    sender_network: ChainSupported;
+    /** Receiver address network */
+    receiver_network: ChainSupported;
     /** Whether the transaction was successful */
     success: boolean;
 }
@@ -267,25 +276,30 @@ export class StorageExportManager {
     }
 
     /**
-     * Get all unique networks from transactions
+     * Get all unique networks from transactions (both sender and receiver networks)
      */
     getNetworksUsed(): ChainSupported[] {
         const networks = new Set<ChainSupported>();
         [...this.storage.success_transactions, ...this.storage.failed_transactions]
-            .forEach(tx => networks.add(tx.network));
+            .forEach(tx => {
+                networks.add(tx.sender_network);
+                networks.add(tx.receiver_network);
+            });
         return Array.from(networks);
     }
 
     /**
-     * Get transactions by network
+     * Get transactions by network (matches either sender or receiver network)
      */
     getTransactionsByNetwork(network: ChainSupported): {
         successful: DbTxStateMachine[];
         failed: DbTxStateMachine[];
     } {
         return {
-            successful: this.storage.success_transactions.filter(tx => tx.network === network),
-            failed: this.storage.failed_transactions.filter(tx => tx.network === network),
+            successful: this.storage.success_transactions.filter(tx => 
+                tx.sender_network === network || tx.receiver_network === network),
+            failed: this.storage.failed_transactions.filter(tx => 
+                tx.sender_network === network || tx.receiver_network === network),
         };
     }
 

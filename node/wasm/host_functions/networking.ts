@@ -152,9 +152,9 @@ export const hostNetworking = {
   async submitTx(tx: TxStateMachine): Promise<Uint8Array> {
     console.log('Submitting transaction...');
     try {
-      const family = getChainFamily(tx.network);
+      const family = getChainFamily(tx.senderAddressNetwork);
       if (family === 'unknown') {
-        throw new Error(`Unsupported chain: ${tx.network}`);
+        throw new Error(`Unsupported chain: ${tx.senderAddressNetwork}`);
       }
       
       if (!tx.signedCallPayload) {
@@ -167,7 +167,7 @@ export const hostNetworking = {
       
       if (family === 'evm') {
         console.log('Submitting EVM transaction...');
-        const chainConfig = CHAIN_CONFIGS[tx.network as keyof typeof CHAIN_CONFIGS];
+        const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
         const publicClient = createPublicClient({
           chain: chainConfig.chain,
           transport: http(chainConfig.rpcUrl)
@@ -222,7 +222,7 @@ export const hostNetworking = {
       throw new Error(`Unhandled chain family: ${family}`);
       
     } catch (error) {
-      console.error(`Failed to submit transaction for ${tx.network}:`, error);
+      console.error(`Failed to submit transaction for ${tx.senderAddressNetwork}:`, error);
       throw error;
     }
   },
@@ -230,9 +230,9 @@ export const hostNetworking = {
   async createTx(tx: TxStateMachine): Promise<TxStateMachine> {
     
     try {
-      const family = getChainFamily(tx.network);
+      const family = getChainFamily(tx.senderAddressNetwork);
       if (family === 'unknown') {
-        throw new Error(`Unsupported chain: ${tx.network}`);
+        throw new Error(`Unsupported chain: ${tx.senderAddressNetwork}`);
       }
       
       if (family === 'evm') {
@@ -248,7 +248,7 @@ export const hostNetworking = {
       throw new Error(`Unhandled chain family: ${family}`);
 
     } catch (error) {
-      console.error(`Failed to create transaction for ${tx.network}:`, error);
+      console.error(`Failed to create transaction for ${tx.senderAddressNetwork}:`, error);
       throw error;
     }
   },
@@ -256,7 +256,7 @@ export const hostNetworking = {
 
 // ===== Family-specific createTx implementations =====
 export async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
-  const chainConfig = CHAIN_CONFIGS[tx.network as keyof typeof CHAIN_CONFIGS];
+  const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
   const publicClient = createPublicClient({ chain: chainConfig.chain, transport: http(chainConfig.rpcUrl) });
 
   const sender = tx.senderAddress as Address;
@@ -281,7 +281,7 @@ export async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
   }
 
   // NOTE: if you include BSC (often legacy), prefer building a legacy tx on that chain.
-  if (tx.network === ChainSupported.Bnb) {
+  if (tx.senderAddressNetwork === ChainSupported.Bnb) {
     // consider building a legacy tx instead of 1559 here.
     // (left out for brevity)
   }

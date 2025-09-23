@@ -99,6 +99,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         },
         30000
       );
+      
   })
 
   afterAll(() => {

@@ -58,7 +58,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   })
 
   it("it should receive a transaction and confirm it successfully",async() => {
-    console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
+    console.log(" \n \n TEST CASE 1: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
    
     await nodeCoordinator.waitForEvent(
@@ -85,6 +85,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
        },
         60000
       );
+
 
     await nodeCoordinator.waitForEvent(
       NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
