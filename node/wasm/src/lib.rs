@@ -243,7 +243,7 @@ impl WasmMainServiceWorker {
                     }
 
                     match txn_processing_worker
-                        .validate_receiver_sender_address(&decoded_resp, "Receiver")
+                        .validate_receiver_and_sender_address(&decoded_resp, "Receiver")
                     {
                         Ok(_) => {
                             decoded_resp.recv_confirmation_passed();
@@ -268,9 +268,10 @@ impl WasmMainServiceWorker {
                             let db_tx = DbTxStateMachine {
                                 tx_hash: vec![],
                                 amount: decoded_resp.amount.clone(),
-                                network: decoded_resp.network.clone(),
                                 sender: decoded_resp.sender_address.clone(),
                                 receiver: decoded_resp.receiver_address.clone(),
+                                sender_network: decoded_resp.sender_address_network.clone(),
+                                receiver_network: decoded_resp.receiver_address_network.clone(),
                                 success: false,
                             };
                             self.db_worker.update_failed_tx(db_tx).await?;
@@ -468,7 +469,7 @@ impl WasmMainServiceWorker {
         // verify sender
         self.wasm_tx_processing_worker
             .borrow()
-            .validate_receiver_sender_address(&txn_inner, "Sender")?;
+            .validate_receiver_and_sender_address(&txn_inner, "Sender")?;
         info!(target: "MainServiceWorker","sender confirmation passed");
         // verify multi id
         if self
@@ -494,9 +495,10 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: tx_hash.to_vec(),
                         amount: txn_inner.amount.clone(),
-                        network: txn_inner.network.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
+                        sender_network: txn_inner.sender_address_network.clone(),
+                        receiver_network: txn_inner.receiver_address_network.clone(),
                         success: true,
                     };
                     self.db_worker.update_success_tx(db_tx).await?;
@@ -529,9 +531,10 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: vec![],
                         amount: txn_inner.amount.clone(),
-                        network: txn_inner.network.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
+                        sender_network: txn_inner.sender_address_network.clone(),
+                        receiver_network: txn_inner.receiver_address_network.clone(),
                         success: false,
                     };
                     self.db_worker.update_failed_tx(db_tx).await?;
@@ -552,9 +555,10 @@ impl WasmMainServiceWorker {
             let db_tx = DbTxStateMachine {
                 tx_hash: vec![],
                 amount: txn_inner.amount.clone(),
-                network: txn_inner.network.clone(),
                 sender: txn_inner.sender_address.clone(),
                 receiver: txn_inner.receiver_address.clone(),
+                sender_network: txn_inner.sender_address_network.clone(),
+                receiver_network: txn_inner.receiver_address_network.clone(),
                 success: false,
             };
             self.db_worker.update_failed_tx(db_tx).await?;
@@ -627,9 +631,10 @@ impl WasmMainServiceWorker {
         let db_tx = DbTxStateMachine {
             tx_hash: vec![],
             amount: txn_inner.amount.clone(),
-            network: txn_inner.network.clone(),
             sender: txn_inner.sender_address.clone(),
             receiver: txn_inner.receiver_address.clone(),
+            sender_network: txn_inner.sender_address_network.clone(),
+            receiver_network: txn_inner.receiver_address_network.clone(),
             success: false,
         };
         self.db_worker.update_failed_tx(db_tx).await?;

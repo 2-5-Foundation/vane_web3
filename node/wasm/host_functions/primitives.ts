@@ -46,7 +46,9 @@ export interface TxStateMachine {
     receiverAddress: string;
     multiId: number[];
     recvSignature?: Uint8Array;
-    network: ChainSupported;
+    // Removed single network; now using per-address networks
+    senderAddressNetwork: ChainSupported;
+    receiverAddressNetwork: ChainSupported;
     token: string;
     status: TxStatus;
     amount: bigint; // For u128
@@ -55,6 +57,8 @@ export interface TxStateMachine {
     inboundReqId?: number; // u64
     outboundReqId?: number; // u64
     txNonce: number;
+    // optional: include version if available upstream; safe to omit in host fns usage
+    txVersion?: number;
     codeword: string;
     ethUnsignedTxFields?: UnsignedEip1559 | null;
 }
@@ -105,7 +109,8 @@ export class TxStateMachineManager {
     static create(
       senderAddress: string,
       receiverAddress: string,
-      network: ChainSupported,
+      senderNetwork: ChainSupported,
+      receiverNetwork: ChainSupported,
       token: string,
       amount: bigint,
       codeword: string
@@ -114,7 +119,8 @@ export class TxStateMachineManager {
         senderAddress,
         receiverAddress,
         multiId: [], // Generate hash of sender+receiver
-        network,
+        senderAddressNetwork: senderNetwork,
+        receiverAddressNetwork: receiverNetwork,
         token,
         status: {type: "Genesis"},
         amount,

@@ -77,8 +77,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         receiver_client_address,
         BigInt(10),
         'Eth',
+        'Maji',
         'Ethereum',
-        'Maji'
+        'Ethereum'
       );
     });
 
@@ -192,8 +193,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
         BigInt(10),
         'Eth',
+        'Maji',
         'Ethereum',
-        'Maji'
+        'Ethereum'
       );
     });
 
@@ -220,8 +222,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         wrong_receiver_client_address,
         BigInt(10),
         'Eth',
+        'Wrong',
         'Ethereum',
-        'Wrong'
+        'Ethereum'
       );
     });
 
@@ -312,8 +315,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         wrong_receiver_client_address,
         BigInt(10),
         'Eth',
+        'mistaken',
         'Ethereum',
-        'mistaken'
+        'Ethereum'
       ) as unknown as TxStateMachine;
     } catch (e) {
       console.error('initiateTransaction failed', e);
@@ -337,14 +341,12 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
        expect(latestTx.codeWord).toBe('mistaken');
        console.log("asserted reverted transaction, midway");
     });
+
   });
 
   test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
-    
-  });
-
-  test("should be able to successfully revert even when incorrect address is selected by sender", async () => {
-    
+    // i think this should be static test no need for recev end as the transaction wont even initiate
+    // and later on we can see the cross chain shenanigans
   });
 
   test("should successfully revert and cancel transaction if sender tries to wrongfully send cross chain transaction", async () => {

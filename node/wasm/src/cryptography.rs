@@ -56,4 +56,15 @@ pub mod vane_crypto {
             }
         }
     }
+
+    pub fn verify_route(
+        sender_network: ChainSupported,
+        receiver_network: ChainSupported,
+    ) -> Result<(), anyhow::Error> {
+        if sender_network == receiver_network {
+            Ok(())
+        } else {
+            Err(anyhow!("currently complex cross chain route not supported"))
+        }
+    }
 }

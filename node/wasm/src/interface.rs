@@ -25,7 +25,7 @@ use tokio_with_wasm::alias::sync::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    cryptography::verify_public_bytes,
+    cryptography::{verify_public_bytes, verify_route},
     p2p::{P2pNetworkService, WasmP2pWorker},
 };
 
@@ -106,80 +106,78 @@ impl PublicInterfaceWorker {
         receiver: String,
         amount: u128,
         token: String,
-        network: String,
         code_word: String,
+        sender_network: String,
+        receiver_network: String,
     ) -> Result<JsValue, JsError> {
-        info!("initiated sending transaction: receiver: {}, amount: {}, token: {}, network: {}, code_word: {}", receiver, amount, token, network, code_word);
+        info!("initiated sending transaction: receiver: {}, amount: {}, token: {}, sender_network: {}, receiver_network: {}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
         let token = token.as_str().into();
 
-        let network = network.as_str().into();
-        if let (Ok(net_sender), Ok(net_recv)) = (
-            verify_public_bytes(sender.as_str(), token, network),
-            verify_public_bytes(receiver.as_str(), token, network),
-        ) {
-            if net_sender != net_recv {
-                Err(anyhow!("sender and receiver should be same network"))
-                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-            }
+        let sender_network_chain: ChainSupported = sender_network.as_str().into();
+        let receiver_network_chain: ChainSupported = receiver_network.as_str().into();
+        
+       {
+            let sender_network = verify_public_bytes(sender.as_str(), token, sender_network_chain).map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
+            let receiver_network = verify_public_bytes(receiver.as_str(), token, receiver_network_chain).map_err(|e| JsError::new(&format!("receiver network error: {:?}", e)))?;
+            // add if the route is supported
+            verify_route(sender_network_chain.clone(), receiver_network_chain.clone()).map_err(|e| JsError::new(&format!("route error: {:?}", e)))?;
+       }
 
-            info!("successfully initially verified sender and receiver and related network bytes");
-            // construct the tx
-            let mut sender_recv = sender.as_bytes().to_vec();
-            sender_recv.extend_from_slice(receiver.as_bytes());
-            let multi_addr = blake2_256(&sender_recv[..]);
+        info!("successfully initially verified sender and receiver and related network bytes");
+        // construct the tx
+        let mut sender_recv = sender.as_bytes().to_vec();
+        sender_recv.extend_from_slice(receiver.as_bytes());
+        let multi_addr = blake2_256(&sender_recv[..]);
 
-            // failure to this should stop the node and not continue
-            let nonce = self
-                .db_worker
-                .get_nonce()
-                .await
-                .map_err(|e| JsError::new(&format!("{:?}", e)))?
-                + 1;
-            // update the db on nonce
-            // failure to this should stop the node and not continue
-            self.db_worker
-                .increment_nonce()
-                .await
-                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        // failure to this should stop the node and not continue
+        let nonce = self
+            .db_worker
+            .get_nonce()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?
+            + 1;
+        // update the db on nonce
+        // failure to this should stop the node and not continue
+        self.db_worker
+            .increment_nonce()
+            .await
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
-            let tx_state_machine = TxStateMachine {
-                sender_address: sender,
-                receiver_address: receiver,
-                multi_id: multi_addr,
-                recv_signature: None,
-                network: net_sender,
-                status: TxStatus::default(),
-                amount,
-                signed_call_payload: None,
-                call_payload: None,
-                inbound_req_id: None,
-                outbound_req_id: None,
-                tx_nonce: nonce,
-                tx_version: 0,
-                token,
-                code_word,
-                eth_unsigned_tx_fields: None,
-            };
+        let tx_state_machine = TxStateMachine {
+            sender_address: sender,
+            receiver_address: receiver,
+            multi_id: multi_addr,
+            recv_signature: None,
+            status: TxStatus::default(),
+            amount,
+            signed_call_payload: None,
+            call_payload: None,
+            inbound_req_id: None,
+            outbound_req_id: None,
+            tx_nonce: nonce,
+            tx_version: 0,
+            token,
+            code_word,
+            eth_unsigned_tx_fields: None,
+            sender_address_network: sender_network_chain,
+            receiver_address_network: receiver_network_chain,
+        };
 
-            // dry run the tx
+        // dry run the tx
 
-            // propagate the tx to lower layer (Main service worker layer)
-            let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
+        // propagate the tx to lower layer (Main service worker layer)
+        let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
 
-            let sender = sender_channel.clone();
-            sender
-                .send(tx_state_machine.clone())
-                .await
-                .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
-                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-            info!("propagated initiated transaction to tx handling layer");
-            // Return the constructed tx to JS so callers can keep a handle
-            return serde_wasm_bindgen::to_value(&tx_state_machine)
-                .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)));
-        } else {
-            error!("sender and receiver should be correct accounts for the specified token: sender:{:?}, receiver:{:?}, token:{:?}, network:{:?}", sender, receiver, token, network);
-            return Err(JsError::new("Invalid sender/receiver for specified token/network"));
-        }
+        let sender = sender_channel.clone();
+        sender
+            .send(tx_state_machine.clone())
+            .await
+            .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        info!("propagated initiated transaction to tx handling layer");
+        // Return the constructed tx to JS so callers can keep a handle
+        return serde_wasm_bindgen::to_value(&tx_state_machine)
+            .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)));
     }
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
@@ -504,12 +502,13 @@ impl PublicInterfaceWorkerJs {
         receiver: String,
         amount: u128,
         token: String,
-        network: String,
         code_word: String,
+        sender_network: String,
+        receiver_network: String,
     ) -> Result<JsValue, JsError> {
         self.inner
             .borrow()
-            .initiate_transaction(sender, receiver, amount, token, network, code_word)
+            .initiate_transaction(sender, receiver, amount, token, code_word, sender_network, receiver_network)
             .await
     }
 

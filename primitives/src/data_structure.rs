@@ -284,8 +284,6 @@ pub struct TxStateMachine {
     /// signature of the receiver id (Signature)
     #[serde(rename = "recvSignature")]
     pub recv_signature: Option<Vec<u8>>,
-    /// chain network
-    pub network: ChainSupported,
     /// token
     pub token: Token,
     /// State Machine status
@@ -323,6 +321,12 @@ pub struct TxStateMachine {
     /// unsigned transaction fields for EIP-1559 transactions
     #[serde(rename = "ethUnsignedTxFields")]
     pub eth_unsigned_tx_fields: Option<UnsignedEip1559>,
+    /// sender address network
+    #[serde(rename = "senderAddressNetwork")]
+    pub sender_address_network: ChainSupported,
+    /// receiver address network
+    #[serde(rename = "receiverAddressNetwork")]
+    pub receiver_address_network: ChainSupported,
 }
 
 #[cfg(feature = "wasm")]
@@ -368,14 +372,7 @@ impl TxStateMachine {
     pub fn increment_nonce(&mut self) {
         self.tx_nonce += 1
     }
-    pub fn get_tx_hash(&self) -> [u8; 32] {
-        match self.network {
-            ChainSupported::Polkadot => blake2_256(&self.encode()[..]),
-            ChainSupported::Solana => sha2_256(&self.encode()[..]),
-            // EVM
-            _ => keccak_256(&self.encode()[..]),
-        }
-    }
+    
 }
 
 // helper for hashing p2p swarm request ids
@@ -464,12 +461,14 @@ pub struct DbTxStateMachine {
     pub tx_hash: Vec<u8>,
     // amount to be sent
     pub amount: u128,
-    // chain network
-    pub network: ChainSupported,
     // sender
     pub sender: String,
     // receiver
     pub receiver: String,
+    // sender address network
+    pub sender_network: ChainSupported,
+    // receiver address network
+    pub receiver_network: ChainSupported,
     // status
     pub success: bool,
 }
@@ -579,6 +578,7 @@ impl From<&str> for ChainSupported {
 
 impl ChainSupported {
     // Method to get the URL based on the network type
+    // THIS IS NOT USED IN THE WASM CODEBASE
     pub fn url(&self) -> String {
         {
             // Load .env file if it exists
