@@ -1,0 +1,12 @@
+[package]
+name = "test_client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libp2p = { workspace = true, features = ["relay", "websocket", "noise", "yamux", "identify", "ping","tokio","tcp","dns","macros","kad"] }
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4.0", features = ["derive"] }

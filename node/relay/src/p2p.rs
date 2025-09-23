@@ -1,26 +1,29 @@
+use libp2p::core::transport::{upgrade, OrTransport};
 use libp2p::futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream, StreamExt};
+use libp2p::kad::store::{MemoryStore, MemoryStoreConfig};
+use libp2p::kad::{
+    Behaviour as DhtBehaviour, Config as KademliaConfig, GetRecordOk, GetRecordResult,
+    InboundRequest, PeerRecord, QueryResult, Record, K_VALUE,
+};
 use libp2p::relay::Behaviour as RelayBehaviour;
 use libp2p::swarm::{derive_prelude, NetworkBehaviour};
 use libp2p::swarm::{NetworkInfo, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
-use libp2p_kad::store::{MemoryStore, MemoryStoreConfig};
-use libp2p_kad::{Behaviour as DhtBehaviour, Record, K_VALUE};
-
-use libp2p::relay::Event as RelayServerEvent;
-use libp2p_kad::Event as DhtEvent;
 
 use anyhow::anyhow;
+use futures::future::Either;
+use libp2p::kad::Event as DhtEvent;
+use libp2p::relay::Event as RelayServerEvent;
+use libp2p::Transport;
 use log::{error, info, trace};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
 
-use crate::telemetry::{
-    MetricsCounters, NetworkMetrics, RelayMetrics, RelayServerMetrics, SystemMetrics,
-};
-
+use std::num::NonZeroU32;
 #[derive(NetworkBehaviour)]
 #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
 pub struct RelayServerBehaviour<TStore> {
@@ -41,80 +44,120 @@ pub struct RelayP2pWorker {
     pub peer_id: PeerId,
     pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>>,
     pub external_multi_addr: Multiaddr,
-    pub listening_addr: Multiaddr,
-    /// Metrics counters for tracking statistics
-    metrics_counters: Arc<MetricsCounters>,
-    /// Start time for uptime calculation
-    start_time: Instant,
+    pub listening_addr: (Multiaddr, Multiaddr),
 }
 
 impl RelayP2pWorker {
-    pub fn new(
-        dns: String,
-        port: u16,
-        metrics_counters: Arc<MetricsCounters>,
-    ) -> Result<Self, anyhow::Error> {
+    pub async fn new(dns: String, port: u16, live: bool) -> Result<Self, anyhow::Error> {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(self_keypair.public());
 
-        let url = format!("/dns/{}/tcp/{}/p2p/{}", dns, port, peer_id);
-        let external_multi_addr:Multiaddr = url
-            .parse()
-            .map_err(|err| anyhow!("failed to parse multi addr, caused by: {err}"))?;
+        let external_multi_addr = if live {
+            Multiaddr::empty()
+                .with(libp2p::multiaddr::Protocol::Dns(dns.into()))
+                .with(libp2p::multiaddr::Protocol::Tcp(port))
+                .with(libp2p::multiaddr::Protocol::Ws("/".into()))
+                .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
+        } else {
+            Multiaddr::from(Ipv6Addr::LOCALHOST)
+                .with(libp2p::multiaddr::Protocol::Tcp(port))
+                .with(libp2p::multiaddr::Protocol::Ws("/".into()))
+                .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
+        };
 
-        let listening_addr = format!("/ip6/::/tcp/{}", port);
-        let listening_multi_addr = listening_addr
-            .parse()
-            .map_err(|err| anyhow!("failed to parse listening addr, caused by: {err}"))?;
+        let listening_multi_addr = Multiaddr::from(Ipv6Addr::LOCALHOST)
+            .with(libp2p::multiaddr::Protocol::Tcp(port))
+            .with(libp2p::multiaddr::Protocol::Ws("/".into()));
 
-        let dht_behaviour = DhtBehaviour::<MemoryStore>::new(
+        let listening_multi_addr_ipv4 = Multiaddr::from(Ipv4Addr::LOCALHOST)
+            .with(libp2p::multiaddr::Protocol::Tcp(port))
+            .with(libp2p::multiaddr::Protocol::Ws("/".into()));
+
+        let dht_behaviour = DhtBehaviour::with_config(
             peer_id.clone(),
             MemoryStore::with_config(
-                peer_id,
+                peer_id.clone(),
                 MemoryStoreConfig {
-                    max_records: 10_000,
-                    max_value_bytes: 50,
-                    max_provided_keys: 10_000,
-                    max_providers_per_key: K_VALUE.get(),
+                    max_records: 50_000,              // Same as relay
+                    max_value_bytes: 2048 * 50,       // Increase this
+                    max_providers_per_key: 1024 * 50, // Keep this
+                    max_provided_keys: 10_000,        // Increase this
                 },
             ),
+            KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol")),
         );
+
+        let mut relay_config = libp2p::relay::Config {
+            max_reservations: 10_000,
+            max_reservations_per_peer: 4,
+            reservation_duration: Duration::from_secs(60 * 60),
+            max_circuits: 1000,
+            max_circuit_bytes: 1024 * 1024 * 10,
+            max_circuit_duration: Duration::from_secs(20 * 60),
+            max_circuits_per_peer: 20,
+            ..Default::default()
+        };
+
+        relay_config
+            .reservation_rate_per_peer(NonZeroU32::new(30).unwrap(), Duration::from_secs(120))
+            .reservation_rate_per_ip(NonZeroU32::new(60).unwrap(), Duration::from_secs(60))
+            .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
+            .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10));
+
         let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
-            libp2p::relay::Behaviour::new(peer_id.clone(), libp2p::relay::Config::default()),
+            libp2p::relay::Behaviour::new(
+                peer_id.clone(),
+                libp2p::relay::Config {
+                    max_reservations: 1000,
+                    max_reservations_per_peer: 100,
+                    reservation_duration: Duration::from_secs(60),
+                    reservation_rate_limiters: vec![],
+                    max_circuits: 1000,
+                    max_circuits_per_peer: 100,
+                    max_circuit_duration: Duration::from_secs(60),
+                    max_circuit_bytes: 1024 * 1024 * 10,
+                    circuit_src_rate_limiters: vec![],
+                },
+            ),
             dht_behaviour,
         );
 
-        let transport_tcp = libp2p::tcp::Config::new().nodelay(true).port_reuse(true);
-
-        let mut swarm = SwarmBuilder::with_existing_identity(self_keypair)
+        let mut relay_swarm = SwarmBuilder::with_existing_identity(self_keypair)
             .with_tokio()
-            .with_tcp(
-                transport_tcp,
-                libp2p::tls::Config::new,
-                libp2p::yamux::Config::default,
-            )?
+            .with_websocket(
+                |key: &libp2p::identity::Keypair| -> Result<_, anyhow::Error> {
+                    libp2p::noise::Config::new(key).map_err(|_| anyhow!("noise init failed"))
+                },
+                || libp2p::yamux::Config::default(),
+            )
+            .await?
             .with_behaviour(|_| relay_behaviour)?
             .with_swarm_config(|cfg| {
                 cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
             })
             .build();
 
-        swarm.add_external_address(external_multi_addr.clone());
+        relay_swarm.add_external_address(external_multi_addr.clone());
 
         Ok(Self {
             peer_id,
-            swarm: Arc::new(Mutex::new(swarm)),
+            swarm: Arc::new(Mutex::new(relay_swarm)),
             external_multi_addr,
-            listening_addr: listening_multi_addr,
-            metrics_counters,
-            start_time: Instant::now(),
+            listening_addr: (listening_multi_addr, listening_multi_addr_ipv4),
         })
     }
 
     pub async fn start_swarm(&mut self) -> Result<(), anyhow::Error> {
-        let listening_addr = &self.listening_addr;
+        let listening_addr = &self.listening_addr.0;
         let _listening_id = self.swarm.lock().await.listen_on(listening_addr.clone())?;
         trace!(target:"p2p","relay server listening to: {:?}",listening_addr.clone());
+        let listening_addr_ipv4 = &self.listening_addr.1;
+        let _listening_id_ipv4 = self
+            .swarm
+            .lock()
+            .await
+            .listen_on(listening_addr_ipv4.clone())?;
+        trace!(target:"p2p","relay server listening to ipv4: {:?}",listening_addr_ipv4.clone());
 
         self.swarm
             .lock()
@@ -124,12 +167,10 @@ impl RelayP2pWorker {
             .add_address(&self.peer_id, listening_addr.clone());
 
         loop {
-            // Get the next event from the swarm
             let swarm_event = {
                 let mut swarm = self.swarm.lock().await;
                 swarm.select_next_some().await
             };
-
             match swarm_event {
                 SwarmEvent::Behaviour(relay_server_behaviour) => match relay_server_behaviour {
                     RelayServerBehaviourEvent::Dht(dht_event) => {
@@ -145,24 +186,43 @@ impl RelayP2pWorker {
                     ..
                 } => {
                     info!(target:"p2p","connection established {:?}: duration {:?}",peer_id,established_in);
-                    self.metrics_counters
-                        .active_connections
-                        .fetch_add(1, Ordering::Relaxed);
-                    self.metrics_counters
-                        .successful_connections
-                        .fetch_add(1, Ordering::Relaxed);
-                    self.metrics_counters
-                        .total_connections
-                        .fetch_add(1, Ordering::Relaxed);
                 }
                 SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                     info!(target:"p2p","connection closed: {:?}, reason {:?}",peer_id,cause);
-                    self.metrics_counters
-                        .active_connections
-                        .fetch_sub(1, Ordering::Relaxed);
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
                     info!(target:"p2p","dialing: {:?}",peer_id);
+                }
+                SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    info!(target:"p2p","outgoing connection error: {:?}, error {:?}",peer_id,error);
+                }
+                SwarmEvent::ListenerClosed {
+                    listener_id,
+                    addresses,
+                    reason,
+                    ..
+                } => {
+                    info!(target:"p2p","listener closed: {:?}, addresses {:?}, reason {:?}",listener_id,addresses,reason);
+                }
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    info!(target:"p2p","new listen addr: {:?}",address);
+                }
+                SwarmEvent::ExpiredListenAddr { address, .. } => {
+                    info!(target:"p2p","expired listen addr: {:?}",address);
+                }
+                SwarmEvent::NewExternalAddrCandidate { address, .. } => {
+                    info!(target:"p2p","new external addr candidate: {:?}",address);
+                }
+                SwarmEvent::ExternalAddrConfirmed { address, .. } => {
+                    info!(target:"p2p","external addr confirmed: {:?}",address);
+                }
+                SwarmEvent::ExternalAddrExpired { address, .. } => {
+                    info!(target:"p2p","external addr expired: {:?}",address);
+                }
+                SwarmEvent::NewExternalAddrOfPeer {
+                    peer_id, address, ..
+                } => {
+                    info!(target:"p2p","new external addr of peer: {:?}, {:?}",peer_id,address);
                 }
                 _ => {
                     info!(target:"p2p","swarm event: {:?}",swarm_event);
@@ -173,9 +233,47 @@ impl RelayP2pWorker {
 
     async fn handle_dht_event(&mut self, event: DhtEvent) -> Result<(), anyhow::Error> {
         match event {
-            DhtEvent::InboundRequest { request } => {
-                info!(target:"p2p","dht inbound request: {:?}",request);
-            }
+            DhtEvent::InboundRequest { request } => match request {
+                InboundRequest::PutRecord { record, source, .. } => {
+                    info!(target:"p2p","dht inbound request: PutRecord {{ source: {:?}, record: {:?} }}", source, record);
+                }
+                InboundRequest::GetProvider {
+                    num_closer_peers,
+                    num_provider_peers,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetProvider {{ num_closer_peers: {:?}, num_provider_peers: {:?} }}", 
+                              num_closer_peers, num_provider_peers);
+                }
+                InboundRequest::GetRecord {
+                    num_closer_peers,
+                    present_locally,
+                } => {
+                    info!(target:"p2p","dht inbound request: GetRecord {{ num_closer_peers: {:?}, present_locally: {:?} }}", num_closer_peers, present_locally);
+                }
+                InboundRequest::AddProvider { record } => {
+                    info!(target:"p2p","dht inbound request: AddProvider {{ key: {:?} }}", record);
+                }
+                InboundRequest::FindNode { num_closer_peers } => {
+                    info!(target:"p2p","dht inbound request: FindNode {{ num_closer_peers: {:?} }}", 
+                              num_closer_peers);
+                }
+            },
+            DhtEvent::OutboundQueryProgressed { id, result, .. } => match result {
+                QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(
+                    PeerRecord { record, .. },
+                ))) => {
+                    info!(target:"p2p","dht found record: key={:?}, value={:?}", record.key, record.value);
+                }
+                QueryResult::GetRecord(GetRecordResult::Ok(
+                    GetRecordOk::FinishedWithNoAdditionalRecord { .. },
+                )) => {
+                    info!(target:"p2p","dht get record finished: no record found");
+                }
+                QueryResult::GetRecord(GetRecordResult::Err(e)) => {
+                    error!(target:"p2p","dht get record error: {:?}", e);
+                }
+                _ => {}
+            },
             DhtEvent::RoutingUpdated {
                 peer,
                 addresses,
@@ -196,7 +294,6 @@ impl RelayP2pWorker {
             DhtEvent::PendingRoutablePeer { peer, address } => {
                 info!(target:"p2p","dht pending routable peer: {:?}",address);
             }
-            _ => {}
         }
         Ok(())
     }
@@ -215,12 +312,6 @@ impl RelayP2pWorker {
                 dst_peer_id,
             } => {
                 info!(target:"p2p","relay message, circuit req accepted src_peer_id: {:?}, dst_peer_id: {:?}",src_peer_id,dst_peer_id);
-                self.metrics_counters
-                    .active_circuits
-                    .fetch_add(1, Ordering::Relaxed);
-                self.metrics_counters
-                    .total_circuits_created
-                    .fetch_add(1, Ordering::Relaxed);
             }
             RelayServerEvent::CircuitReqDenied {
                 src_peer_id,
@@ -228,59 +319,28 @@ impl RelayP2pWorker {
                 status,
             } => {
                 info!(target:"p2p","relay message, circuit req denied status: {:?}, src_peer_id: {:?}, dst_peer_id: {:?}",status,src_peer_id,dst_peer_id);
-                self.metrics_counters
-                    .circuit_errors
-                    .fetch_add(1, Ordering::Relaxed);
             }
             RelayServerEvent::ReservationReqAccepted {
                 src_peer_id,
                 renewed,
             } => {
                 info!(target:"p2p","relay message, reservation req accepted src_peer_id: {:?}, renewed: {:?}",src_peer_id,renewed);
-                self.metrics_counters
-                    .active_reservations
-                    .fetch_add(1, Ordering::Relaxed);
-                self.metrics_counters
-                    .total_reservations_created
-                    .fetch_add(1, Ordering::Relaxed);
             }
             RelayServerEvent::ReservationReqDenied {
                 src_peer_id,
                 status,
             } => {
                 info!(target:"p2p","relay message, reservation req denied status: {:?}, src_peer_id: {:?}",status,src_peer_id);
-                self.metrics_counters
-                    .reservation_denials
-                    .fetch_add(1, Ordering::Relaxed);
             }
             RelayServerEvent::ReservationTimedOut { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation timed out: {:?}",src_peer_id);
-                self.metrics_counters
-                    .active_reservations
-                    .fetch_sub(1, Ordering::Relaxed);
-                self.metrics_counters
-                    .total_reservations_expired
-                    .fetch_add(1, Ordering::Relaxed);
             }
             RelayServerEvent::ReservationClosed { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation closed: {:?}",src_peer_id);
-                self.metrics_counters
-                    .active_reservations
-                    .fetch_sub(1, Ordering::Relaxed);
             }
             _ => {
                 trace!(target:"p2p","relay message: {:?}",event);
             }
         }
-    }
-
-    /// Get a reference to the swarm for telemetry worker
-    pub fn get_swarm(&self) -> Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>> {
-        self.swarm.clone()
-    }
-
-    /// Get a reference to metrics counters for external updates
-    pub fn metrics_counters(&self) -> &Arc<MetricsCounters> {
-        &self.metrics_counters
     }
 }

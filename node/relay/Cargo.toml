@@ -3,16 +3,11 @@ name = "relay-node"
 version = "0.1.0"
 edition = "2021"
 description = "Native-only relay node implementation for Vane Web3"
-authors = ["Vane Web3 Team"]
 
-
-[lib]
-crate-type = ["rlib"]
 
 [dependencies]
 
-libp2p                              = { workspace = true, features = ["json","relay","macros","tls","serde"]}
-libp2p-kad                          = { workspace = true}
+libp2p                              = { workspace = true, features = ["json","relay","macros","tls","serde","websocket","kad"]}
 primitives                          = { workspace = true}
 sp-runtime                          = { workspace = true, features = ["std"] }
 sp-core                             = { workspace = true, features = ["std"] }
@@ -21,5 +16,4 @@ anyhow                              = { workspace = true}
 tokio                               = { workspace = true}
 log                                 = { workspace = true}
 jsonrpsee                           = { workspace = true}
-sc-service                          = { workspace = true}
-
+futures                             = { version = "0.3.31", features = ["async-await"]}

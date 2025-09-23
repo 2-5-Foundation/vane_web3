@@ -1,0 +1,35 @@
+{
+  "name": "vane_lib",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "main.ts",
+  "module": "./dist/main.mjs",
+  "types": "main.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.mjs",
+      "require": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build ./main.ts --outdir dist && bun run build:types",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "viem": "^2.21.50"
+  },
+  "files": [
+    "pkg",
+    "dist",
+    "main.ts",
+    "networking.ts",
+    "primitives.ts"
+  ]
+}

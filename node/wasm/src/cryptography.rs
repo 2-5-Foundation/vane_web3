@@ -1,6 +1,6 @@
-pub use VaneCrypto::*;
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
-pub mod VaneCrypto {
+pub use vane_crypto::*;
+pub mod vane_crypto {
     use anyhow::anyhow;
     use base58::FromBase58;
     use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -25,10 +25,10 @@ pub mod VaneCrypto {
                 // check the derivation path which is m/44'/60'/0'/0
                 // check if it belongs to a point on Ecdsa secp256k1 curve !!! cannot do this as the public key is hashed
                 // check if the account is 20 bytes
-                if account.as_bytes().len() == 20 {
-                    Ok(ChainSupported::Ethereum)
+                if account.as_bytes().len() == 42 {
+                    Ok(ChainSupported::Bnb)
                 } else {
-                    Err(anyhow!("Not ethereum address"))
+                    Err(anyhow!("Not bnb (ECDSA) address"))
                 }
             }
             Token::Sol | Token::UsdcSol | Token::UsdtSol => {
@@ -51,7 +51,7 @@ pub mod VaneCrypto {
                     /* 2 bytes for 0x and 40 bytes for rem as hex takes 2 character per bytes*/
                     Ok(ChainSupported::Ethereum)
                 } else {
-                    Err(anyhow!("Not ethereum address"))
+                    Err(anyhow!("Not ethereum (ECDSA) address"))
                 }
             }
         }
