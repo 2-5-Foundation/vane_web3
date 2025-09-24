@@ -2,20 +2,350 @@ export enum ChainSupported {
     Ethereum = "Ethereum",
     Polkadot = "Polkadot",
     Bnb = "Bnb",
-    Solana = "Solana"
+    Solana = "Solana",
+    Tron = "Tron",
+    Optimism = "Optimism",
+    Arbitrum = "Arbitrum",
+    Polygon = "Polygon",
+    Base = "Base",
+    Bitcoin = "Bitcoin"
 }
 
-/** Supported tokens */
-export enum Token {
-    Dot = "Dot",
-    Bnb = "Bnb", 
-    Sol = "Sol",
-    Eth = "Eth",
-    UsdtSol = "UsdtSol",
-    UsdcSol = "UsdcSol",
-    UsdtEth = "UsdtEth",
-    UsdcEth = "UsdcEth",
-    UsdtDot = "UsdtDot"
+/** Ethereum ecosystem tokens */
+export enum EthereumToken {
+    ETH = "ETH",
+    ERC20 = "ERC20"
+}
+
+/** BNB Smart Chain ecosystem tokens */
+export enum BnbToken {
+    BNB = "BNB",
+    BEP20 = "BEP20"
+}
+
+/** Polkadot ecosystem tokens */
+export enum PolkadotToken {
+    DOT = "DOT",
+    Asset = "Asset"
+}
+
+/** Solana ecosystem tokens */
+export enum SolanaToken {
+    SOL = "SOL",
+    SPL = "SPL"
+}
+
+/** TRON ecosystem tokens */
+export enum TronToken {
+    TRX = "TRX",
+    TRC20 = "TRC20"
+}
+
+/** Optimism ecosystem tokens */
+export enum OptimismToken {
+    ETH = "ETH",
+    ERC20 = "ERC20"
+}
+
+/** Arbitrum ecosystem tokens */
+export enum ArbitrumToken {
+    ETH = "ETH",
+    ERC20 = "ERC20"
+}
+
+/** Polygon ecosystem tokens */
+export enum PolygonToken {
+    POL = "POL",
+    ERC20 = "ERC20"
+}
+
+/** Base ecosystem tokens */
+export enum BaseToken {
+    ETH = "ETH",
+    ERC20 = "ERC20"
+}
+
+/** Bitcoin ecosystem tokens */
+export enum BitcoinToken {
+    BTC = "BTC"
+}
+
+/** Supported tokens (flexible) */
+export type Token = 
+    | { Ethereum: EthereumToken | { ERC20: string } }
+    | { Bnb: BnbToken | { BEP20: string } }
+    | { Polkadot: PolkadotToken | { Asset: string } }
+    | { Solana: SolanaToken | { SPL: string } }
+    | { Tron: TronToken | { TRC20: string } }
+    | { Optimism: OptimismToken | { ERC20: string } }
+    | { Arbitrum: ArbitrumToken | { ERC20: string } }
+    | { Polygon: PolygonToken | { ERC20: string } }
+    | { Base: BaseToken | { ERC20: string } }
+    | { Bitcoin: BitcoinToken }
+
+/**
+ * Token Manager - Utility for creating and managing tokens
+ */
+export class TokenManager {
+  /**
+   * Create a native token for a specific chain
+   */
+  static createNativeToken(chain: ChainSupported): Token {
+    switch (chain) {
+      case ChainSupported.Ethereum:
+        return { Ethereum: EthereumToken.ETH };
+      case ChainSupported.Bnb:
+        return { Bnb: BnbToken.BNB };
+      case ChainSupported.Polkadot:
+        return { Polkadot: PolkadotToken.DOT };
+      case ChainSupported.Solana:
+        return { Solana: SolanaToken.SOL };
+      case ChainSupported.Tron:
+        return { Tron: TronToken.TRX };
+      case ChainSupported.Optimism:
+        return { Optimism: OptimismToken.ETH };
+      case ChainSupported.Arbitrum:
+        return { Arbitrum: ArbitrumToken.ETH };
+      case ChainSupported.Polygon:
+        return { Polygon: PolygonToken.POL };
+      case ChainSupported.Base:
+        return { Base: BaseToken.ETH };
+      case ChainSupported.Bitcoin:
+        return { Bitcoin: BitcoinToken.BTC };
+      default:
+        throw new Error(`Unsupported chain: ${chain}`);
+    }
+  }
+
+  /**
+   * Create an ERC-20 token for Ethereum-compatible chains
+   */
+  static createERC20Token(chain: ChainSupported, symbol: string): Token {
+    switch (chain) {
+      case ChainSupported.Ethereum:
+        return { Ethereum: { ERC20: symbol } };
+      case ChainSupported.Optimism:
+        return { Optimism: { ERC20: symbol } };
+      case ChainSupported.Arbitrum:
+        return { Arbitrum: { ERC20: symbol } };
+      case ChainSupported.Polygon:
+        return { Polygon: { ERC20: symbol } };
+      case ChainSupported.Base:
+        return { Base: { ERC20: symbol } };
+      default:
+        throw new Error(`ERC-20 tokens not supported on ${chain}`);
+    }
+  }
+
+  /**
+   * Create a BEP-20 token for BNB Smart Chain
+   */
+  static createBEP20Token(symbol: string): Token {
+    return { Bnb: { BEP20: symbol } };
+  }
+
+  /**
+   * Create an SPL token for Solana
+   */
+  static createSPLToken(symbol: string): Token {
+    return { Solana: { SPL: symbol } };
+  }
+
+  /**
+   * Create a TRC-20 token for TRON
+   */
+  static createTRC20Token(symbol: string): Token {
+    return { Tron: { TRC20: symbol } };
+  }
+
+  /**
+   * Create a Polkadot asset
+   */
+  static createPolkadotAsset(symbol: string): Token {
+    return { Polkadot: { Asset: symbol } };
+  }
+
+  /**
+   * Get the chain from a token
+   */
+  static getChainFromToken(token: Token): ChainSupported {
+    if ('Ethereum' in token) return ChainSupported.Ethereum;
+    if ('Bnb' in token) return ChainSupported.Bnb;
+    if ('Polkadot' in token) return ChainSupported.Polkadot;
+    if ('Solana' in token) return ChainSupported.Solana;
+    if ('Tron' in token) return ChainSupported.Tron;
+    if ('Optimism' in token) return ChainSupported.Optimism;
+    if ('Arbitrum' in token) return ChainSupported.Arbitrum;
+    if ('Polygon' in token) return ChainSupported.Polygon;
+    if ('Base' in token) return ChainSupported.Base;
+    if ('Bitcoin' in token) return ChainSupported.Bitcoin;
+    throw new Error(`Unknown token type: ${JSON.stringify(token)}`);
+  }
+
+  /**
+   * Get a human-readable string representation of the token
+   */
+  static getTokenString(token: Token): string {
+    const chain = this.getChainFromToken(token);
+    
+    if ('Ethereum' in token && token.Ethereum === EthereumToken.ETH) {
+      return "Ethereum:ETH";
+    }
+    if ('Bnb' in token && token.Bnb === BnbToken.BNB) {
+      return "BNB:BNB";
+    }
+    if ('Polkadot' in token && token.Polkadot === PolkadotToken.DOT) {
+      return "Polkadot:DOT";
+    }
+    if ('Solana' in token && token.Solana === SolanaToken.SOL) {
+      return "Solana:SOL";
+    }
+    if ('Tron' in token && token.Tron === TronToken.TRX) {
+      return "TRON:TRX";
+    }
+    if ('Optimism' in token && token.Optimism === OptimismToken.ETH) {
+      return "Optimism:ETH";
+    }
+    if ('Arbitrum' in token && token.Arbitrum === ArbitrumToken.ETH) {
+      return "Arbitrum:ETH";
+    }
+    if ('Polygon' in token && token.Polygon === PolygonToken.POL) {
+      return "Polygon:POL";
+    }
+    if ('Base' in token && token.Base === BaseToken.ETH) {
+      return "Base:ETH";
+    }
+    if ('Bitcoin' in token && token.Bitcoin === BitcoinToken.BTC) {
+      return "Bitcoin:BTC";
+    }
+
+    // Handle ecosystem tokens
+    if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
+      return `Ethereum:${token.Ethereum.ERC20}`;
+    }
+    if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
+      return `BNB:${token.Bnb.BEP20}`;
+    }
+    if ('Solana' in token && typeof token.Solana === 'object' && 'SPL' in token.Solana) {
+      return `Solana:${token.Solana.SPL}`;
+    }
+    if ('Tron' in token && typeof token.Tron === 'object' && 'TRC20' in token.Tron) {
+      return `TRON:${token.Tron.TRC20}`;
+    }
+    if ('Polkadot' in token && typeof token.Polkadot === 'object' && 'Asset' in token.Polkadot) {
+      return `Polkadot:${token.Polkadot.Asset}`;
+    }
+
+    return `${chain}:Unknown`;
+  }
+
+  /**
+   * Parse a token string back to a Token object
+   */
+  static parseTokenString(tokenString: string): Token {
+    const [chain, symbol] = tokenString.split(':');
+    
+    switch (chain) {
+      case "Ethereum":
+        if (symbol === "ETH") {
+          return { Ethereum: EthereumToken.ETH };
+        }
+        return { Ethereum: { ERC20: symbol } };
+      
+      case "BNB":
+        if (symbol === "BNB") {
+          return { Bnb: BnbToken.BNB };
+        }
+        return { Bnb: { BEP20: symbol } };
+      
+      case "Polkadot":
+        if (symbol === "DOT") {
+          return { Polkadot: PolkadotToken.DOT };
+        }
+        return { Polkadot: { Asset: symbol } };
+      
+      case "Solana":
+        if (symbol === "SOL") {
+          return { Solana: SolanaToken.SOL };
+        }
+        return { Solana: { SPL: symbol } };
+      
+      case "TRON":
+        if (symbol === "TRX") {
+          return { Tron: TronToken.TRX };
+        }
+        return { Tron: { TRC20: symbol } };
+      
+      case "Optimism":
+        if (symbol === "ETH") {
+          return { Optimism: OptimismToken.ETH };
+        }
+        return { Optimism: { ERC20: symbol } };
+      
+      case "Arbitrum":
+        if (symbol === "ETH") {
+          return { Arbitrum: ArbitrumToken.ETH };
+        }
+        return { Arbitrum: { ERC20: symbol } };
+      
+      case "Polygon":
+        if (symbol === "POL") {
+          return { Polygon: PolygonToken.POL };
+        }
+        return { Polygon: { ERC20: symbol } };
+      
+      case "Base":
+        if (symbol === "ETH") {
+          return { Base: BaseToken.ETH };
+        }
+        return { Base: { ERC20: symbol } };
+      
+      case "Bitcoin":
+        if (symbol === "BTC") {
+          return { Bitcoin: BitcoinToken.BTC };
+        }
+        throw new Error("Bitcoin only supports BTC token");
+      
+      default:
+        throw new Error(`Unknown chain: ${chain}`);
+    }
+  }
+
+  /**
+   * Get all available native tokens
+   */
+  static getAllNativeTokens(): Token[] {
+    return [
+      this.createNativeToken(ChainSupported.Ethereum),
+      this.createNativeToken(ChainSupported.Bnb),
+      this.createNativeToken(ChainSupported.Polkadot),
+      this.createNativeToken(ChainSupported.Solana),
+      this.createNativeToken(ChainSupported.Tron),
+      this.createNativeToken(ChainSupported.Optimism),
+      this.createNativeToken(ChainSupported.Arbitrum),
+      this.createNativeToken(ChainSupported.Polygon),
+      this.createNativeToken(ChainSupported.Base),
+      this.createNativeToken(ChainSupported.Bitcoin),
+    ];
+  }
+
+  /**
+   * Get all available chains
+   */
+  static getAllChains(): ChainSupported[] {
+    return [
+      ChainSupported.Ethereum,
+      ChainSupported.Bnb,
+      ChainSupported.Polkadot,
+      ChainSupported.Solana,
+      ChainSupported.Tron,
+      ChainSupported.Optimism,
+      ChainSupported.Arbitrum,
+      ChainSupported.Polygon,
+      ChainSupported.Base,
+      ChainSupported.Bitcoin,
+    ];
+  }
 }
    
 // For status that contains data
@@ -54,6 +384,8 @@ export interface UnsignedEip1559 {
 /** Transaction data structure state machine, passed in rpc and p2p swarm */
 export interface TxStateMachine {
     senderAddress: string;
+    senderPublicKey: string | null;
+    receiverPublicKey: string | null;
     receiverAddress: string;
     /** Hashed sender and receiver address to bind the addresses while sending */
     multiId: number[]; // [u8; 32] in Rust -> number[] in TS
@@ -140,10 +472,14 @@ export class TxStateMachineManager {
       receiverNetwork: ChainSupported,
       token: Token,
       amount: bigint,
-      codeWord: string
+      codeWord: string,
+      senderPublicKey: string | null,
+      receiverPublicKey: string | null
     ): TxStateMachineManager {
       return new TxStateMachineManager({
         senderAddress,
+        senderPublicKey,
+        receiverPublicKey,
         receiverAddress,
         multiId: [], // Generate hash of sender+receiver
         token,

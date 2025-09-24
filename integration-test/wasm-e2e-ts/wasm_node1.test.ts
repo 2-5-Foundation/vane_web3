@@ -10,7 +10,7 @@ import {
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js';
 import hostFunctions from '../../node/wasm/host_functions/main.js';
 import { logger, Logger } from '../../node/wasm/host_functions/logging.js';
-import { TxStateMachine, TxStateMachineManager, UnsignedEip1559,StorageExport,StorageExportManager } from '../../node/wasm/vane_lib/primitives.js';
+import { TxStateMachine, TxStateMachineManager, UnsignedEip1559, StorageExport, StorageExportManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, PublicActions, formatEther } from 'viem';
 import { sign, serializeSignature } from 'viem/accounts';
 
@@ -71,15 +71,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
         receiver_client_address,
         BigInt(10),
-        'Eth',
+        ethToken,
         'Maji',
-        'Ethereum',
-        'Ethereum'
+        ChainSupported.Ethereum,
+        ChainSupported.Ethereum
       );
     });
 
@@ -187,15 +189,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   test("should notify if the receiver is not registered", async () => {
     console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
     await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
         '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
         BigInt(10),
-        'Eth',
+        ethToken,
         'Maji',
-        'Ethereum',
-        'Ethereum'
+        ChainSupported.Ethereum,
+        ChainSupported.Ethereum
       );
     });
 
@@ -216,15 +220,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
     const _intendedReceiverAddress = receiver_client_address;
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
      await wasmNodeInstance.promise.then((vaneWasm: any) => {
       return vaneWasm?.initiateTransaction(
         wasm_client_address,
         wrong_receiver_client_address,
         BigInt(10),
-        'Eth',
+        ethToken,
         'Wrong',
-        'Ethereum',
-        'Ethereum'
+        ChainSupported.Ethereum,
+        ChainSupported.Ethereum
       );
     });
 
@@ -308,16 +314,18 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     const vaneWasm = await wasmNodeInstance.promise as PublicInterfaceWorkerJs | null;
     if (!vaneWasm) throw new Error('WASM node not started');
 
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
     let returnedTx: TxStateMachine;
     try {
       returnedTx = await vaneWasm.initiateTransaction(
         wasm_client_address,
         wrong_receiver_client_address,
         BigInt(10),
-        'Eth',
+        ethToken,
         'mistaken',
-        'Ethereum',
-        'Ethereum'
+        ChainSupported.Ethereum,
+        ChainSupported.Ethereum
       ) as unknown as TxStateMachine;
     } catch (e) {
       console.error('initiateTransaction failed', e);

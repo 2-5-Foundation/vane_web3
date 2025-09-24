@@ -5,7 +5,7 @@ import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayN
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/vane_lib/primitives.js';
+import { TxStateMachine, TxStateMachineManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE THIRD NODE IS THE MALICIOUS NODE THAT WILL BE TESTED
 

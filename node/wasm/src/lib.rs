@@ -230,7 +230,12 @@ impl WasmMainServiceWorker {
                     decoded_resp.outbound_req_id = Some(outbound_req_id);
 
                     // Drop updates if already reverted in cache (authoritative sender state)
-                    if let Some(existing) = self.lru_cache.borrow().peek(&decoded_resp.tx_nonce.into()).cloned() {
+                    if let Some(existing) = self
+                        .lru_cache
+                        .borrow()
+                        .peek(&decoded_resp.tx_nonce.into())
+                        .cloned()
+                    {
                         if let TxStatus::Reverted(_) = existing.status {
                             warn!(target: "MainServiceWorker", "ignoring inbound response for reverted tx: {}", decoded_resp.tx_nonce);
                             return Ok(());
@@ -370,7 +375,9 @@ impl WasmMainServiceWorker {
                                 } else {
                                     let maybe_addr = resp
                                         .value
-                                        .and_then(|s| (!s.is_empty()).then(|| Multiaddr::try_from(s).ok()))
+                                        .and_then(|s| {
+                                            (!s.is_empty()).then(|| Multiaddr::try_from(s).ok())
+                                        })
                                         .flatten();
 
                                     if let Some(multi_addr) = maybe_addr {
@@ -413,7 +420,6 @@ impl WasmMainServiceWorker {
                             // DHT internal error
                             future::Either::Left((Err(e), _)) => {
                                 warn!(target: "MainServiceWorker", "host_get_dht internal error (attempt {}/{}): {e:?}", attempt, max_attempts);
-
                             }
 
                             // timeout
@@ -623,7 +629,10 @@ impl WasmMainServiceWorker {
             .borrow_mut()
             .disconnect_from_peer_id(&peer_id)
             .await?;
-        info!("closing connection to receiver: {}", txn_inner.receiver_address.clone());
+        info!(
+            "closing connection to receiver: {}",
+            txn_inner.receiver_address.clone()
+        );
 
         self.db_worker
             .delete_saved_peer(multi_addr.to_string().as_str())

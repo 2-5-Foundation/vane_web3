@@ -70,7 +70,10 @@ impl<'de> Deserialize<'de> for TxStatus {
         let value = serde_json::Value::deserialize(deserializer)?;
 
         // Helper to map string tag -> variant
-        fn from_tag<'a, E: SerdeError>(tag: &'a str, val: Option<&serde_json::Value>) -> Result<TxStatus, E> {
+        fn from_tag<'a, E: SerdeError>(
+            tag: &'a str,
+            val: Option<&serde_json::Value>,
+        ) -> Result<TxStatus, E> {
             match tag {
                 "Genesis" => Ok(TxStatus::Genesis),
                 "RecvAddrConfirmed" => Ok(TxStatus::RecvAddrConfirmed),
@@ -93,7 +96,8 @@ impl<'de> Deserialize<'de> for TxStatus {
                         if let Some(s) = v.as_str() {
                             // hex string
                             let s = s.strip_prefix("0x").unwrap_or(s);
-                            let bytes = hex::decode(s).map_err(|e| E::custom(format!("invalid hex: {e}")))?;
+                            let bytes = hex::decode(s)
+                                .map_err(|e| E::custom(format!("invalid hex: {e}")))?;
                             let mut arr = [0u8; 32];
                             let copy_len = core::cmp::min(32, bytes.len());
                             arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
@@ -276,8 +280,12 @@ pub struct UnsignedEip1559 {
 pub struct TxStateMachine {
     #[serde(rename = "senderAddress")]
     pub sender_address: String,
+    #[serde(rename = "senderPublicKey")]
+    pub sender_public_key: Option<String>,
     #[serde(rename = "receiverAddress")]
     pub receiver_address: String,
+    #[serde(rename = "receiverPublicKey")]
+    pub receiver_public_key: Option<String>,
     /// hashed sender and receiver address to bind the addresses while sending
     #[serde(rename = "multiId")]
     pub multi_id: [u8; 32],
@@ -299,9 +307,6 @@ pub struct TxStateMachine {
     /// call payload (hash of transaction and raw transaction bytes)
     #[serde(rename = "callPayload")]
     pub call_payload: Option<([u8; 32], Vec<u8>)>,
-    // /// used for simplifying tx identification
-    // pub code_word: String,
-    // pub sender_name: String,
     /// Inbound Request id for p2p
     #[serde(rename = "inboundReqId")]
     #[serde(serialize_with = "serialize_u64_as_string")]
@@ -338,8 +343,27 @@ impl TxStateMachine {
     }
 }
 
+#[cfg(feature = "wasm")]
+impl Token {
+    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsError> {
+        let token: Token = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsError::new(&format!("Failed to deserialize Token: {:?}", e)))?;
+        Ok(token)
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl ChainSupported {
+    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsError> {
+        let chain_supported: ChainSupported = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsError::new(&format!("Failed to deserialize ChainSupported: {:?}", e)))?;
+        Ok(chain_supported)
+    }
+}
 impl TxStateMachine {
-    pub fn increment_version(&mut self) { self.tx_version = self.tx_version.saturating_add(1); }
+    pub fn increment_version(&mut self) {
+        self.tx_version = self.tx_version.saturating_add(1);
+    }
     pub fn recv_confirmation_passed(&mut self) {
         self.status = TxStatus::RecvAddrConfirmationPassed
     }
@@ -368,11 +392,15 @@ impl TxStateMachine {
     pub fn recv_not_registered(&mut self) {
         self.status = TxStatus::ReceiverNotRegistered
     }
-    pub fn reverted(&mut self, reason: String) {}
     pub fn increment_nonce(&mut self) {
         self.tx_nonce += 1
     }
-    
+    pub fn set_sender_public_key(&mut self, public_key: String) {
+        self.sender_public_key = Some(public_key)
+    }
+    pub fn set_receiver_public_key(&mut self, public_key: String) {
+        self.receiver_public_key = Some(public_key)
+    }
 }
 
 // helper for hashing p2p swarm request ids
@@ -473,55 +501,151 @@ pub struct DbTxStateMachine {
     pub success: bool,
 }
 
-/// Supported tokens
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+
+
+
+/// Supported tokens (flexible)
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum Token {
-    Dot,
-    Bnb,
-    Sol,
-    Eth,
-    UsdtSol,
-    UsdcSol,
-    UsdtEth,
-    UsdcEth,
-    UsdtDot,
+    /// Ethereum ecosystem tokens
+    Ethereum(EthereumToken),
+    /// BNB Smart Chain ecosystem tokens  
+    Bnb(BnbToken),
+    /// Polkadot ecosystem tokens
+    Polkadot(PolkadotToken),
+    /// Solana ecosystem tokens
+    Solana(SolanaToken),
+    /// TRON ecosystem tokens
+    Tron(TronToken),
+    /// Optimism ecosystem tokens
+    Optimism(OptimismToken),
+    /// Arbitrum ecosystem tokens
+    Arbitrum(ArbitrumToken),
+    /// Polygon ecosystem tokens
+    Polygon(PolygonToken),
+    /// Base ecosystem tokens
+    Base(BaseToken),
+    /// Bitcoin ecosystem tokens
+    Bitcoin(BitcoinToken),
 }
+
+/// Ethereum ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum EthereumToken {
+    /// Native ETH
+    ETH,
+    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
+    ERC20(String),
+}
+
+/// BNB Smart Chain ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum BnbToken {
+    /// Native BNB
+    BNB,
+    /// BEP-20 tokens by symbol (USDT, USDC, etc.)
+    BEP20(String),
+}
+
+/// Polkadot ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum PolkadotToken {
+    /// Native DOT
+    DOT,
+    /// Ecosystem tokens by symbol (USDT, USDC, etc.)
+    Asset(String),
+}
+
+/// Solana ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum SolanaToken {
+    /// Native SOL
+    SOL,
+    /// SPL tokens by symbol (USDT, USDC, etc.)
+    SPL(String),
+}
+
+/// TRON ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum TronToken {
+    /// Native TRX
+    TRX,
+    /// TRC-20 tokens by symbol (USDT, USDC, etc.)
+    TRC20(String),
+}
+
+/// Optimism ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum OptimismToken {
+    /// Native ETH (on Optimism)
+    ETH,
+    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
+    ERC20(String),
+}
+
+/// Arbitrum ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum ArbitrumToken {
+    /// Native ETH (on Arbitrum)
+    ETH,
+    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
+    ERC20(String),
+}
+
+/// Polygon ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum PolygonToken {
+    /// Native POL
+    POL,
+    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
+    ERC20(String),
+}
+
+/// Base ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum BaseToken {
+    /// Native ETH (on Base)
+    ETH,
+    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
+    ERC20(String),
+}
+
+/// Bitcoin ecosystem tokens
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub enum BitcoinToken {
+    /// Native BTC (only token on Bitcoin)
+    BTC,
+}
+
 
 impl Default for Token {
     fn default() -> Self {
-        Self::Eth
+        Token::Ethereum(EthereumToken::ETH)
     }
 }
 
 impl From<Token> for String {
     fn from(value: Token) -> Self {
         match value {
-            Token::Dot => "Dot".to_string(),
-            Token::Bnb => "Bnb".to_string(),
-            Token::Sol => "Sol".to_string(),
-            Token::Eth => "Eth".to_string(),
-            Token::UsdtSol => "UsdtSol".to_string(),
-            Token::UsdcSol => "UsdcSol".to_string(),
-            Token::UsdtEth => "UsdtEth".to_string(),
-            Token::UsdcEth => "UsdcEth".to_string(),
-            Token::UsdtDot => "UsdtDot".to_string(),
-        }
-    }
-}
-
-impl From<&str> for Token {
-    fn from(value: &str) -> Self {
-        match value {
-            "Dot" => Token::Dot,
-            "Bnb" => Token::Bnb,
-            "Sol" => Token::Sol,
-            "Eth" => Token::Eth,
-            "UsdtSol" => Token::UsdtSol,
-            "UsdcSol" => Token::UsdcSol,
-            "UsdtEth" => Token::UsdtEth,
-            "UsdcEth" => Token::UsdcEth,
-            "UsdtDot" => Token::UsdtDot,
-            _ => unreachable!(),
+            Token::Ethereum(EthereumToken::ETH) => "Ethereum:ETH".to_string(),
+            Token::Ethereum(EthereumToken::ERC20(sym)) => format!("Ethereum:{}", sym),
+            Token::Bnb(BnbToken::BNB) => "BNB:BNB".to_string(),
+            Token::Bnb(BnbToken::BEP20(sym)) => format!("BNB:{}", sym),
+            Token::Polkadot(PolkadotToken::DOT) => "Polkadot:DOT".to_string(),
+            Token::Polkadot(PolkadotToken::Asset(sym)) => format!("Polkadot:{}", sym),
+            Token::Solana(SolanaToken::SOL) => "Solana:SOL".to_string(),
+            Token::Solana(SolanaToken::SPL(sym)) => format!("Solana:{}", sym),
+            Token::Tron(TronToken::TRX) => "TRON:TRX".to_string(),
+            Token::Tron(TronToken::TRC20(sym)) => format!("TRON:{}", sym),
+            Token::Optimism(OptimismToken::ETH) => "Optimism:ETH".to_string(),
+            Token::Optimism(OptimismToken::ERC20(sym)) => format!("Optimism:{}", sym),
+            Token::Arbitrum(ArbitrumToken::ETH) => "Arbitrum:ETH".to_string(),
+            Token::Arbitrum(ArbitrumToken::ERC20(sym)) => format!("Arbitrum:{}", sym),
+            Token::Polygon(PolygonToken::POL) => "Polygon:POL".to_string(),
+            Token::Polygon(PolygonToken::ERC20(sym)) => format!("Polygon:{}", sym),
+            Token::Base(BaseToken::ETH) => "Base:ETH".to_string(),
+            Token::Base(BaseToken::ERC20(sym)) => format!("Base:{}", sym),
+            Token::Bitcoin(BitcoinToken::BTC) => "Bitcoin:BTC".to_string(),
         }
     }
 }
@@ -529,13 +653,20 @@ impl From<&str> for Token {
 impl From<Token> for ChainSupported {
     fn from(value: Token) -> Self {
         match value {
-            Token::Dot | Token::UsdtDot => ChainSupported::Polkadot,
-            Token::Bnb => ChainSupported::Bnb,
-            Token::Sol | Token::UsdcSol | Token::UsdtSol => ChainSupported::Solana,
-            Token::Eth | Token::UsdtEth | Token::UsdcEth => ChainSupported::Ethereum,
+            Token::Ethereum(_) => ChainSupported::Ethereum,
+            Token::Bnb(_) => ChainSupported::Bnb,
+            Token::Polkadot(_) => ChainSupported::Polkadot,
+            Token::Solana(_) => ChainSupported::Solana,
+            Token::Tron(_) => ChainSupported::Tron,
+            Token::Optimism(_) => ChainSupported::Optimism,
+            Token::Arbitrum(_) => ChainSupported::Arbitrum,
+            Token::Polygon(_) => ChainSupported::Polygon,
+            Token::Base(_) => ChainSupported::Base,
+            Token::Bitcoin(_) => ChainSupported::Bitcoin,
         }
     }
 }
+
 
 /// Supported blockchain networks along with rpc provider url
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode, Copy)]
@@ -544,11 +675,17 @@ pub enum ChainSupported {
     Ethereum,
     Bnb,
     Solana,
+    Tron,
+    Optimism,
+    Arbitrum,
+    Polygon,
+    Base,
+    Bitcoin,
 }
 
 impl Default for ChainSupported {
     fn default() -> Self {
-        ChainSupported::Polkadot
+        ChainSupported::Ethereum
     }
 }
 
@@ -559,6 +696,12 @@ impl From<ChainSupported> for String {
             ChainSupported::Ethereum => "Ethereum".to_string(),
             ChainSupported::Bnb => "Bnb".to_string(),
             ChainSupported::Solana => "Solana".to_string(),
+            ChainSupported::Tron => "Tron".to_string(),
+            ChainSupported::Optimism => "Optimism".to_string(),
+            ChainSupported::Arbitrum => "Arbitrum".to_string(),
+            ChainSupported::Polygon => "Polygon".to_string(),
+            ChainSupported::Base => "Base".to_string(),
+            ChainSupported::Bitcoin => "Bitcoin".to_string(),
         }
     }
 }
@@ -571,6 +714,12 @@ impl From<&str> for ChainSupported {
             "Ethereum" => ChainSupported::Ethereum,
             "Bnb" => ChainSupported::Bnb,
             "Solana" => ChainSupported::Solana,
+            "Tron" => ChainSupported::Tron,
+            "Optimism" => ChainSupported::Optimism,
+            "Arbitrum" => ChainSupported::Arbitrum,
+            "Polygon" => ChainSupported::Polygon,
+            "Base" => ChainSupported::Base,
+            "Bitcoin" => ChainSupported::Bitcoin,
             _ => ChainSupported::Ethereum,
         }
     }
@@ -594,6 +743,18 @@ impl ChainSupported {
                 .unwrap_or_else(|_| "https://bsc-dataseed.binance.org/".to_string()),
             ChainSupported::Solana => std::env::var("SOLANA_RPC_URL")
                 .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
+            ChainSupported::Tron => std::env::var("TRON_RPC_URL")
+                .unwrap_or_else(|_| "https://api.trongrid.io".to_string()),
+            ChainSupported::Optimism => std::env::var("OPTIMISM_RPC_URL")
+                .unwrap_or_else(|_| "https://mainnet.optimism.io".to_string()),
+            ChainSupported::Arbitrum => std::env::var("ARBITRUM_RPC_URL")
+                .unwrap_or_else(|_| "https://arb1.arbitrum.io/rpc".to_string()),
+            ChainSupported::Polygon => std::env::var("POLYGON_RPC_URL")
+                .unwrap_or_else(|_| "https://polygon-rpc.com".to_string()),
+            ChainSupported::Base => std::env::var("BASE_RPC_URL")
+                .unwrap_or_else(|_| "https://mainnet.base.org".to_string()),
+            ChainSupported::Bitcoin => std::env::var("BITCOIN_RPC_URL")
+                .unwrap_or_else(|_| "https://api.blockcypher.com/v1/btc/main".to_string()),
         }
     }
 }

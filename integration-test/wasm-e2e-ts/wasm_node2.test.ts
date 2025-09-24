@@ -5,7 +5,7 @@ import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayN
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/vane_lib/primitives.js';
+import { TxStateMachine, TxStateMachineManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -95,7 +95,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
           const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
           const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
           expect(balanceChange).toEqual(10);
-       }
+       },
+       60000
     );
     
   })

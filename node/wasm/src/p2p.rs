@@ -517,7 +517,7 @@ impl WasmP2pWorker {
         let swarm = self.wasm_swarm.clone();
         let p2p_command_recv = self.wasm_p2p_command_recv.clone();
         let pending_request = self.wasm_pending_request.clone();
-        let mut self_clone = self.clone();
+        let self_clone = self.clone();
 
         // Event-driven approach - no polling needed!
         wasm_bindgen_futures::spawn_local(async move {

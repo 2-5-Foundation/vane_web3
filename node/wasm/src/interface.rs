@@ -105,23 +105,23 @@ impl PublicInterfaceWorker {
         sender: String,
         receiver: String,
         amount: u128,
-        token: String,
+        token: Token,
         code_word: String,
-        sender_network: String,
-        receiver_network: String,
+        sender_network: ChainSupported,
+        receiver_network: ChainSupported,
     ) -> Result<JsValue, JsError> {
-        info!("initiated sending transaction: receiver: {}, amount: {}, token: {}, sender_network: {}, receiver_network: {}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
-        let token = token.as_str().into();
+        info!("initiated sending transaction: receiver: {}, amount: {}, token: {:?}, sender_network: {:?}, receiver_network: {:?}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
 
-        let sender_network_chain: ChainSupported = sender_network.as_str().into();
-        let receiver_network_chain: ChainSupported = receiver_network.as_str().into();
-        
-       {
-            let sender_network = verify_public_bytes(sender.as_str(), token, sender_network_chain).map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
-            let receiver_network = verify_public_bytes(receiver.as_str(), token, receiver_network_chain).map_err(|e| JsError::new(&format!("receiver network error: {:?}", e)))?;
+        {
+            let sender_network_verified = verify_public_bytes(sender.as_str(), &token, sender_network)
+                .map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
+            let receiver_network_verified =
+                verify_public_bytes(receiver.as_str(), &token, receiver_network)
+                    .map_err(|e| JsError::new(&format!("receiver network error: {:?}", e)))?;
             // add if the route is supported
-            verify_route(sender_network_chain.clone(), receiver_network_chain.clone()).map_err(|e| JsError::new(&format!("route error: {:?}", e)))?;
-       }
+            verify_route(sender_network.clone(), receiver_network.clone())
+                .map_err(|e| JsError::new(&format!("route error: {:?}", e)))?;
+        }
 
         info!("successfully initially verified sender and receiver and related network bytes");
         // construct the tx
@@ -145,6 +145,8 @@ impl PublicInterfaceWorker {
 
         let tx_state_machine = TxStateMachine {
             sender_address: sender,
+            sender_public_key: None,
+            receiver_public_key: None,
             receiver_address: receiver,
             multi_id: multi_addr,
             recv_signature: None,
@@ -159,11 +161,10 @@ impl PublicInterfaceWorker {
             token,
             code_word,
             eth_unsigned_tx_fields: None,
-            sender_address_network: sender_network_chain,
-            receiver_address_network: receiver_network_chain,
+            sender_address_network: sender_network,
+            receiver_address_network: receiver_network,
         };
 
-        // dry run the tx
 
         // propagate the tx to lower layer (Main service worker layer)
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
@@ -184,7 +185,9 @@ impl PublicInterfaceWorker {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
-        if let TxStatus::Reverted(_) = tx.status { return Ok(()); }
+        if let TxStatus::Reverted(_) = tx.status {
+            return Ok(());
+        }
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
@@ -296,7 +299,9 @@ impl PublicInterfaceWorker {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
-        if let TxStatus::Reverted(_) = tx.status { return Ok(()); }
+        if let TxStatus::Reverted(_) = tx.status {
+            return Ok(());
+        }
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))
@@ -326,7 +331,9 @@ impl PublicInterfaceWorker {
         reason: Option<String>,
     ) -> Result<(), JsError> {
         if tx.is_null() || tx.is_undefined() {
-            return Err(JsError::new("revertTransaction: missing TxStateMachine (got null/undefined)"));
+            return Err(JsError::new(
+                "revertTransaction: missing TxStateMachine (got null/undefined)",
+            ));
         }
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
 
@@ -501,14 +508,28 @@ impl PublicInterfaceWorkerJs {
         sender: String,
         receiver: String,
         amount: u128,
-        token: String,
+        token: JsValue,
         code_word: String,
-        sender_network: String,
-        receiver_network: String,
+        sender_network: JsValue,
+        receiver_network: JsValue,
     ) -> Result<JsValue, JsError> {
+        
+        let token: Token = Token::from_js_value_unconditional(token)?;
+        let sender_network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(sender_network)?;
+        let receiver_network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(receiver_network)?;
+
+        
         self.inner
             .borrow()
-            .initiate_transaction(sender, receiver, amount, token, code_word, sender_network, receiver_network)
+            .initiate_transaction(
+                sender,
+                receiver,
+                amount,
+                token,
+                code_word,
+                sender_network_chain,
+                receiver_network_chain,
+            )
             .await
     }
 
