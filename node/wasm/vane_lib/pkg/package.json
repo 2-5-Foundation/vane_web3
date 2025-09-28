@@ -1,0 +1,22 @@
+{
+  "name": "vane-wasm-node",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wasm_node_bg.wasm",
+    "wasm_node.js",
+    "wasm_node.d.ts",
+    "vane_wasm_node.js",
+    "host_functions"
+  ],
+  "main": "wasm_node.js",
+  "types": "wasm_node.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "dependencies": {
+    "@polkadot/api": "^16.4.4",
+    "@solana/web3.js": "^1.98.4",
+    "viem": "^2.33.3"
+  }
+}

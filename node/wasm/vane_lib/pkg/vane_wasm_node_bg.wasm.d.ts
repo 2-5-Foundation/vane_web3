@@ -1,0 +1,33 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
+export const publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
+export const publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
+export const publicinterfaceworkerjs_senderConfirm: (a: number, b: any) => any;
+export const publicinterfaceworkerjs_watchTxUpdates: (a: number, b: any) => any;
+export const publicinterfaceworkerjs_unsubscribeWatchTxUpdates: (a: number) => void;
+export const publicinterfaceworkerjs_fetchPendingTxUpdates: (a: number) => any;
+export const publicinterfaceworkerjs_receiverConfirm: (a: number, b: any) => any;
+export const publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
+export const publicinterfaceworkerjs_exportStorage: (a: number) => any;
+export const publicinterfaceworkerjs_getMetrics: (a: number) => any;
+export const publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
+export const publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
+export const start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
+export const __wbg_requestarguments_free: (a: number, b: number) => void;
+export const requestarguments_method: (a: number) => [number, number];
+export const requestarguments_params: (a: number) => any;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_export_4: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_export_6: WebAssembly.Table;
+export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1529ad83ebf2986c: (a: number, b: number) => void;
+export const closure1190_externref_shim: (a: number, b: number, c: any) => void;
+export const closure1547_externref_shim: (a: number, b: number, c: any) => void;
+export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h182aa6ac5f4b66da: (a: number, b: number) => void;
+export const closure1942_externref_shim: (a: number, b: number, c: any, d: any) => void;
+export const __wbindgen_start: () => void;
