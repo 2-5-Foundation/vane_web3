@@ -5343,6 +5343,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
+name = "openssl-src"
+version = "300.5.2+3.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d270b79e2926f5150189d475bc7e9d2c69f9c4697b185fa917d5a32b792d21b4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "openssl-sys"
 version = "0.9.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5350,6 +5359,7 @@ checksum = "90096e2e47630d78b7d1c20952dc621f957103f8bc2c8359ec81290d75238571"
 dependencies = [
  "cc",
  "libc",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
@@ -6541,22 +6551,6 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
-
-[[package]]
-name = "relay-node"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures",
- "jsonrpsee",
- "libp2p",
- "log",
- "primitives",
- "serde",
- "sp-core",
- "sp-runtime",
- "tokio",
-]
 
 [[package]]
 name = "request-handlers"
@@ -8874,6 +8868,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "vane-relay-node"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "hex",
+ "jsonrpsee",
+ "libp2p",
+ "log",
+ "openssl-sys",
+ "primitives",
+ "serde",
+ "sp-core",
+ "sp-runtime",
+ "tokio",
+]
+
+[[package]]
 name = "vane-wasm-node"
 version = "0.1.0"
 dependencies = [
@@ -8914,16 +8926,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "vane_web3_app"
+name = "vane-web3-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "log",
- "relay-node",
  "simple_logger",
  "simplelog",
  "tokio",
+ "vane-relay-node",
 ]
 
 [[package]]

@@ -8,6 +8,7 @@ use libp2p::kad::{
 use libp2p::relay::Behaviour as RelayBehaviour;
 use libp2p::swarm::{derive_prelude, NetworkBehaviour};
 use libp2p::swarm::{NetworkInfo, SwarmEvent};
+use hex;
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 
 use anyhow::anyhow;
@@ -26,66 +27,55 @@ use tokio::time::{interval, Duration};
 use std::num::NonZeroU32;
 #[derive(NetworkBehaviour)]
 #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
-pub struct RelayServerBehaviour<TStore> {
-    pub relay_server: libp2p::relay::Behaviour,
-    pub dht: DhtBehaviour<TStore>,
+pub struct RelayServerBehaviour {
+    pub relay_server: libp2p::relay::Behaviour
 }
 
-impl<TStore> RelayServerBehaviour<TStore> {
-    pub fn new(relay_behaviour: libp2p::relay::Behaviour, dht: DhtBehaviour<TStore>) -> Self {
+impl RelayServerBehaviour {
+    pub fn new(relay_behaviour: libp2p::relay::Behaviour) -> Self {
         Self {
-            relay_server: relay_behaviour,
-            dht,
+            relay_server: relay_behaviour
         }
     }
 }
 
 pub struct RelayP2pWorker {
     pub peer_id: PeerId,
-    pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour<MemoryStore>>>>,
+    pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour>>>,
     pub external_multi_addr: Multiaddr,
     pub listening_addr: (Multiaddr, Multiaddr),
 }
 
 impl RelayP2pWorker {
-    pub async fn new(dns: String, port: u16, live: bool) -> Result<Self, anyhow::Error> {
-        let self_keypair = libp2p::identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from(self_keypair.public());
-
-        let external_multi_addr = if live {
-            Multiaddr::empty()
-                .with(libp2p::multiaddr::Protocol::Dns(dns.into()))
-                .with(libp2p::multiaddr::Protocol::Tcp(port))
-                .with(libp2p::multiaddr::Protocol::Ws("/".into()))
-                .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
+    pub async fn new(dns: String, port: u16, live: bool, private_key: Option<String>) -> Result<Self, anyhow::Error> {
+        
+        let self_keypair = if live {
+            let private_key_str = private_key.unwrap();
+            let private_key = private_key_str.strip_prefix("0x").unwrap_or(&private_key_str).to_string();
+            let pk = hex::decode(&private_key)
+                .map_err(|e| anyhow::anyhow!("failed to decode hex private key: {e}"))?;
+            libp2p::identity::Keypair::ed25519_from_bytes(pk)
+                .map_err(|e| anyhow::anyhow!("failed to decode private key: {e}"))?
         } else {
-            Multiaddr::from(Ipv6Addr::LOCALHOST)
-                .with(libp2p::multiaddr::Protocol::Tcp(port))
-                .with(libp2p::multiaddr::Protocol::Ws("/".into()))
-                .with(libp2p::multiaddr::Protocol::P2p(peer_id.clone()))
+            libp2p::identity::Keypair::generate_ed25519()
         };
+        let peer_id = PeerId::from(self_keypair.public());
+    
+        let external_multi_addr = Multiaddr::empty()
+            .with(libp2p::multiaddr::Protocol::Dns4(dns.into()))
+            .with(libp2p::multiaddr::Protocol::Tcp(port))
+            .with(libp2p::multiaddr::Protocol::Wss("/".into()))
+            .with(libp2p::multiaddr::Protocol::P2p(peer_id));
 
-        let listening_multi_addr = Multiaddr::from(Ipv6Addr::LOCALHOST)
+        info!(target:"p2p","relay server external multi addr: {:?}",&external_multi_addr);
+    
+        let ipv4_listening_addr = Multiaddr::from(std::net::Ipv4Addr::UNSPECIFIED) // 0.0.0.0
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
-
-        let listening_multi_addr_ipv4 = Multiaddr::from(Ipv4Addr::LOCALHOST)
+    
+        let ipv6_listening_addr = Multiaddr::from(std::net::Ipv6Addr::UNSPECIFIED) // ::
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
-
-        let dht_behaviour = DhtBehaviour::with_config(
-            peer_id.clone(),
-            MemoryStore::with_config(
-                peer_id.clone(),
-                MemoryStoreConfig {
-                    max_records: 50_000,              // Same as relay
-                    max_value_bytes: 2048 * 50,       // Increase this
-                    max_providers_per_key: 1024 * 50, // Keep this
-                    max_provided_keys: 10_000,        // Increase this
-                },
-            ),
-            KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol")),
-        );
 
         let mut relay_config = libp2p::relay::Config {
             max_reservations: 10_000,
@@ -104,7 +94,7 @@ impl RelayP2pWorker {
             .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
             .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10));
 
-        let relay_behaviour = RelayServerBehaviour::<MemoryStore>::new(
+        let relay_behaviour = RelayServerBehaviour::new(
             libp2p::relay::Behaviour::new(
                 peer_id.clone(),
                 libp2p::relay::Config {
@@ -118,8 +108,7 @@ impl RelayP2pWorker {
                     max_circuit_bytes: 1024 * 1024 * 10,
                     circuit_src_rate_limiters: vec![],
                 },
-            ),
-            dht_behaviour,
+            )
         );
 
         let mut relay_swarm = SwarmBuilder::with_existing_identity(self_keypair)
@@ -143,28 +132,19 @@ impl RelayP2pWorker {
             peer_id,
             swarm: Arc::new(Mutex::new(relay_swarm)),
             external_multi_addr,
-            listening_addr: (listening_multi_addr, listening_multi_addr_ipv4),
+            listening_addr: (ipv4_listening_addr, ipv6_listening_addr),
         })
     }
 
     pub async fn start_swarm(&mut self) -> Result<(), anyhow::Error> {
         let listening_addr = &self.listening_addr.0;
         let _listening_id = self.swarm.lock().await.listen_on(listening_addr.clone())?;
-        trace!(target:"p2p","relay server listening to: {:?}",listening_addr.clone());
         let listening_addr_ipv4 = &self.listening_addr.1;
         let _listening_id_ipv4 = self
             .swarm
             .lock()
             .await
             .listen_on(listening_addr_ipv4.clone())?;
-        trace!(target:"p2p","relay server listening to ipv4: {:?}",listening_addr_ipv4.clone());
-
-        self.swarm
-            .lock()
-            .await
-            .behaviour_mut()
-            .dht
-            .add_address(&self.peer_id, listening_addr.clone());
 
         loop {
             let swarm_event = {
@@ -173,9 +153,6 @@ impl RelayP2pWorker {
             };
             match swarm_event {
                 SwarmEvent::Behaviour(relay_server_behaviour) => match relay_server_behaviour {
-                    RelayServerBehaviourEvent::Dht(dht_event) => {
-                        self.handle_dht_event(dht_event).await?;
-                    }
                     RelayServerBehaviourEvent::RelayServer(relay_event) => {
                         self.handle_relay_event(relay_event).await;
                     }
@@ -229,73 +206,6 @@ impl RelayP2pWorker {
                 }
             }
         }
-    }
-
-    async fn handle_dht_event(&mut self, event: DhtEvent) -> Result<(), anyhow::Error> {
-        match event {
-            DhtEvent::InboundRequest { request } => match request {
-                InboundRequest::PutRecord { record, source, .. } => {
-                    info!(target:"p2p","dht inbound request: PutRecord {{ source: {:?}, record: {:?} }}", source, record);
-                }
-                InboundRequest::GetProvider {
-                    num_closer_peers,
-                    num_provider_peers,
-                } => {
-                    info!(target:"p2p","dht inbound request: GetProvider {{ num_closer_peers: {:?}, num_provider_peers: {:?} }}", 
-                              num_closer_peers, num_provider_peers);
-                }
-                InboundRequest::GetRecord {
-                    num_closer_peers,
-                    present_locally,
-                } => {
-                    info!(target:"p2p","dht inbound request: GetRecord {{ num_closer_peers: {:?}, present_locally: {:?} }}", num_closer_peers, present_locally);
-                }
-                InboundRequest::AddProvider { record } => {
-                    info!(target:"p2p","dht inbound request: AddProvider {{ key: {:?} }}", record);
-                }
-                InboundRequest::FindNode { num_closer_peers } => {
-                    info!(target:"p2p","dht inbound request: FindNode {{ num_closer_peers: {:?} }}", 
-                              num_closer_peers);
-                }
-            },
-            DhtEvent::OutboundQueryProgressed { id, result, .. } => match result {
-                QueryResult::GetRecord(GetRecordResult::Ok(GetRecordOk::FoundRecord(
-                    PeerRecord { record, .. },
-                ))) => {
-                    info!(target:"p2p","dht found record: key={:?}, value={:?}", record.key, record.value);
-                }
-                QueryResult::GetRecord(GetRecordResult::Ok(
-                    GetRecordOk::FinishedWithNoAdditionalRecord { .. },
-                )) => {
-                    info!(target:"p2p","dht get record finished: no record found");
-                }
-                QueryResult::GetRecord(GetRecordResult::Err(e)) => {
-                    error!(target:"p2p","dht get record error: {:?}", e);
-                }
-                _ => {}
-            },
-            DhtEvent::RoutingUpdated {
-                peer,
-                addresses,
-                is_new_peer,
-                ..
-            } => {
-                info!(target:"p2p","dht routing updated: peer {:?}, addresses {:?}, is_new_peer {:?}",peer,addresses,is_new_peer);
-            }
-            DhtEvent::UnroutablePeer { peer } => {
-                info!(target:"p2p","dht unroutable peer: {:?}",peer);
-            }
-            DhtEvent::ModeChanged { new_mode } => {
-                info!(target:"p2p","dht mode changed: {:?}",new_mode);
-            }
-            DhtEvent::RoutablePeer { peer, address } => {
-                info!(target:"p2p","dht routable peer: {:?}",address);
-            }
-            DhtEvent::PendingRoutablePeer { peer, address } => {
-                info!(target:"p2p","dht pending routable peer: {:?}",address);
-            }
-        }
-        Ok(())
     }
 
     async fn handle_relay_event(&self, event: RelayServerEvent) {

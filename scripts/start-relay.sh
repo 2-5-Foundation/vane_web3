@@ -3,7 +3,7 @@
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RELAY_BIN="$PROJECT_ROOT/target/release/vane_web3_app"
+RELAY_BIN="$PROJECT_ROOT/target/release/vane-web3-app"
 RELAY_INFO_FILE="$PROJECT_ROOT/integration-test/wasm-e2e-ts/relay-info.json"
 
 # Cleanup function

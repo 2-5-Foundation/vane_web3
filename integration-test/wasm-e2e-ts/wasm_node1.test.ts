@@ -15,7 +15,7 @@ import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, Pu
 import { sign, serializeSignature } from 'viem/accounts';
 
 describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
-  let relayInfo: any;
+  let relayInfo: any | null = null;
   let nodeCoordinator: NodeCoordinator;
   let wasmNodeInstance: any;
   let walletClient: TestClient & WalletActions & PublicActions;
@@ -28,12 +28,12 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   beforeAll(async () => {
     // Relay info
-    try {
-      relayInfo = await loadRelayNodeInfo();
-    } catch (error) {
-      console.error('❌ Failed to load relay node info:', error);
-      throw error;
-    }
+    // try {
+    //   relayInfo = await loadRelayNodeInfo();
+    // } catch (error) {
+    //   console.error('❌ Failed to load relay node info:', error);
+    //   throw error;
+    // }
 
     // Wallet / address
     walletClient = getWallets()[0][0] as TestClient & WalletActions & PublicActions;
@@ -52,8 +52,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
 
     // Start WASM node
+    //console.log('🔑 RELAY_INFO', relayInfo.multiAddr);
     wasmNodeInstance = startWasmNode(
-      relayInfo.multiAddr,
+      "/dns4/vane-relay.vaneweb3.com/tcp/443/wss/p2p/12D3KooWMiWUm9yWXUnLQQ5dAtbwMBts71248gqrjqJjgcvzrjuH",
       wasm_client_address,
       'Ethereum',
       false
