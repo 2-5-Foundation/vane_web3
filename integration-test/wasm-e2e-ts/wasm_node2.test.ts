@@ -5,7 +5,7 @@ import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayN
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
 import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager } from '../../node/wasm/vane_lib/primitives.js';
+import { TxStateMachine, TxStateMachineManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -65,27 +65,21 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         NODE_EVENTS.TRANSACTION_RECEIVED,
         async () => {
          console.log('👂 TRANSACTION_RECEIVED');
-         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-           // Set up the transaction watcher (await the Promise)
-           await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-            if (!walletClient) throw new Error('walletClient not initialized');
-            const account = walletClient.account!;
-            // @ts-ignore
-            const signature = await account.signMessage({ message: tx.receiverAddress });
-            const txManager = new TxStateMachineManager(tx);
-            txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-            const updatedTx = txManager.getTx();
-            await vaneWasm?.receiverConfirm(updatedTx);
-          });
-           
-           // Fetch current pending transactions
-           const receivedTx = await vaneWasm?.fetchPendingTxUpdates();
-           expect(receivedTx.length).toBeGreaterThan(0);
+         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => { 
+          const receivedTx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+          const latestTx = receivedTx[0];
+          if (!walletClient) throw new Error('walletClient not initialized');
+          const account = walletClient.account!;
+          // @ts-ignore
+          const signature = await account.signMessage({ message: latestTx.receiverAddress });
+          const txManager = new TxStateMachineManager(latestTx);
+          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+          const updatedTx = txManager.getTx();
+          await vaneWasm?.receiverConfirm(updatedTx);
          });
        },
         60000
       );
-
 
     await nodeCoordinator.waitForEvent(
       NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
@@ -95,10 +89,54 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
           const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
           const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
           expect(balanceChange).toEqual(10);
-       }
+       },
+       60000
     );
     
   })
+
+  test("should successfully receive ERC20 token transaction", async () => {
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    console.log(" \n \n TEST CASE 2: should successfully receive ERC20 token transaction and confirm it (RECEIVER_NODE)");
+    await nodeCoordinator.waitForEvent(
+      NODE_EVENTS.TRANSACTION_RECEIVED,
+      async () => {
+       console.log('👂 TRANSACTION_RECEIVED ERC20 TOKEN');
+       await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => { 
+        await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
+          if(tx.codeWord !== 'ERC20Testing') {return;}else{
+          console.log('🔑 WATCHING TX ERC20 TOKEN', tx.codeWord);
+          if (!walletClient) throw new Error('walletClient not initialized');
+          const account = walletClient.account!;
+          // @ts-ignore
+          const signature = await account.signMessage({ message: tx.receiverAddress });
+          const txManager = new TxStateMachineManager(tx);
+          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+          const updatedTx = txManager.getTx();
+          await vaneWasm?.receiverConfirm(updatedTx);
+          }
+
+        });
+
+        // const receivedTx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
+        // const latestTx = receivedTx[0];
+        // console.log('🔑 LATEST TX ERC20 TOKEN', latestTx);
+        // if (!walletClient) throw new Error('walletClient not initialized');
+        // const account = walletClient.account!;
+        // // @ts-ignore
+        // const signature = await account.signMessage({ message: latestTx.receiverAddress });
+        // const txManager = new TxStateMachineManager(latestTx);
+        // txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+        // const updatedTx = txManager.getTx();
+        // await vaneWasm?.receiverConfirm(updatedTx);
+  
+       });
+     },
+      60000
+    );
+    await new Promise(resolve => setTimeout(resolve, 30000));
+  });
+
 
   afterAll(() => {
     nodeCoordinator.stop();

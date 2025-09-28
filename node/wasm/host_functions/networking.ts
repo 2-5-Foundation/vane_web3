@@ -15,18 +15,47 @@ import {
   serializeTransaction,
   hexToSignature,
   parseTransaction,
-  recoverAddress
+  recoverAddress,
+  encodeFunctionData,
+  getContract
 } from 'viem';
 
 import type { TransactionSerializedEIP1559 } from 'viem';
 
 import { 
-  mainnet, 
-  polygon, 
-  bsc, 
-  arbitrum 
+  mainnet
 } from 'viem/chains';
-import { ChainSupported, type TxStateMachine } from './primitives';
+import { ChainSupported, type TxStateMachine, type Token } from '../vane_lib/primitives';
+
+// ERC20 ABI for token transfers and validation
+const ERC20_ABI = [
+  {
+    name: 'transfer',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' }
+    ],
+    outputs: [{ name: '', type: 'bool' }]
+  },
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'account', type: 'address' }
+    ],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    name: 'totalSupply',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }]
+  }
+] as const;
 
 type UnsignedEip1559 = {
   to: Address;
@@ -48,7 +77,7 @@ const USE_ANVIL = (typeof process !== 'undefined' && (process.env?.VITE_USE_ANVI
 
 const pickRpc = (liveUrl: string): string => USE_ANVIL ? 'http://127.0.0.1:8545' : liveUrl;
 
-const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Polygon | ChainSupported.Bnb | ChainSupported.Arbitrum, {
+const CHAIN_CONFIGS: Record<ChainSupported.Ethereum, {
   chain: Chain;
   rpcUrl: string;
   chainId: number;
@@ -57,41 +86,11 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Polygon | C
     chain: mainnet,
     rpcUrl: pickRpc('https://eth-mainnet.g.alchemy.com/v2/demo'),
     chainId: USE_ANVIL ? 31337 : 1
-  },
-  [ChainSupported.Polygon]: {
-    chain: polygon,
-    rpcUrl: pickRpc('https://polygon-rpc.com'), 
-    chainId: 137
-  },
-  [ChainSupported.Bnb]: {
-    chain: bsc,
-    rpcUrl: pickRpc('https://bsc-dataseed.binance.org'), 
-    chainId: 56
-  },
-  [ChainSupported.Arbitrum]: {
-    chain: arbitrum,
-    rpcUrl: pickRpc('https://arb1.arbitrum.io/rpc'), 
-    chainId: 42161
   }
 };
 
-const createPublicClientForChain = (chain: Chain, rpcUrl: string): PublicClient => {
-  return createPublicClient({
-    chain,
-    transport: http(rpcUrl)
-  });
-};
-
-function isSupportedChain(chain: ChainSupported): boolean {
-  return Object.prototype.hasOwnProperty.call(CHAIN_CONFIGS, chain);
-}
-
-function getChainFamily(chain: ChainSupported): 'evm' | 'polkadot' | 'solana' | 'unknown' {
-  if (isSupportedChain(chain)) return 'evm';
-  // These comparisons are safe even if enums are not yet defined for non-EVM
-  if ((ChainSupported as any).Polkadot !== undefined && chain === (ChainSupported as any).Polkadot) return 'polkadot';
-  if ((ChainSupported as any).Kusama !== undefined && chain === (ChainSupported as any).Kusama) return 'polkadot';
-  if ((ChainSupported as any).Solana !== undefined && chain === (ChainSupported as any).Solana) return 'solana';
+function getChainFamily(chain: ChainSupported): 'ethereum' | 'unknown' {
+  if (chain === ChainSupported.Ethereum) return 'ethereum';
   return 'unknown';
 }
 
@@ -127,27 +126,6 @@ function reconstructSignedTransaction(
 }
 
 
-async function verifySignature(
-  signatureHashBytes: Uint8Array,
-  signedCallPayload: Uint8Array,
-  senderAddress: Address
-): Promise<boolean> {
-  try {
-    const hashHex = '0x' + Buffer.from(signatureHashBytes).toString('hex');
-    const sigHex = '0x' + Buffer.from(signedCallPayload).toString('hex');
-
-    const recoveredAddr = await recoverAddress({
-      hash: hashHex as `0x${string}`,
-      signature: sigHex as `0x${string}`,
-    });
-
-    return recoveredAddr.toLowerCase() === senderAddress.toLowerCase();
-  } catch (err) {
-    console.error('Signature verification failed:', err);
-    return false;
-  }
-}
-
 export const hostNetworking = {
   async submitTx(tx: TxStateMachine): Promise<Uint8Array> {
     console.log('Submitting transaction...');
@@ -165,8 +143,8 @@ export const hostNetworking = {
         throw new Error("No call payload found - transaction must be created first");
       }
       
-      if (family === 'evm') {
-        console.log('Submitting EVM transaction...');
+      if (family === 'ethereum') {
+        console.log('Submitting Ethereum transaction...');
         const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
         const publicClient = createPublicClient({
           chain: chainConfig.chain,
@@ -176,21 +154,7 @@ export const hostNetworking = {
         const senderAddress = tx.senderAddress as Address;
         const [signatureHashBytes, serializedTxBytes] = tx.callPayload;
         const signatureBytes = tx.signedCallPayload;
-        
-        // 1. Verify the signature (your existing logic - keep it!)
-        // console.log('Verifying signature...');
-        // const isValidSignature = await verifySignature(
-        //   signatureHashBytes, 
-        //   signatureBytes, 
-        //   senderAddress
-        // );
-        
-        // if (!isValidSignature) {
-        //   console.log('❌ Signature verification failed - transaction cannot be submitted');
-        //   throw new Error('Signature verification failed - transaction cannot be submitted');
-        // }
-        console.log('✅ Signature verification passed!');
-        
+           
         // 2. Reconstruct the complete signed transaction
         console.log('Reconstructing signed transaction...');
         const signedTransactionHex = reconstructSignedTransaction(
@@ -235,14 +199,8 @@ export const hostNetworking = {
         throw new Error(`Unsupported chain: ${tx.senderAddressNetwork}`);
       }
       
-      if (family === 'evm') {
-        return await createTxEvm(tx);
-      }
-      if (family === 'polkadot') {
-        return await createTxPolkadot(tx);
-      }
-      if (family === 'solana') {
-        return await createTxSolana(tx);
+      if (family === 'ethereum') {
+        return await createTxEthereum(tx);
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -255,17 +213,62 @@ export const hostNetworking = {
 };
 
 // ===== Family-specific createTx implementations =====
-export async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
+export async function createTxEthereum(tx: TxStateMachine): Promise<TxStateMachine> {
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
   const publicClient = createPublicClient({ chain: chainConfig.chain, transport: http(chainConfig.rpcUrl) });
 
   const sender = tx.senderAddress as Address;
   const receiver = tx.receiverAddress as Address;
-  const value = parseEther(tx.amount.toString());
+  const amount = BigInt(tx.amount);
 
   const nonce = await publicClient.getTransactionCount({ address: sender });
 
-  const gas = await publicClient.estimateGas({ account: sender, to: receiver, value });
+  // Determine if this is a native token or ERC20 token
+  const isNativeToken = isNativeEthereumToken(tx.token);
+  
+  let transactionData: {
+    to: Address;
+    value: bigint;
+    data: Hex;
+  };
+
+  if (isNativeToken) {
+    // Native token transfer (ETH)
+    const value = parseEther(tx.amount.toString());
+    transactionData = {
+      to: receiver,
+      value,
+      data: '0x'
+    };
+  } else {
+    // ERC20 token transfer
+    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork, publicClient);
+    if (!tokenAddress) {
+      throw new Error(`Invalid ERC20 token address for ${JSON.stringify(tx.token)}`);
+    }
+
+    // Convert amount to token's smallest unit (most ERC20 tokens use 18 decimals)
+    const tokenAmount = amount * BigInt(10 ** 18);
+
+    const data = encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [receiver, tokenAmount]
+    });
+
+    transactionData = {
+      to: tokenAddress as Address,
+      value: 0n, // No ETH value for ERC20 transfers
+      data
+    };
+  }
+
+  const gas = await publicClient.estimateGas({ 
+    account: sender, 
+    to: transactionData.to, 
+    value: transactionData.value,
+    data: transactionData.data
+  });
 
   let maxFeePerGas: bigint;
   let maxPriorityFeePerGas: bigint;
@@ -280,21 +283,16 @@ export async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
     maxPriorityFeePerGas = gasPrice;
   }
 
-  // NOTE: if you include BSC (often legacy), prefer building a legacy tx on that chain.
-  if (tx.senderAddressNetwork === ChainSupported.Bnb) {
-    // consider building a legacy tx instead of 1559 here.
-    // (left out for brevity)
-  }
 
   const fields: UnsignedEip1559 = {
-    to: receiver,
-    value,
+    to: transactionData.to,
+    value: transactionData.value,
     chainId: chainConfig.chainId,
     nonce,
     gas,
     maxFeePerGas,
     maxPriorityFeePerGas,
-    data: '0x',
+    data: transactionData.data,
     accessList: [],
     type: 'eip1559',
   };
@@ -320,10 +318,43 @@ export async function createTxEvm(tx: TxStateMachine): Promise<TxStateMachine> {
   return updated;
 }
 
-async function createTxPolkadot(_tx: TxStateMachine): Promise<TxStateMachine> {
-  throw new Error('Polkadot transaction creation not implemented in host functions yet');
+// Helper function to determine if a token is a native Ethereum token
+function isNativeEthereumToken(token: Token): boolean {
+  if ('Ethereum' in token) {
+    return token.Ethereum === 'ETH';
+  }
+  return false;
 }
 
-async function createTxSolana(_tx: TxStateMachine): Promise<TxStateMachine> {
-  throw new Error('Solana transaction creation not implemented in host functions yet');
+// Helper function to get token contract address and validate it's a valid ERC20 contract
+async function getTokenAddress(token: Token, network: ChainSupported, publicClient: PublicClient): Promise<string | null> {
+  // Only support Ethereum mainnet ERC20 tokens
+  if (network !== ChainSupported.Ethereum) {
+    return null;
+  }
+
+  // Extract token address from Ethereum token object
+  if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
+    const tokenAddress = token.Ethereum.ERC20;
+    
+    // Validate that the address is a valid ERC20 contract
+    const isValidERC20 = await validateERC20Contract(tokenAddress as Address, publicClient);
+    if (isValidERC20) {
+      return tokenAddress;
+    }
+  }
+
+  return null;
+}
+
+// Helper function to validate if an address is a valid ERC20 contract
+async function validateERC20Contract(tokenAddress: Address, publicClient: PublicClient): Promise<boolean> {
+  try {
+    // Ensure there is bytecode at the address (indicates a contract exists)
+    const code = await publicClient.getCode({ address: tokenAddress });
+    return !!code;
+  } catch (error) {
+    console.warn(`Token address ${tokenAddress} failed ERC20 validation:`, error);
+    return false;
+  }
 }

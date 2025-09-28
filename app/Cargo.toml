@@ -1,5 +1,5 @@
 [package]
-name = "vane_web3_app"
+name = "vane-web3-app"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 #native-node                                 = { workspace = true}
-relay-node                                  = { workspace = true}
+vane-relay-node                             = { workspace = true}
 tokio                                       = { workspace = true}
 anyhow                                      = { workspace = true}
 log                                         = { workspace = true}

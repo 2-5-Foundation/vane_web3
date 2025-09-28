@@ -2,6 +2,7 @@ extern crate alloc;
 
 use alloc::{collections::BTreeMap, rc::Rc, string::ToString, sync::Arc, vec::Vec};
 use core::{cell::RefCell, str::FromStr};
+use std::fmt::format;
 
 use anyhow::anyhow;
 use log::{error, info};
@@ -16,6 +17,7 @@ use sp_core::{
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256, ByteArray, H256,
 };
+use k256::elliptic_curve::sec1::FromEncodedPoint;
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
@@ -108,43 +110,21 @@ impl WasmTxProcessingWorker {
             (network, signature, msg_hash.to_vec(), sender_address)
         };
         match network {
-            ChainSupported::Ethereum => {
-                let address: alloy::primitives::Address = address.parse().expect("Invalid address");
-
-                let hashed_msg = {
-                    if who == "Receiver" {
-                        let mut signable_msg = Vec::<u8>::new();
-                        signable_msg.extend_from_slice(ETH_SIG_MSG_PREFIX.as_bytes());
-                        signable_msg.extend_from_slice(msg.len().to_string().as_bytes());
-                        signable_msg.extend_from_slice(msg.as_slice());
-
-                        keccak_256(signable_msg.as_slice())
-                    } else {
-                        //TODO: handle this panic as system shutdown or error reporting
-                        msg.try_into().unwrap()
-                    }
-                };
-                let signature = EcdsaSignature::try_from(signature.as_slice())
-                    .map_err(|err| anyhow!("failed to convert ecdsa signature: {:?}", err))?;
-
-                match signature.recover_address_from_prehash(<&B256>::from(&hashed_msg)) {
-                    Ok(recovered_addr) => {
-                        info!(
-                            "recovered addr: {recovered_addr:?} == address: {address:?} ==== {:?}",
-                            tx.status
-                        );
-                        if recovered_addr == address {
-                            Ok::<(), anyhow::Error>(())?
-                        } else {
-                            Err(anyhow!(
-                                "addr recovery equality failed hence account invalid"
-                            ))?
-                        }
-                    }
-                    Err(err) => Err(anyhow!("ec signature verification failed: {err}"))?,
-                }
+            ChainSupported::Ethereum | ChainSupported::Bnb | ChainSupported::Arbitrum | ChainSupported::Optimism | ChainSupported::Polygon | ChainSupported::Base => {
+                self.verify_evm_signature(address, signature, msg, who)?
             }
-            _ => unreachable!(),
+            ChainSupported::Tron => {
+                self.verify_tron_signature(address, signature, msg, who)?
+            }
+            ChainSupported::Solana => {
+                self.verify_solana_signature(address, signature, msg, who)?
+            }
+            ChainSupported::Bitcoin => {
+                self.verify_bitcoin_signature(address, signature, msg, who)?
+            }
+            ChainSupported::Polkadot => {
+                self.verify_polkadot_signature(address, signature, msg, who)?
+            }
         }
         Ok(())
     }
@@ -198,6 +178,122 @@ impl WasmTxProcessingWorker {
                 error!("createTx JS error: {:?}", js_err);
                 Err(anyhow!("createTx failed: {:?}", js_err))
             }
+        }
+    }
+
+    /// Verify signature for EVM-compatible chains (Ethereum, BNB, Arbitrum, Optimism, Polygon, Base)
+    fn verify_evm_signature(
+        &self,
+        address: String,
+        signature: Vec<u8>,
+        msg: Vec<u8>,
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
+        let address: alloy::primitives::Address = address.parse().expect("Invalid address");
+
+        let hashed_msg = {
+            if who == "Receiver" {
+                let mut signable_msg = Vec::<u8>::new();
+                signable_msg.extend_from_slice(ETH_SIG_MSG_PREFIX.as_bytes());
+                signable_msg.extend_from_slice(msg.len().to_string().as_bytes());
+                signable_msg.extend_from_slice(msg.as_slice());
+
+                keccak_256(signable_msg.as_slice())
+            } else {
+                //TODO: handle this panic as system shutdown or error reporting
+                msg.try_into().unwrap()
+            }
+        };
+        let signature = EcdsaSignature::try_from(signature.as_slice())
+            .map_err(|err| anyhow!("failed to convert ecdsa signature: {:?}", err))?;
+
+        match signature.recover_from_prehash(<&B256>::from(&hashed_msg)) {
+            Ok(recovered_addr) => {
+                // check if the recovered key is a point on the secp256k1 curve
+                let recv_addr = recovered_addr.clone();
+                let encoded_point = recv_addr.to_encoded_point(false).to_bytes().to_vec();
+
+                if !Self::is_on_curve_sec1(&encoded_point) {
+                    Err(anyhow!(
+                        "addresses verification failed: point not on curve: who: {who}"
+                    ))?
+                }
+                let pub_key_hash = keccak_256(&encoded_point[1..]);
+                let recovered_addr = Address::from_str(&format!(
+                    "0x{}",
+                    hex::encode(&pub_key_hash[pub_key_hash.len() - 20..])
+                ))
+                .map_err(|err| {
+                    anyhow!("failed to convert pub key hash to address: {:?}", err)
+                })?;
+
+                info!("recovered addr: {:?}:  who: {who}", recovered_addr);
+                info!("address: {:?}:  who: {who}", address);
+
+                if recovered_addr == address {
+                    Ok(())
+                } else {
+                    Err(anyhow!(
+                        "addr recovery equality failed hence account invalid"
+                    ))?
+                }
+            }
+            Err(err) => Err(anyhow!("ec signature verification failed: {err}"))?,
+        }
+    }
+
+    /// Verify signature for TRON
+    fn verify_tron_signature(
+        &self,
+        address: String,
+        signature: Vec<u8>,
+        msg: Vec<u8>,
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
+        info!("TRON signature verification for {who}: {address}");
+        todo!("TRON signature verification not implemented yet")
+    }
+
+    /// Verify signature for Solana
+    fn verify_solana_signature(
+        &self,
+        address: String,
+        signature: Vec<u8>,
+        msg: Vec<u8>,
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
+        info!("Solana signature verification for {who}: {address}");
+        todo!("Solana signature verification not implemented yet")
+    }
+
+    /// Verify signature for Bitcoin
+    fn verify_bitcoin_signature(
+        &self,
+        address: String,
+        signature: Vec<u8>,
+        msg: Vec<u8>,
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
+        info!("Bitcoin signature verification for {who}: {address}");
+        todo!("Bitcoin signature verification not implemented yet")
+    }
+
+    /// Verify signature for Polkadot
+    fn verify_polkadot_signature(
+        &self,
+        address: String,
+        signature: Vec<u8>,
+        msg: Vec<u8>,
+        who: &str,
+    ) -> Result<(), anyhow::Error> {
+        info!("Polkadot signature verification for {who}: {address}");
+        todo!("Polkadot signature verification not implemented yet")
+    }
+
+    pub fn is_on_curve_sec1(sec1: &[u8]) -> bool {
+        match k256::EncodedPoint::from_bytes(sec1) {
+            Ok(ep) => bool::from(k256::AffinePoint::from_encoded_point(&ep).is_some()),
+            Err(_) => false,
         }
     }
 }

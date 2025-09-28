@@ -15,10 +15,10 @@ use tokio::sync::Mutex;
 pub struct MainRelayServerService {}
 
 impl MainRelayServerService {
-    pub async fn run(dns: String, port: u16, live: bool) -> Result<Self, anyhow::Error> {
+    pub async fn run(dns: String, port: u16, live: bool, private_key: Option<String>) -> Result<Self, anyhow::Error> {
         info!(" 🦀...vane relay server starting...🚀 ");
 
-        let p2p_worker = RelayP2pWorker::new(dns, port, live).await?;
+        let p2p_worker = RelayP2pWorker::new(dns, port, live, private_key).await?;
         let p2p_worker = Arc::new(Mutex::new(p2p_worker));
 
         let rpc_worker = RelayServerRpcWorker::new();

@@ -1,4 +1,3 @@
-use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 pub use vane_crypto::*;
 pub mod vane_crypto {
     use anyhow::anyhow;
@@ -6,53 +5,44 @@ pub mod vane_crypto {
     use curve25519_dalek::edwards::CompressedEdwardsY;
     use primitives::data_structure::{ChainSupported, Token};
 
-    /// per the network selected verify that it makes sense cryptographically to have that account address bytes format
+    // verify checksum of addresses
     pub fn verify_public_bytes(
         account: &str,
-        token: Token,
-        _network: ChainSupported,
+        token: &Token,
+        network: ChainSupported,
     ) -> Result<ChainSupported, anyhow::Error> {
         match token {
-            Token::Dot | Token::UsdtDot => {
-                // check the byte length after removing prefix
-                // remove the encoding scheme
-                // check if it belongs to a ristretto group
-
-                todo!()
-            }
-            Token::Bnb => {
-                // check if it belongs to a point on Ecdsa secp256k1 curve
-                // check the derivation path which is m/44'/60'/0'/0
-                // check if it belongs to a point on Ecdsa secp256k1 curve !!! cannot do this as the public key is hashed
-                // check if the account is 20 bytes
-                if account.as_bytes().len() == 42 {
-                    Ok(ChainSupported::Bnb)
+            Token::Ethereum(_) | Token::Bnb(_) | Token::Optimism(_) | Token::Arbitrum(_) | Token::Polygon(_) | Token::Base(_) => {
+                let token_network: ChainSupported = token.clone().into();
+                if token_network != network {
+                    return Err(anyhow!("Token network does not match the network"));
+                }
+                // EVM-compatible address verification
+                let address: alloy::primitives::Address = account.parse()
+                    .map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
+                let eip55 = address.to_checksum(None);
+                let returned_address = alloy_primitives::Address::parse_checksummed(&eip55, None).map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
+                if **returned_address == **address {
+                    Ok(token_network)
                 } else {
-                    Err(anyhow!("Not bnb (ECDSA) address"))
+                    Err(anyhow!("Invalid EVM address format"))
                 }
             }
-            Token::Sol | Token::UsdcSol | Token::UsdtSol => {
-                // check if it belongs to a point on Ed25519 curve
-                let bytes = account
-                    .from_base58()
-                    .map_err(|_| anyhow!("failed addr from base58"))?;
-                let compressed_point = CompressedEdwardsY::from_slice(&bytes)
-                    .map_err(|_| anyhow!("accounts bytes not 32"))?;
-                if let Some(_) = compressed_point.decompress() {
-                    Ok(ChainSupported::Solana)
-                } else {
-                    Err(anyhow!("not a valid ed25519 curve point"))
-                }
+            Token::Tron(_) => {
+                // TRON address verification
+                todo!("TRON address verification not implemented yet")
             }
-            Token::Eth | Token::UsdtEth | Token::UsdcEth => {
-                // check if it belongs to a point on Ecdsa secp256k1 curve !!! cannot do this as the public key is hashed
-                // check if the account is 20 bytes
-                if account.as_bytes().len() == 42 {
-                    /* 2 bytes for 0x and 40 bytes for rem as hex takes 2 character per bytes*/
-                    Ok(ChainSupported::Ethereum)
-                } else {
-                    Err(anyhow!("Not ethereum (ECDSA) address"))
-                }
+            Token::Solana(_) => {
+                // Solana address verification
+                todo!("Solana address verification not implemented yet")
+            }
+            Token::Bitcoin(_) => {
+                // Bitcoin address verification
+                todo!("Bitcoin address verification not implemented yet")
+            }
+            Token::Polkadot(_) => {
+                // Polkadot address verification
+                todo!("Polkadot address verification not implemented yet")
             }
         }
     }
