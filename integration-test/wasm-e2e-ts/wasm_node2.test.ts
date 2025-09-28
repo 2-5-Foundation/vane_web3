@@ -1,11 +1,22 @@
 import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
-import { hostFunctions } from '../../node/wasm/host_functions/main.js'
-import init, * as wasmModule from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
+import {
+  initializeNode,
+  setLogLevel,
+  LogLevel,
+  onLog,
+  receiverConfirm,
+  watchTxUpdates,
+  fetchPendingTxUpdates
+} from '../../node/wasm/vane_lib/api.js';
+import {
+  TxStateMachine,
+  TxStateMachineManager,
+  TokenManager,
+  ChainSupported
+} from '../../node/wasm/vane_lib/primitives.js';
+import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, getWallets } from './utils/wasm_utils.js';
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
-import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -16,9 +27,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let wasm_client_address: string | undefined = undefined;
   let privkey: string | undefined = undefined;
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-  let wasmNodeInstance: WasmNodeInstance | null = null;
   let nodeCoordinator: NodeCoordinator;
-  let wasmLogger: any | null = null;
   
   beforeAll(async () => {
     try {
@@ -33,8 +42,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     try {
-        await init();
-        wasmLogger = setupWasmLogging();
+        // Set up logging
+        setLogLevel(LogLevel.Debug);
+        // onLog((level, message) => {
+        //   console.log(`[${LogLevel[level]}] ${message}`);
+        // });
         await waitForWasmInitialization();
       } catch (error) {
         throw error;
@@ -43,12 +55,15 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       // Coordinator bound to RECEIVER_NODE
       nodeCoordinator = NodeCoordinator.getInstance();
       nodeCoordinator.registerNode('RECEIVER_NODE');
-      nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
 
-      // Start WASM node
-      wasmNodeInstance = startWasmNode(relayInfo!.multiAddr, wasm_client_address!, "Ethereum", false);
-
-      await wasmNodeInstance.promise;
+      // Initialize WASM node using vane_lib
+      await initializeNode({
+        relayMultiAddr: relayInfo!.multiAddr,
+        account: wasm_client_address!,
+        network: "Ethereum",
+        live: false,
+        logLevel: LogLevel.Debug
+      });
 
       // Wait until receiver node is connected to a peer
       await nodeCoordinator.waitForEvent(
@@ -65,18 +80,16 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         NODE_EVENTS.TRANSACTION_RECEIVED,
         async () => {
          console.log('👂 TRANSACTION_RECEIVED');
-         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => { 
-          const receivedTx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-          const latestTx = receivedTx[0];
-          if (!walletClient) throw new Error('walletClient not initialized');
-          const account = walletClient.account!;
-          // @ts-ignore
-          const signature = await account.signMessage({ message: latestTx.receiverAddress });
-          const txManager = new TxStateMachineManager(latestTx);
-          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-          const updatedTx = txManager.getTx();
-          await vaneWasm?.receiverConfirm(updatedTx);
-         });
+         const receivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+         const latestTx = receivedTx[0];
+         if (!walletClient) throw new Error('walletClient not initialized');
+         const account = walletClient.account!;
+         // @ts-ignore
+         const signature = await account.signMessage({ message: latestTx.receiverAddress });
+         const txManager = new TxStateMachineManager(latestTx);
+         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         const updatedTx = txManager.getTx();
+         await receiverConfirm(updatedTx);
        },
         60000
       );
@@ -102,34 +115,18 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       NODE_EVENTS.TRANSACTION_RECEIVED,
       async () => {
        console.log('👂 TRANSACTION_RECEIVED ERC20 TOKEN');
-       await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => { 
-        await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-          if(tx.codeWord !== 'ERC20Testing') {return;}else{
-          console.log('🔑 WATCHING TX ERC20 TOKEN', tx.codeWord);
-          if (!walletClient) throw new Error('walletClient not initialized');
-          const account = walletClient.account!;
-          // @ts-ignore
-          const signature = await account.signMessage({ message: tx.receiverAddress });
-          const txManager = new TxStateMachineManager(tx);
-          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-          const updatedTx = txManager.getTx();
-          await vaneWasm?.receiverConfirm(updatedTx);
-          }
-
-        });
-
-        // const receivedTx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-        // const latestTx = receivedTx[0];
-        // console.log('🔑 LATEST TX ERC20 TOKEN', latestTx);
-        // if (!walletClient) throw new Error('walletClient not initialized');
-        // const account = walletClient.account!;
-        // // @ts-ignore
-        // const signature = await account.signMessage({ message: latestTx.receiverAddress });
-        // const txManager = new TxStateMachineManager(latestTx);
-        // txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-        // const updatedTx = txManager.getTx();
-        // await vaneWasm?.receiverConfirm(updatedTx);
-  
+       await watchTxUpdates(async (tx: TxStateMachine) => {
+         if(tx.codeWord !== 'ERC20Testing') {return;}else{
+         console.log('🔑 WATCHING TX ERC20 TOKEN', tx.codeWord);
+         if (!walletClient) throw new Error('walletClient not initialized');
+         const account = walletClient.account!;
+         // @ts-ignore
+         const signature = await account.signMessage({ message: tx.receiverAddress });
+         const txManager = new TxStateMachineManager(tx);
+         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         const updatedTx = txManager.getTx();
+         await receiverConfirm(updatedTx);
+         }
        });
      },
       60000

@@ -1,39 +1,54 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import init, { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
+import {
+  initializeNode,
+  setLogLevel,
+  LogLevel,
+  onLog,
+  initiateTransaction,
+  senderConfirm,
+  revertTransaction,
+  fetchPendingTxUpdates,
+  exportStorage
+} from '../../node/wasm/vane_lib/api.js';
+import {
+  TxStateMachine,
+  TxStateMachineManager,
+  UnsignedEip1559,
+  StorageExport,
+  StorageExportManager,
+  TokenManager,
+  ChainSupported
+} from '../../node/wasm/vane_lib/primitives.js';
 import {
   loadRelayNodeInfo,
-  setupWasmLogging,
-  startWasmNode,
   waitForWasmInitialization,
   getWallets,
 } from './utils/wasm_utils.js';
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js';
-import hostFunctions from '../../node/wasm/host_functions/main.js';
-import { logger, Logger } from '../../node/wasm/host_functions/logging.js';
-import { TxStateMachine, TxStateMachineManager, UnsignedEip1559, StorageExport, StorageExportManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, PublicActions, formatEther } from 'viem';
 import { sign, serializeSignature } from 'viem/accounts';
+
+// using vane_lib as a library
+
 
 describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let relayInfo: any | null = null;
   let nodeCoordinator: NodeCoordinator;
-  let wasmNodeInstance: any;
   let walletClient: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string;
   let privkey: string;
   const receiver_client_address: string = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
   const wrong_receiver_client_address: string = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
-  let wasmLogger: any | null = null;
 
 
   beforeAll(async () => {
     // Relay info
-    // try {
-    //   relayInfo = await loadRelayNodeInfo();
-    // } catch (error) {
-    //   console.error('❌ Failed to load relay node info:', error);
-    //   throw error;
-    // }
+    try {
+      relayInfo = await loadRelayNodeInfo();
+    } catch (error) {
+      console.error('❌ Failed to load relay node info:', error);
+      throw error;
+    }
 
     // Wallet / address
     walletClient = getWallets()[0][0] as TestClient & WalletActions & PublicActions;
@@ -41,25 +56,25 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     wasm_client_address = walletClient.account!.address;
     console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
-    // Init WASM + logging
-    await init();
-    hostFunctions.hostLogging.setLogLevel(hostFunctions.hostLogging.LogLevel.Debug);
+    // Set up logging
+    setLogLevel(LogLevel.Debug);
+    // onLog((level, message) => {
+    //   console.log(`[${LogLevel[level]}] ${message}`);
+    // });
     await waitForWasmInitialization();
 
     // Coordinator bound to SENDER_NODE
     nodeCoordinator = NodeCoordinator.getInstance();
     nodeCoordinator.registerNode('SENDER_NODE');
-    nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
 
-    // Start WASM node
-    //console.log('🔑 RELAY_INFO', relayInfo.multiAddr);
-    wasmNodeInstance = startWasmNode(
-      "/dns4/vane-relay.vaneweb3.com/tcp/443/wss/p2p/12D3KooWMiWUm9yWXUnLQQ5dAtbwMBts71248gqrjqJjgcvzrjuH",
-      wasm_client_address,
-      'Ethereum',
-      false
-    );
-    await wasmNodeInstance.promise;
+    // Initialize WASM node using vane_lib
+    await initializeNode({
+      relayMultiAddr: relayInfo.multiAddr,
+      account: wasm_client_address,
+      network: "Ethereum",
+      live: false,
+      logLevel: LogLevel.Debug
+    });
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
       console.log('✅ SENDER_NODE READY');
@@ -74,60 +89,56 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
-    await wasmNodeInstance.promise.then((vaneWasm: any) => {
-      return vaneWasm?.initiateTransaction(
-        wasm_client_address,
-        receiver_client_address,
-        BigInt(10),
-        ethToken,
-        'Maji',
-        ChainSupported.Ethereum,
-        ChainSupported.Ethereum
-      );
-    });
+    await initiateTransaction(
+      wasm_client_address,
+      receiver_client_address,
+      BigInt(10),
+      ethToken,
+      'Maji',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
       console.log('👂 SENDER_RECEIVED_RESPONSE');
-      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-        const txUpdates: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-        const tx = txUpdates[0]; // latest tx
-         // Skip if we already have a signature
-         if (tx.signedCallPayload) {
-          return;
-        }
-        
-        // Only process when receiver has confirmed
-        const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-                              (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
-        
-        if (!isRecvConfirmed) {
-          return;
-        }
-        
-        console.log("Processing - receiver confirmed, signing transaction");
+      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+      const tx = txUpdates[0]; // latest tx
+       // Skip if we already have a signature
+       if (tx.signedCallPayload) {
+        return;
+      }
+      
+      // Only process when receiver has confirmed
+      const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+                            (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+      
+      if (!isRecvConfirmed) {
+        return;
+      }
+      
+      console.log("Processing - receiver confirmed, signing transaction");
 
-        if (!walletClient) throw new Error('walletClient not initialized');
-        if (!walletClient.account) throw new Error('walletClient account not available');
-        if (!tx.callPayload) {
-          throw new Error('No call payload found');
-        }
-        if (!tx.ethUnsignedTxFields) {
-          throw new Error('No unsigned transaction fields found');
-        }
+      if (!walletClient) throw new Error('walletClient not initialized');
+      if (!walletClient.account) throw new Error('walletClient account not available');
+      if (!tx.callPayload) {
+        throw new Error('No call payload found');
+      }
+      if (!tx.ethUnsignedTxFields) {
+        throw new Error('No unsigned transaction fields found');
+      }
 
-        const account = walletClient.account!;
-        if (!account.signMessage) {
-          throw new Error('Account signMessage function not available');
-        }
-        const [txHash, txBytes] = tx.callPayload!;
-        const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
-        
-        const txManager = new TxStateMachineManager(tx);
-        txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-        const updatedTx = txManager.getTx();
-        console.log('🔑 TX UPDATED', updatedTx.status);
-        await vaneWasm?.senderConfirm(updatedTx);
-      });
+      const account = walletClient.account!;
+      if (!account.signMessage) {
+        throw new Error('Account signMessage function not available');
+      }
+      const [txHash, txBytes] = tx.callPayload!;
+      const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+      
+      const txManager = new TxStateMachineManager(tx);
+      txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+      const updatedTx = txManager.getTx();
+      console.log('🔑 TX UPDATED', updatedTx.status);
+      await senderConfirm(updatedTx);
     },120000);
 
     // Wait for either transaction submission success or failure
@@ -135,22 +146,20 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       await Promise.race([
         nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
           console.log('✅ Transaction submitted successfully:', data);
-          await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-             const tx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-             expect(tx).toBeDefined();
-             
-             // Convert BigInt to string for JSON serialization
-             const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
-               typeof value === 'bigint' ? value.toString() : value
-             ));
-             
-             // Assert that the transaction was successfully submitted
-             expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
-             expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
-             expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
-             
-             return;
-          });
+          const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+          expect(tx).toBeDefined();
+          
+          // Convert BigInt to string for JSON serialization
+          const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+          ));
+          
+          // Assert that the transaction was successfully submitted
+          expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
+          expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
+          expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
+          
+          return;
         }, 60000),
         nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
           console.log('❌ Transaction submission failed:', data);
@@ -169,9 +178,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     expect(balanceChange).toEqual(10);
 
     // assert storage updates
-    const storage:StorageExport = await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      return await vaneWasm?.exportStorage();
-    });
+    const storage:StorageExport = await exportStorage() as StorageExport;
     const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
 
     const storageManager = new StorageExportManager(storage);
@@ -194,27 +201,22 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
-    await wasmNodeInstance.promise.then((vaneWasm: any) => {
-      return vaneWasm?.initiateTransaction(
-        wasm_client_address,
-        '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
-        BigInt(10),
-        ethToken,
-        'Maji',
-        ChainSupported.Ethereum,
-        ChainSupported.Ethereum
-      );
-    });
+    await initiateTransaction(
+      wasm_client_address,
+      '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
+      BigInt(10),
+      ethToken,
+      'Maji',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
       console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
-      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-
-        const tx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-        expect(tx).toBeDefined();
-        expect(tx[0].status).toBe('ReceiverNotRegistered');
-        console.log('🔑 asserted receiver not registered', tx[0].status);
-      });
+      const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      expect(tx[0].status).toBe('ReceiverNotRegistered');
+      console.log('🔑 asserted receiver not registered', tx[0].status);
     },70000);
       
   });
@@ -225,76 +227,65 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     const _intendedReceiverAddress = receiver_client_address;
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
-     await wasmNodeInstance.promise.then((vaneWasm: any) => {
-      return vaneWasm?.initiateTransaction(
-        wasm_client_address,
-        wrong_receiver_client_address,
-        BigInt(10),
-        ethToken,
-        'Wrong',
-        ChainSupported.Ethereum,
-        ChainSupported.Ethereum
-      );
-    });
+     await initiateTransaction(
+      wasm_client_address,
+      wrong_receiver_client_address,
+      BigInt(10),
+      ethToken,
+      'Wrong',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
       console.log('👂 SENDER_RECEIVED_RESPONSE');
-      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-        const txUpdates: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-        const latestTx = txUpdates[0]; 
-        if (latestTx.codeWord !== 'Wrong') {
-          return;
-        }
-        console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
-        console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
-        // check if the transaction is reverted
-        if (latestTx.status.type === 'Reverted') {
-            await vaneWasm?.revertTransaction(latestTx);
-        }else{
-          // revert the transaction with a reason
-          await vaneWasm?.revertTransaction(latestTx, "Intended receiver not met");
-        }
-        
-      });
+      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+      const latestTx = txUpdates[0]; 
+      if (latestTx.codeWord !== 'Wrong') {
+        return;
+      }
+      console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
+      console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
+      // check if the transaction is reverted
+      if (latestTx.status.type === 'Reverted') {
+          await revertTransaction(latestTx);
+      }else{
+        // revert the transaction with a reason
+        await revertTransaction(latestTx, "Intended receiver not met");
+      }
+      
     },60000);
 
     
     await new Promise(resolve => setTimeout(resolve, 12000));
 
-    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-      expect(tx).toBeDefined();
-      const latestTx = tx[0];
-      if(latestTx.codeWord === 'Wrong'){
-        if (latestTx.status.type === 'Reverted') {
-          await vaneWasm?.revertTransaction(latestTx);
-        }else{
-          let txManager = new TxStateMachineManager(latestTx);
-          txManager.setRevertedReason("Intended receiver not met");
-          const updatedTx = txManager.getTx();
-          await vaneWasm?.revertTransaction(updatedTx);
-        }
+    const tx:TxStateMachine[] = await fetchPendingTxUpdates();
+    expect(tx).toBeDefined();
+    const latestTx = tx[0];
+    if(latestTx.codeWord === 'Wrong'){
+      if (latestTx.status.type === 'Reverted') {
+        await revertTransaction(latestTx);
+      }else{
+        let txManager = new TxStateMachineManager(latestTx);
+        txManager.setRevertedReason("Intended receiver not met");
+        const updatedTx = txManager.getTx();
+        await revertTransaction(updatedTx);
       }
-    });
+    }
     await new Promise(resolve => setTimeout(resolve, 5000));
-    await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      const tx:TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-      expect(tx).toBeDefined();
-      const latestTx = tx[0];
-      const s = latestTx.status as any;
-      const isReverted =
-        (typeof s === 'string' && s === 'Reverted') ||
-        (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
-      expect(isReverted).toBe(true);
-      
-    });
+    const tx2:TxStateMachine[] = await fetchPendingTxUpdates();
+    expect(tx2).toBeDefined();
+    const latestTx2 = tx2[0];
+    const s = latestTx2.status as any;
+    const isReverted =
+      (typeof s === 'string' && s === 'Reverted') ||
+      (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
+    expect(isReverted).toBe(true);
     const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
     const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
     expect(balanceChange).toEqual(0);
     // assert storage updates
-    const storage:StorageExport = await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-      return await vaneWasm?.exportStorage();
-    });
+    const storage:StorageExport = await exportStorage() as StorageExport;
     const storageManager = new StorageExportManager(storage);
     const metrics = storageManager.getSummary();
     console.log('🔑 STORAGE METRICS', metrics);
@@ -314,14 +305,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   test("should be able to successfully revert even when wrong address is selected by sender", async () => {
     console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
     
-    const vaneWasm = await wasmNodeInstance.promise as PublicInterfaceWorkerJs | null;
-    if (!vaneWasm) throw new Error('WASM node not started');
-
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
     let returnedTx: TxStateMachine;
     try {
-      returnedTx = await vaneWasm.initiateTransaction(
+      returnedTx = await initiateTransaction(
         wasm_client_address,
         wrong_receiver_client_address,
         BigInt(10),
@@ -335,89 +323,83 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       throw e;
     }
 
-    await vaneWasm.revertTransaction(returnedTx, "Changed my mind");
+    await revertTransaction(returnedTx, "Changed my mind");
 
-    await wasmNodeInstance.promise.then(async (v: PublicInterfaceWorkerJs | null) => {
-      const tx:TxStateMachine[] = await v?.fetchPendingTxUpdates();
-      expect(tx).toBeDefined();
-      const latestTx = tx[0];
-       const s = latestTx.status as any;
-       const isReverted =
-         (typeof s === 'string' && s === 'Reverted') ||
-         (typeof s === 'object' && ('Reverted' in s));
-       expect(isReverted).toBe(true);
-       if (typeof s === 'object' && ('Reverted' in s)) {
-         expect(s.Reverted).toBe('Changed my mind');
-       }
-       expect(latestTx.codeWord).toBe('mistaken');
-       console.log("asserted reverted transaction, midway");
-    });
+    const tx:TxStateMachine[] = await fetchPendingTxUpdates();
+    expect(tx).toBeDefined();
+    const latestTx = tx[0];
+     const s = latestTx.status as any;
+     const isReverted =
+       (typeof s === 'string' && s === 'Reverted') ||
+       (typeof s === 'object' && ('Reverted' in s));
+     expect(isReverted).toBe(true);
+     if (typeof s === 'object' && ('Reverted' in s)) {
+       expect(s.Reverted).toBe('Changed my mind');
+     }
+     expect(latestTx.codeWord).toBe('mistaken');
+     console.log("asserted reverted transaction, midway");
 
   });
 
   test("should successfully send ERC20 token transaction", async () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
     console.log(" \n \n TEST CASE 5: should successfully send ERC20 token transaction");
-    const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum, '0x9A676e781A523b5d0C0e43731313A708CB607508');
-    await wasmNodeInstance.promise.then((vaneWasm: any) => {
-      return vaneWasm?.initiateTransaction(
-        wasm_client_address,
-        receiver_client_address,
-        BigInt(100),
-        ethERC20Token,
-        'ERC20Testing',
-        ChainSupported.Ethereum,
-        ChainSupported.Ethereum
-      );
-    });
+    const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0');
+    await initiateTransaction(
+      wasm_client_address,
+      receiver_client_address,
+      BigInt(100),
+      ethERC20Token,
+      'ERC20Testing',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
     await new Promise(resolve => setTimeout(resolve, 20000));
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
       console.log('👂 SENDER_RECEIVED_RESPONSE');
-      await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-        const txUpdates: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-        const tx = txUpdates[0]; // latest tx
-         // Skip if we already have a signature
-         if (tx.signedCallPayload) {
-          return;
-        }
-        if (tx.codeWord !== 'ERC20Testing') {
-          return;
-        }
-        
-        // Only process when receiver has confirmed
-        const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-                              (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
-        
-        if (!isRecvConfirmed) {
-          return;
-        }
-        
-        console.log("Processing - receiver confirmed, signing transaction ERC20 TOKEN");
+      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+      const tx = txUpdates[0]; // latest tx
+       // Skip if we already have a signature
+       if (tx.signedCallPayload) {
+        return;
+      }
+      if (tx.codeWord !== 'ERC20Testing') {
+        return;
+      }
+      
+      // Only process when receiver has confirmed
+      const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+                            (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+      
+      if (!isRecvConfirmed) {
+        return;
+      }
+      
+      console.log("Processing - receiver confirmed, signing transaction ERC20 TOKEN");
 
-        if (!walletClient) throw new Error('walletClient not initialized');
-        if (!walletClient.account) throw new Error('walletClient account not available');
-        if (!tx.callPayload) {
-          throw new Error('No call payload found');
-        }
-        if (!tx.ethUnsignedTxFields) {
-          throw new Error('No unsigned transaction fields found');
-        }
+      if (!walletClient) throw new Error('walletClient not initialized');
+      if (!walletClient.account) throw new Error('walletClient account not available');
+      if (!tx.callPayload) {
+        throw new Error('No call payload found');
+      }
+      if (!tx.ethUnsignedTxFields) {
+        throw new Error('No unsigned transaction fields found');
+      }
 
-        const account = walletClient.account!;
-        if (!account.signMessage) {
-          throw new Error('Account signMessage function not available');
-        }
-        const [txHash, txBytes] = tx.callPayload!;
-        const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
-        
-        const txManager = new TxStateMachineManager(tx);
-        txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-        const updatedTx = txManager.getTx();
-        console.log('🔑 TX UPDATED ERC20 TOKEN', updatedTx.status);
-        await vaneWasm?.senderConfirm(updatedTx);
-      });
+      const account = walletClient.account!;
+      if (!account.signMessage) {
+        throw new Error('Account signMessage function not available');
+      }
+      const [txHash, txBytes] = tx.callPayload!;
+      const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+      
+      const txManager = new TxStateMachineManager(tx);
+      txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+      const updatedTx = txManager.getTx();
+      console.log('🔑 TX UPDATED ERC20 TOKEN', updatedTx.status);
+      await senderConfirm(updatedTx);
     },120000);
 
     // Wait for either transaction submission success or failure
@@ -425,22 +407,20 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       await Promise.race([
         nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
           console.log('✅ Transaction submitted successfully:', data);
-          await wasmNodeInstance.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-             const tx: TxStateMachine[] = await vaneWasm?.fetchPendingTxUpdates();
-             expect(tx).toBeDefined();
-             
-             // Convert BigInt to string for JSON serialization
-             const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
-               typeof value === 'bigint' ? value.toString() : value
-             ));
-             
-             // Assert that the transaction was successfully submitted
-             expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
-             expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
-             expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
-             
-             return;
-          });
+          const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+          expect(tx).toBeDefined();
+          
+          // Convert BigInt to string for JSON serialization
+          const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+          ));
+          
+          // Assert that the transaction was successfully submitted
+          expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
+          expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
+          expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
+          
+          return;
         }, 60000),
         nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
           console.log('❌ Transaction submission failed:', data);

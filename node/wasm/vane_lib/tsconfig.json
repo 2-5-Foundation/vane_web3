@@ -42,5 +42,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["pkg", "dist", "node_modules"]
+  "exclude": ["dist", "node_modules"]
 }
