@@ -1,11 +1,22 @@
 import { describe, test, expect, beforeAll, afterAll, it } from 'vitest'
-import { hostFunctions } from '../../node/wasm/host_functions/main.js'
-import init, * as wasmModule from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, startWasmNode, WasmNodeInstance, getWallets } from './utils/wasm_utils.js';
+import {
+  initializeNode,
+  setLogLevel,
+  LogLevel,
+  onLog,
+  receiverConfirm,
+  watchTxUpdates,
+  fetchPendingTxUpdates
+} from '../../node/wasm/vane_lib/api.js';
+import {
+  TxStateMachine,
+  TxStateMachineManager,
+  TokenManager,
+  ChainSupported
+} from '../../node/wasm/vane_lib/primitives.js';
+import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, getWallets } from './utils/wasm_utils.js';
 import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
-import { PublicInterfaceWorkerJs } from '../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { TxStateMachine, TxStateMachineManager, TokenManager, ChainSupported } from '../../node/wasm/vane_lib/primitives.js';
 
 // THE THIRD NODE IS THE MALICIOUS NODE THAT WILL BE TESTED
 
@@ -16,9 +27,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let privkey: string | undefined = undefined;
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   let receiver_client_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-  let wasmNodeInstance: WasmNodeInstance | null = null;
   let nodeCoordinator: NodeCoordinator;
-  let wasmLogger: any | null = null;
 
   
   beforeAll(async () => {
@@ -34,24 +43,30 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     try {
-        await init();
-        wasmLogger = setupWasmLogging();
+        // Set up logging
+        setLogLevel(LogLevel.Debug);
+        // onLog((level, message) => {
+        //   console.log(`[${LogLevel[level]}] ${message}`);
+        // });
         await waitForWasmInitialization();
       } catch (error) {
         throw error;
       }
 
-      // Coordinator bound to RECEIVER_NODE
+      // Coordinator bound to MALICIOUS_NODE
       nodeCoordinator = NodeCoordinator.getInstance();
       nodeCoordinator.registerNode('MALICIOUS_NODE');
-      nodeCoordinator.setWasmLogger(hostFunctions.hostLogging.getLogInstance());
 
-      // Start WASM node
-      wasmNodeInstance = startWasmNode(relayInfo!.multiAddr, wasm_client_address!, "Ethereum", false);
+      // Initialize WASM node using vane_lib
+      await initializeNode({
+        relayMultiAddr: relayInfo!.multiAddr,
+        account: wasm_client_address!,
+        network: "Ethereum",
+        live: false,
+        logLevel: LogLevel.Debug
+      });
 
-      await wasmNodeInstance.promise;
-
-      // Wait until receiver node is connected to a peer
+      // Wait until malicious node is connected to a peer
       await nodeCoordinator.waitForEvent(
         NODE_EVENTS.PEER_CONNECTED,
         async () => { console.log('👂 MALICIOUS_NODE READY'); }
@@ -66,24 +81,22 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         NODE_EVENTS.TRANSACTION_RECEIVED,
         async () => {
          console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
-         await wasmNodeInstance?.promise.then(async (vaneWasm: PublicInterfaceWorkerJs | null) => {
-           // Set up the transaction watcher (await the Promise)
-           await vaneWasm?.watchTxUpdates(async (tx: TxStateMachine) => {
-            if (!walletClient) throw new Error('walletClient not initialized');
-            const account = walletClient.account!;
-            // @ts-ignore
-            const signature = await account.signMessage({ message: tx.receiverAddress });
-            const txManager = new TxStateMachineManager(tx);
-            txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-            const updatedTx = txManager.getTx();
-            console.log('🔑 Malicious node confirmed the transaction');
-            await vaneWasm?.receiverConfirm(updatedTx);
-          });
-           
-          // Fetch current pending transactions
-           const receivedTx = await vaneWasm?.fetchPendingTxUpdates();
-           expect(receivedTx.length).toBeGreaterThan(0);
-         });
+         // Set up the transaction watcher
+         await watchTxUpdates(async (tx: TxStateMachine) => {
+          if (!walletClient) throw new Error('walletClient not initialized');
+          const account = walletClient.account!;
+          // @ts-ignore
+          const signature = await account.signMessage({ message: tx.receiverAddress });
+          const txManager = new TxStateMachineManager(tx);
+          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+          const updatedTx = txManager.getTx();
+          console.log('🔑 Malicious node confirmed the transaction');
+          await receiverConfirm(updatedTx);
+        });
+         
+         // Fetch current pending transactions
+          const receivedTx = await fetchPendingTxUpdates();
+          expect(receivedTx.length).toBeGreaterThan(0);
        },
         150000
       );
