@@ -29,6 +29,43 @@ pub struct DHTResponse {
     pub random: u32,
 }
 
+/// Connection state for P2P relay connections
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub enum ConnectionState {
+    Connected(u64), // Unix timestamp in seconds
+    Disconnected(u64), // Unix timestamp in seconds
+}
+
+impl Default for ConnectionState {
+    fn default() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use js_sys::Date;
+            let now = (Date::now() / 1000.0) as u64; // Convert from ms to seconds
+            ConnectionState::Disconnected(now)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            ConnectionState::Disconnected(now)
+        }
+    }
+}
+
+/// Node connection status information
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub struct NodeConnectionStatus {
+    pub relay_connected: bool,
+    pub peer_id: String,
+    pub relay_address: String,
+    pub connection_uptime_seconds: Option<u64>,
+    pub last_connection_change: Option<u64>, // Unix timestamp
+}
+
 /// tx state
 #[derive(Clone, Debug, PartialEq, Serialize, Encode, Decode)]
 pub enum TxStatus {

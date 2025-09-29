@@ -26,6 +26,7 @@ dotenv                                          = "0.15"
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 libp2p                                          = { workspace = true, default-features = false, features = ["wasm-bindgen", "websocket","request-response","serde"] }
+js-sys                                          = "0.3.77"
 
 [features]
 default = []

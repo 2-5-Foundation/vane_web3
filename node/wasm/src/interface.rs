@@ -30,9 +30,10 @@ use crate::{
 };
 
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, DbTxStateMachine, DbWorkerInterface, SavedPeerInfo, StorageExport,
+    AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface, NodeConnectionStatus, SavedPeerInfo, StorageExport,
     Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
 };
+
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -479,6 +480,38 @@ impl PublicInterfaceWorker {
         }
         info!("Cleared finalized (reverted/submitted) transactions from cache");
     }
+
+    // this reports crucial p2p events
+    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
+        let connection_state = self.p2p_worker.relay_connection_state.borrow();
+        
+        let (relay_connected, connection_uptime_seconds, last_connection_change) = match &*connection_state {
+            ConnectionState::Connected(connect_timestamp) => {
+                let now = (js_sys::Date::now() / 1000.0) as u64; // Current time in seconds
+                let uptime = if now > *connect_timestamp {
+                    Some(now - *connect_timestamp)
+                } else {
+                    Some(0)
+                };
+                
+                (true, uptime, Some(*connect_timestamp))
+            }
+            ConnectionState::Disconnected(disconnect_timestamp) => {
+                (false, None, Some(*disconnect_timestamp))
+            }
+        };
+
+        let status = NodeConnectionStatus {
+            relay_connected,
+            peer_id: self.peer_id.to_string(),
+            relay_address: self.p2p_worker.relay_multi_addr.to_string(),
+            connection_uptime_seconds,
+            last_connection_change,
+        };
+
+        serde_wasm_bindgen::to_value(&status)
+            .map_err(|e| JsError::new(&format!("Failed to serialize node status: {}", e)))
+    }
 }
 
 // =================== The interface =================== //
@@ -582,6 +615,12 @@ impl PublicInterfaceWorkerJs {
     pub async fn get_metrics(&self) -> Result<JsValue, JsError> {
         let metrics = self.inner.borrow().get_user_metrics().await?;
         Ok(metrics)
+    }
+
+    #[wasm_bindgen(js_name = "getNodeConnectionStatus")]
+    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
+        let status = self.inner.borrow().get_node_connection_status()?;
+        Ok(status)
     }
 
     #[wasm_bindgen(js_name = "clearRevertedFromCache")]

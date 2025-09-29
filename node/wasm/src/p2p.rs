@@ -38,7 +38,7 @@ use libp2p_websocket_websys;
 pub use codec::Encode;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use primitives::data_structure::{
-    DHTResponse, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
+    ConnectionState, DHTResponse, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
 };
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -54,6 +54,7 @@ pub struct WasmP2pWorker {
     pub current_req: VecDeque<SwarmMessage>,
     pub dht_channel_query: Rc<tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>>,
     pub dht_announce_once: Rc<Once>,
+    pub relay_connection_state: Rc<RefCell<ConnectionState>>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -162,6 +163,7 @@ impl WasmP2pWorker {
             wasm_pending_request: Rc::new(RefCell::new(Default::default())),
             dht_channel_query: Rc::new(dht_query_result_tx),
             dht_announce_once: Rc::new(Once::new()),
+            relay_connection_state: Rc::new(RefCell::new(ConnectionState::default())),
         })
     }
 
@@ -180,7 +182,7 @@ impl WasmP2pWorker {
                     self.handle_app_json_events(app_json_event, sender).await;
                 }
                 WasmRelayBehaviourEvent::RelayClient(relay_client_event) => {
-                    Self::handle_relay_events(relay_client_event).await;
+                    Self::handle_relay_events(relay_client_event, self.relay_connection_state.clone()).await;
                 }
                 WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
                     self.handle_dht_events(app_client_dht_event).await;
@@ -204,7 +206,26 @@ impl WasmP2pWorker {
                 error!(target: "p2p","❌ Listener error: {}", error);
             }
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                warn!(target:"p2p","🔌 Connection closed with peer {}: {:?}", peer_id, cause)
+                info!(target:"p2p","🔴 Connection closed to peer {} (cause: {:?})", peer_id, cause);
+                
+                // Check if this was the relay peer
+                let relay_peer_id = self.relay_multi_addr
+                    .iter()
+                    .find_map(|protocol| {
+                        if let Protocol::P2p(relay_peer) = protocol {
+                            Some(relay_peer)
+                        } else {
+                            None
+                        }
+                    });
+                
+                if let Some(relay_peer) = relay_peer_id {
+                    if peer_id == relay_peer {
+                        let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
+                        *self.relay_connection_state.borrow_mut() = ConnectionState::Disconnected(now);
+                        info!(target:"p2p","🔴 Relay connection lost");
+                    }
+                }
             }
             SwarmEvent::IncomingConnectionError { error, .. } => {
                 error!(target:"p2p","❌ Incoming connection failed: {}", error)
@@ -243,14 +264,24 @@ impl WasmP2pWorker {
                 });
             }
             SwarmEvent::ExpiredListenAddr { address, .. } => {
-                debug!(target:"p2p","⏰ Listener address expired: {}", address)
+                info!(target:"p2p","⏰ Listener address expired: {}", address)
             }
             SwarmEvent::NewExternalAddrCandidate { address, .. } => {
-                debug!(target:"p2p","🌐 External address candidate: {}", address)
+                info!(target:"p2p","🌐 External address candidate: {}", address)
             }
+            SwarmEvent::ExternalAddrConfirmed { address } => {
+                info!(target:"p2p","⚡ External address confirmed: {}", address);
+            }
+            SwarmEvent::ExternalAddrExpired { address } => {
+                info!(target:"p2p","⚡ External address expired: {}", address);
+            }
+            SwarmEvent::NewExternalAddrOfPeer { peer_id, address, .. } => {
+                info!(target:"p2p","⚡ New external address of peer: {}", address);
+            },
             _ => {
-                debug!(target:"p2p","⚡ Unhandled swarm event");
+                info!(target:"p2p","⚡ Unhandled swarm event: {:?}", events);
             }
+
         }
     }
 
@@ -368,16 +399,25 @@ impl WasmP2pWorker {
         }
     }
 
-    async fn handle_relay_events(relay_client_event: RelayClientEvent) {
+    async fn handle_relay_events(
+        relay_client_event: RelayClientEvent,
+        connection_state: Rc<RefCell<ConnectionState>>,
+    ) {
         match relay_client_event {
             RelayClientEvent::InboundCircuitEstablished { src_peer_id, .. } => {
-                info!(target: "p2p","inbound circuit established: {src_peer_id:?}")
+                info!(target: "p2p","inbound circuit established: {src_peer_id:?}");
+                let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
+                *connection_state.borrow_mut() = ConnectionState::Connected(now);
             }
             RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
-                info!(target: "p2p","outbound circuit established: {relay_peer_id:?}")
+                info!(target: "p2p","outbound circuit established: {relay_peer_id:?}");
+                let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
+                *connection_state.borrow_mut() = ConnectionState::Connected(now);
             }
             RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
-                info!(target: "p2p","reservation request accepted: {relay_peer_id:?}")
+                info!(target: "p2p","reservation request accepted: {relay_peer_id:?}");
+                let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
+                *connection_state.borrow_mut() = ConnectionState::Connected(now);
             }
         }
     }

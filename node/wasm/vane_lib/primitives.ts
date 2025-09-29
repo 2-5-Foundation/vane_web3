@@ -577,6 +577,15 @@ export interface StorageExport {
     all_saved_peers: SavedPeerInfo[];
 }
 
+/** Node connection status information */
+export interface NodeConnectionStatus {
+    relay_connected: boolean;
+    peer_id: string;
+    relay_address: string;
+    connection_uptime_seconds?: number;
+    last_connection_change?: number; // Unix timestamp
+}
+
 /** User metrics structure */
 export interface UserMetrics {
     user_account: UserAccount;

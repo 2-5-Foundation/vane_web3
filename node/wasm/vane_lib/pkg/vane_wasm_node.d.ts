@@ -14,6 +14,7 @@ export class PublicInterfaceWorkerJs {
   revertTransaction(tx: any, reason?: string | null): Promise<void>;
   exportStorage(): Promise<any>;
   getMetrics(): Promise<any>;
+  getNodeConnectionStatus(): any;
   clearRevertedFromCache(): void;
   clearFinalizedFromCache(): void;
 }
@@ -39,6 +40,7 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
   readonly publicinterfaceworkerjs_exportStorage: (a: number) => any;
   readonly publicinterfaceworkerjs_getMetrics: (a: number) => any;
+  readonly publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
   readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
@@ -52,11 +54,12 @@ export interface InitOutput {
   readonly __wbindgen_export_4: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_export_6: WebAssembly.Table;
+  readonly __externref_table_dealloc: (a: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1529ad83ebf2986c: (a: number, b: number) => void;
-  readonly closure1190_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1547_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1212_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1569_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h182aa6ac5f4b66da: (a: number, b: number) => void;
-  readonly closure1942_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure1964_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 
