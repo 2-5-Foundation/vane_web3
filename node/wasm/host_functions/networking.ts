@@ -147,7 +147,7 @@ export const hostNetworking = {
         console.log('Submitting Ethereum transaction...');
         const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
         const publicClient = createPublicClient({
-          chain: chainConfig.chain,
+          chain: mainnet,
           transport: http(chainConfig.rpcUrl)
         });
       
@@ -215,7 +215,10 @@ export const hostNetworking = {
 // ===== Family-specific createTx implementations =====
 export async function createTxEthereum(tx: TxStateMachine): Promise<TxStateMachine> {
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-  const publicClient = createPublicClient({ chain: chainConfig.chain, transport: http(chainConfig.rpcUrl) });
+  const publicClient = createPublicClient({ 
+    chain: mainnet, 
+    transport: http(chainConfig.rpcUrl)
+  });
 
   const sender = tx.senderAddress as Address;
   const receiver = tx.receiverAddress as Address;
@@ -327,7 +330,7 @@ function isNativeEthereumToken(token: Token): boolean {
 }
 
 // Helper function to get token contract address and validate it's a valid ERC20 contract
-async function getTokenAddress(token: Token, network: ChainSupported, publicClient: PublicClient): Promise<string | null> {
+async function getTokenAddress(token: Token, network: ChainSupported, publicClient: any): Promise<string | null> {
   // Only support Ethereum mainnet ERC20 tokens
   if (network !== ChainSupported.Ethereum) {
     return null;
@@ -348,7 +351,7 @@ async function getTokenAddress(token: Token, network: ChainSupported, publicClie
 }
 
 // Helper function to validate if an address is a valid ERC20 contract
-async function validateERC20Contract(tokenAddress: Address, publicClient: PublicClient): Promise<boolean> {
+async function validateERC20Contract(tokenAddress: Address, publicClient: any): Promise<boolean> {
   try {
     // Ensure there is bytecode at the address (indicates a contract exists)
     const code = await publicClient.getCode({ address: tokenAddress });
