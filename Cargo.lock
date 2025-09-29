@@ -5856,6 +5856,7 @@ dependencies = [
  "anyhow",
  "dotenv",
  "hex",
+ "js-sys",
  "libp2p",
  "log",
  "parity-scale-codec",
@@ -8922,6 +8923,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-timer",
  "web-sys",
+ "web-time",
  "web3",
 ]
 
