@@ -335,8 +335,10 @@ impl WasmMainServiceWorker {
                 };
                 
                 // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
-                p2p_worker.borrow_mut().wasm_swarm.borrow_mut().dial(peer_id.clone())
-                .map_err(|e| anyhow::anyhow!("failed to dial to peer id: {e}"))?;
+                p2p_network_service
+                    .borrow_mut()
+                    .dial_to_peer_id(multi_addr.clone(), &peer_id)
+                    .await?;
 
                 p2p_network_service
                     .borrow_mut()

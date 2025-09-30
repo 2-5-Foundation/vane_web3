@@ -477,6 +477,7 @@ pub enum NetworkCommand {
     Dial {
         target_multi_addr: Multiaddr,
         target_peer_id: PeerId,
+        oneshot_sender: tokio_with_wasm::alias::sync::oneshot::Sender<Result<(), anyhow::Error>>,
     },
     GetDhtPeer {
         target_acc_id: String,
