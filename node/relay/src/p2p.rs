@@ -107,7 +107,7 @@ impl RelayP2pWorker {
             .await?
             .with_behaviour(|_| relay_behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
+                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(600)) // 10 mins
             })
             .build();
 

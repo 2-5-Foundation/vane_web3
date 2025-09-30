@@ -318,6 +318,7 @@ impl WasmMainServiceWorker {
         // take handles out of `self` so we don't capture `self` in the spawned task
         let db = self.db_worker.clone();
         let p2p_network_service = self.p2p_network_service.clone();
+        let p2p_worker = self.p2p_worker.clone();
         let rpc_sender_channel = self.rpc_sender_channel.clone();
         let lru_cache = self.lru_cache.clone();
 
@@ -332,11 +333,10 @@ impl WasmMainServiceWorker {
                     Some(Protocol::P2p(id)) => id,
                     _ => return Err(anyhow::anyhow!("peer id not found")),
                 };
-
-                p2p_network_service
-                    .borrow_mut()
-                    .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                    .await?;
+                
+                // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
+                p2p_worker.borrow_mut().wasm_swarm.borrow_mut().dial(peer_id.clone())
+                .map_err(|e| anyhow::anyhow!("failed to dial to peer id: {e}"))?;
 
                 p2p_network_service
                     .borrow_mut()
