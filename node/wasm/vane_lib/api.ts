@@ -1,4 +1,12 @@
-import type { TxStateMachine, Token, ChainSupported, NodeConnectionStatus } from "./primitives";
+import type { 
+  TxStateMachine, 
+  Token, 
+  ChainSupported, 
+  NodeConnectionStatus, 
+  StorageExport,
+  UserMetrics,
+  AccountProfile
+} from "./primitives";
 
 // WASM bindings (ESM)
 import initWasm, { start_vane_web3, PublicInterfaceWorkerJs } from "./pkg/vane_wasm_node.js";
@@ -24,6 +32,11 @@ async function ensureWasmInitialized(): Promise<void> {
   }
 }
 
+/**
+ * Initialize the Vane Web3 node with the specified options
+ * @param options - Configuration options for the node
+ * @returns Promise that resolves to the initialized worker interface
+ */
 export async function initializeNode(options: InitOptions): Promise<PublicInterfaceWorkerJs> {
   const { relayMultiAddr, account, network, live = false, logLevel } = options;
 
@@ -46,6 +59,15 @@ export function onLog(callback: LogCallback): void {
   hostLogging.setLogCallback(callback);
 }
 
+// Type for transaction update callback
+export type TxUpdateCallback = (tx: TxStateMachine) => void;
+
+// Type for revert transaction reason
+export type RevertReason = string | null | undefined;
+
+// Type for amount parameter (supports both number and bigint)
+export type Amount = number | bigint;
+
 export { LogLevel };
 
 function requireWorker(): PublicInterfaceWorkerJs {
@@ -61,10 +83,21 @@ export async function addAccount(accountId: string, network: string): Promise<vo
   return await requireWorker().addAccount(accountId, network);
 }
 
+/**
+ * Initiate a new transaction between sender and receiver
+ * @param sender - Sender's address
+ * @param receiver - Receiver's address  
+ * @param amount - Amount to send (number or bigint)
+ * @param token - Token type to send
+ * @param codeWord - Unique code word for the transaction
+ * @param sender_network - Network of the sender
+ * @param receiver_network - Network of the receiver
+ * @returns Promise that resolves to the transaction state machine
+ */
 export async function initiateTransaction(
   sender: string,
   receiver: string,
-  amount: number | bigint,
+  amount: Amount,
   token: Token,
   codeWord: string,
   sender_network: ChainSupported,
@@ -91,11 +124,11 @@ export async function receiverConfirm(tx: TxStateMachine): Promise<void> {
   await requireWorker().receiverConfirm(tx);
 }
 
-export async function revertTransaction(tx: TxStateMachine, reason?: string | null): Promise<void> {
+export async function revertTransaction(tx: TxStateMachine, reason?: RevertReason): Promise<void> {
   await requireWorker().revertTransaction(tx, reason ?? null);
 }
 
-export async function watchTxUpdates(callback: (tx: TxStateMachine) => void): Promise<void> {
+export async function watchTxUpdates(callback: TxUpdateCallback): Promise<void> {
   await requireWorker().watchTxUpdates(callback);
 }
 
@@ -108,14 +141,20 @@ export async function fetchPendingTxUpdates(): Promise<TxStateMachine[]> {
   return res as TxStateMachine[];
 }
 
-export async function exportStorage(): Promise<unknown> {
-  return await requireWorker().exportStorage();
+export async function exportStorage(): Promise<StorageExport> {
+  const res = await requireWorker().exportStorage();
+  return res as StorageExport;
 }
 
-export async function getMetrics(): Promise<unknown> {
-  return await requireWorker().getMetrics();
+export async function getMetrics(): Promise<UserMetrics> {
+  const res = await requireWorker().getMetrics();
+  return res as UserMetrics;
 }
 
+/**
+ * Get the current node connection status
+ * @returns Promise that resolves to the node connection status
+ */
 export async function getNodeConnection(): Promise<NodeConnectionStatus> {
   const res = await requireWorker().getNodeConnectionStatus();
   return res as NodeConnectionStatus;
