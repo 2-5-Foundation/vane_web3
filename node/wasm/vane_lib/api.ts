@@ -1,4 +1,4 @@
-import type { TxStateMachine, Token, ChainSupported } from "./primitives";
+import type { TxStateMachine, Token, ChainSupported, NodeConnectionStatus } from "./primitives";
 
 // WASM bindings (ESM)
 import initWasm, { start_vane_web3, PublicInterfaceWorkerJs } from "./pkg/vane_wasm_node.js";
@@ -116,6 +116,11 @@ export async function getMetrics(): Promise<unknown> {
   return await requireWorker().getMetrics();
 }
 
+export async function getNodeConnection(): Promise<NodeConnectionStatus> {
+  const res = await requireWorker().getNodeConnectionStatus();
+  return res as NodeConnectionStatus;
+}
+
 export function clearRevertedFromCache(): void {
   requireWorker().clearRevertedFromCache();
 }
@@ -145,6 +150,7 @@ const VaneWeb3 = {
   fetchPendingTxUpdates,
   exportStorage,
   getMetrics,
+  getNodeConnection,
   clearRevertedFromCache,
   clearFinalizedFromCache,
   getWorker,

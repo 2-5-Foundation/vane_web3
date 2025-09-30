@@ -592,13 +592,29 @@ impl WasmP2pWorker {
                                     info!("request sent to peer: {peer_id:?}");
                                 }
                             },
-                            Some(NetworkCommand::Dial {target_multi_addr,target_peer_id}) => {
+                            Some(NetworkCommand::Dial {target_multi_addr,target_peer_id,oneshot_sender}) => {
                                 // check first if the peer communication is already connected
                                 if swarm.is_connected(&target_peer_id){
-                                    info!("peer already connected: {target_peer_id}")
+                                    info!("peer already connected: {target_peer_id}");
+                                    if let Err(e) = oneshot_sender.send(Ok(())) {
+                                        error!("failed to send oneshot sender: {:?}", e);
+                                    }
                                 }else{
                                     info!("dialing peer: {target_peer_id} ");
-                                    swarm.dial(target_multi_addr).map_err(|err|anyhow!("failed to dial; {err:?}"));
+                                    match swarm.dial(target_multi_addr) {
+                                        Ok(()) => {
+                                            info!("peer dialed successfully: {target_peer_id}");
+                                            if let Err(e) = oneshot_sender.send(Ok(())) {
+                                                error!("failed to send oneshot sender: {:?}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("failed to dial: {e}");
+                                            if let Err(e) = oneshot_sender.send(Err(anyhow!("failed to dial: {e}"))) {
+                                                error!("failed to send oneshot sender: {:?}", e);
+                                            }
+                                        }
+                                    }
                                 }
                             },
                             Some(NetworkCommand::Close {peer_id}) => {
@@ -712,9 +728,13 @@ impl P2pNetworkService {
         target_url: Multiaddr,
         peer_id: &PeerId,
     ) -> Result<(), anyhow::Error> {
+        let (response_sender, mut response_receiver) =
+            tokio_with_wasm::alias::sync::oneshot::channel::<Result<(), anyhow::Error>>();
+
         let dial_command = NetworkCommand::Dial {
             target_multi_addr: target_url.clone(),
             target_peer_id: peer_id.clone(),
+            oneshot_sender: response_sender
         };
 
         self.p2p_command_tx
@@ -722,7 +742,16 @@ impl P2pNetworkService {
             .await
             .map_err(|err| anyhow!("failed to send dial command; {err}"))?;
 
-        Ok(())
+        // Wait for response with 10 second timeout
+        let dht = response_receiver.fuse();
+        let timeout = TimeoutFuture::new(10_000).fuse(); // 10 seconds in milliseconds
+        futures::pin_mut!(dht, timeout);
+
+        match futures::future::select(dht, timeout).await {
+            futures::future::Either::Left((Ok(result), _)) => result,
+            futures::future::Either::Left((Err(e), _)) => Err(anyhow!("PeerId dialing channel error: {}", e)),
+            futures::future::Either::Right((_elapsed, _)) => Err(anyhow!("PeerId dialing timeout: peer {} did not respond within 10 seconds", peer_id)),
+        }
     }
 
     // close the connection to the peer_id

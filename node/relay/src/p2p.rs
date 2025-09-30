@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
+use crate::metric_server::MetricService;
 
 use std::num::NonZeroU32;
 #[derive(NetworkBehaviour)]
@@ -44,6 +45,7 @@ pub struct RelayP2pWorker {
     pub swarm: Arc<Mutex<Swarm<RelayServerBehaviour>>>,
     pub external_multi_addr: Multiaddr,
     pub listening_addr: (Multiaddr, Multiaddr),
+    pub metrics: Arc<MetricService>,
 }
 
 impl RelayP2pWorker {
@@ -76,36 +78,19 @@ impl RelayP2pWorker {
         let ipv6_listening_addr = Multiaddr::from(std::net::Ipv6Addr::UNSPECIFIED) // ::
             .with(libp2p::multiaddr::Protocol::Tcp(port))
             .with(libp2p::multiaddr::Protocol::Ws("/".into()));
-
-        let mut relay_config = libp2p::relay::Config {
-            max_reservations: 10_000,
-            max_reservations_per_peer: 4,
-            reservation_duration: Duration::from_secs(60 * 60),
-            max_circuits: 1000,
-            max_circuit_bytes: 1024 * 1024 * 10,
-            max_circuit_duration: Duration::from_secs(20 * 60),
-            max_circuits_per_peer: 20,
-            ..Default::default()
-        };
-
-        relay_config
-            .reservation_rate_per_peer(NonZeroU32::new(30).unwrap(), Duration::from_secs(120))
-            .reservation_rate_per_ip(NonZeroU32::new(60).unwrap(), Duration::from_secs(60))
-            .circuit_src_per_peer(NonZeroU32::new(20).unwrap(), Duration::from_secs(10))
-            .circuit_src_per_ip(NonZeroU32::new(20).unwrap(), Duration::from_secs(10));
-
+      
         let relay_behaviour = RelayServerBehaviour::new(
             libp2p::relay::Behaviour::new(
                 peer_id.clone(),
                 libp2p::relay::Config {
-                    max_reservations: 1000,
-                    max_reservations_per_peer: 100,
-                    reservation_duration: Duration::from_secs(60),
+                    max_reservations: 10_000,
+                    max_reservations_per_peer: 1000,
+                    reservation_duration: Duration::from_secs(60 * 60),
                     reservation_rate_limiters: vec![],
-                    max_circuits: 1000,
+                    max_circuits: 10_000,
                     max_circuits_per_peer: 100,
-                    max_circuit_duration: Duration::from_secs(60),
-                    max_circuit_bytes: 1024 * 1024 * 10,
+                    max_circuit_duration: Duration::from_secs(60 * 20),
+                    max_circuit_bytes: 128 * 1024,                      
                     circuit_src_rate_limiters: vec![],
                 },
             )
@@ -122,17 +107,20 @@ impl RelayP2pWorker {
             .await?
             .with_behaviour(|_| relay_behaviour)?
             .with_swarm_config(|cfg| {
-                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(300))
+                cfg.with_idle_connection_timeout(tokio::time::Duration::from_secs(600)) // 10 mins
             })
             .build();
 
         relay_swarm.add_external_address(external_multi_addr.clone());
+
+        let metrics = Arc::new(MetricService::new());
 
         Ok(Self {
             peer_id,
             swarm: Arc::new(Mutex::new(relay_swarm)),
             external_multi_addr,
             listening_addr: (ipv4_listening_addr, ipv6_listening_addr),
+            metrics,
         })
     }
 
@@ -163,12 +151,17 @@ impl RelayP2pWorker {
                     ..
                 } => {
                     info!(target:"p2p","connection established {:?}: duration {:?}",peer_id,established_in);
+                    self.metrics.record_connection_event("established", Some(&peer_id.to_string()), None);
                 }
                 SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                     info!(target:"p2p","connection closed: {:?}, reason {:?}",peer_id,cause);
+                    self.metrics.record_connection_event("closed", Some(&peer_id.to_string()), None);
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
                     info!(target:"p2p","dialing: {:?}",peer_id);
+                    if let Some(pid) = peer_id {
+                        self.metrics.record_connection_event("dialing", Some(&pid.to_string()), None);
+                    }
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                     info!(target:"p2p","outgoing connection error: {:?}, error {:?}",peer_id,error);
@@ -216,12 +209,26 @@ impl RelayP2pWorker {
                 error,
             } => {
                 info!(target:"p2p","relay message, circuit closed src_peer_id: {:?}, dst_peer_id: {:?}, error: {:?}",src_peer_id,dst_peer_id,error);
+                // Count only via pair-level recorder to avoid double counting
+                self.metrics.record_circuit_event_pair(
+                    "closed",
+                    &src_peer_id.to_string(),
+                    &dst_peer_id.to_string(),
+                    error.as_ref().map(|e| format!("{:?}", e)).as_deref(),
+                );
             }
             RelayServerEvent::CircuitReqAccepted {
                 src_peer_id,
                 dst_peer_id,
             } => {
                 info!(target:"p2p","relay message, circuit req accepted src_peer_id: {:?}, dst_peer_id: {:?}",src_peer_id,dst_peer_id);
+                // Count only via pair-level recorder to avoid double counting
+                self.metrics.record_circuit_event_pair(
+                    "accepted",
+                    &src_peer_id.to_string(),
+                    &dst_peer_id.to_string(),
+                    None,
+                );
             }
             RelayServerEvent::CircuitReqDenied {
                 src_peer_id,
@@ -229,24 +236,31 @@ impl RelayP2pWorker {
                 status,
             } => {
                 info!(target:"p2p","relay message, circuit req denied status: {:?}, src_peer_id: {:?}, dst_peer_id: {:?}",status,src_peer_id,dst_peer_id);
+                self.metrics.record_circuit_event("denied", Some(&src_peer_id.to_string()), None);
             }
             RelayServerEvent::ReservationReqAccepted {
                 src_peer_id,
                 renewed,
             } => {
                 info!(target:"p2p","relay message, reservation req accepted src_peer_id: {:?}, renewed: {:?}",src_peer_id,renewed);
+                // Count only via peer-level recorder to avoid double counting
+                self.metrics.record_reservation_event_peer("accepted", &src_peer_id.to_string());
             }
             RelayServerEvent::ReservationReqDenied {
                 src_peer_id,
                 status,
             } => {
                 info!(target:"p2p","relay message, reservation req denied status: {:?}, src_peer_id: {:?}",status,src_peer_id);
+                self.metrics.record_reservation_event("denied", Some(&src_peer_id.to_string()), None);
             }
             RelayServerEvent::ReservationTimedOut { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation timed out: {:?}",src_peer_id);
+                self.metrics.record_reservation_event("timed_out", Some(&src_peer_id.to_string()), None);
             }
             RelayServerEvent::ReservationClosed { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation closed: {:?}",src_peer_id);
+                // Count only via peer-level recorder to avoid double counting
+                self.metrics.record_reservation_event_peer("closed", &src_peer_id.to_string());
             }
             _ => {
                 trace!(target:"p2p","relay message: {:?}",event);
