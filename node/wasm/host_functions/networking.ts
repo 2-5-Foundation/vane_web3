@@ -84,7 +84,7 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum, {
 }> = {
   [ChainSupported.Ethereum]: {
     chain: mainnet,
-    rpcUrl: pickRpc('https://eth-mainnet.g.alchemy.com/v2/demo'),
+    rpcUrl: pickRpc(`https://eth-mainnet.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY}`),
     chainId: USE_ANVIL ? 31337 : 1
   }
 };
