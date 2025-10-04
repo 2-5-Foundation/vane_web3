@@ -344,7 +344,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   test("should successfully send ERC20 token transaction", async () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
     console.log(" \n \n TEST CASE 5: should successfully send ERC20 token transaction");
-    const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum, '0x5FbDB2315678afecb367f032d93F642f64180aa3');
+    const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum,"ERC20Mock",'0x5FbDB2315678afecb367f032d93F642f64180aa3');
     await initiateTransaction(
       wasm_client_address,
       receiver_client_address,
@@ -431,6 +431,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       throw error;
     }
 
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
   });
 

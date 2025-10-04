@@ -17,10 +17,22 @@ export enum EthereumToken {
     ERC20 = "ERC20"
 }
 
+/** ERC20 token with name and contract address */
+export interface ERC20Token {
+    name: string;
+    address: string;
+}
+
 /** BNB Smart Chain ecosystem tokens */
 export enum BnbToken {
     BNB = "BNB",
     BEP20 = "BEP20"
+}
+
+/** BEP20 token with name and contract address */
+export interface BEP20Token {
+    name: string;
+    address: string;
 }
 
 /** Polkadot ecosystem tokens */
@@ -29,16 +41,34 @@ export enum PolkadotToken {
     Asset = "Asset"
 }
 
+/** Polkadot asset with name and asset ID */
+export interface PolkadotAsset {
+    name: string;
+    id: string;
+}
+
 /** Solana ecosystem tokens */
 export enum SolanaToken {
     SOL = "SOL",
     SPL = "SPL"
 }
 
+/** SPL token with name and mint address */
+export interface SPLToken {
+    name: string;
+    address: string;
+}
+
 /** TRON ecosystem tokens */
 export enum TronToken {
     TRX = "TRX",
     TRC20 = "TRC20"
+}
+
+/** TRC20 token with name and contract address */
+export interface TRC20Token {
+    name: string;
+    address: string;
 }
 
 /** Optimism ecosystem tokens */
@@ -72,15 +102,15 @@ export enum BitcoinToken {
 
 /** Supported tokens (flexible) */
 export type Token = 
-    | { Ethereum: EthereumToken | { ERC20: string } }
-    | { Bnb: BnbToken | { BEP20: string } }
-    | { Polkadot: PolkadotToken | { Asset: string } }
-    | { Solana: SolanaToken | { SPL: string } }
-    | { Tron: TronToken | { TRC20: string } }
-    | { Optimism: OptimismToken | { ERC20: string } }
-    | { Arbitrum: ArbitrumToken | { ERC20: string } }
-    | { Polygon: PolygonToken | { ERC20: string } }
-    | { Base: BaseToken | { ERC20: string } }
+    | { Ethereum: EthereumToken | { ERC20: ERC20Token } }
+    | { Bnb: BnbToken | { BEP20: BEP20Token } }
+    | { Polkadot: PolkadotToken | { Asset: PolkadotAsset } }
+    | { Solana: SolanaToken | { SPL: SPLToken } }
+    | { Tron: TronToken | { TRC20: TRC20Token } }
+    | { Optimism: OptimismToken | { ERC20: ERC20Token } }
+    | { Arbitrum: ArbitrumToken | { ERC20: ERC20Token } }
+    | { Polygon: PolygonToken | { ERC20: ERC20Token } }
+    | { Base: BaseToken | { ERC20: ERC20Token } }
     | { Bitcoin: BitcoinToken }
 
 /**
@@ -120,18 +150,19 @@ export class TokenManager {
   /**
    * Create an ERC-20 token for Ethereum-compatible chains
    */
-  static createERC20Token(chain: ChainSupported, symbol: string): Token {
+  static createERC20Token(chain: ChainSupported, name: string, address: string): Token {
+    const erc20Token: ERC20Token = { name, address };
     switch (chain) {
       case ChainSupported.Ethereum:
-        return { Ethereum: { ERC20: symbol } };
+        return { Ethereum: { ERC20: erc20Token } };
       case ChainSupported.Optimism:
-        return { Optimism: { ERC20: symbol } };
+        return { Optimism: { ERC20: erc20Token } };
       case ChainSupported.Arbitrum:
-        return { Arbitrum: { ERC20: symbol } };
+        return { Arbitrum: { ERC20: erc20Token } };
       case ChainSupported.Polygon:
-        return { Polygon: { ERC20: symbol } };
+        return { Polygon: { ERC20: erc20Token } };
       case ChainSupported.Base:
-        return { Base: { ERC20: symbol } };
+        return { Base: { ERC20: erc20Token } };
       default:
         throw new Error(`ERC-20 tokens not supported on ${chain}`);
     }
@@ -140,29 +171,33 @@ export class TokenManager {
   /**
    * Create a BEP-20 token for BNB Smart Chain
    */
-  static createBEP20Token(symbol: string): Token {
-    return { Bnb: { BEP20: symbol } };
+  static createBEP20Token(name: string, address: string): Token {
+    const bep20Token: BEP20Token = { name, address };
+    return { Bnb: { BEP20: bep20Token } };
   }
 
   /**
    * Create an SPL token for Solana
    */
-  static createSPLToken(symbol: string): Token {
-    return { Solana: { SPL: symbol } };
+  static createSPLToken(name: string, address: string): Token {
+    const splToken: SPLToken = { name, address };
+    return { Solana: { SPL: splToken } };
   }
 
   /**
    * Create a TRC-20 token for TRON
    */
-  static createTRC20Token(symbol: string): Token {
-    return { Tron: { TRC20: symbol } };
+  static createTRC20Token(name: string, address: string): Token {
+    const trc20Token: TRC20Token = { name, address };
+    return { Tron: { TRC20: trc20Token } };
   }
 
   /**
    * Create a Polkadot asset
    */
-  static createPolkadotAsset(symbol: string): Token {
-    return { Polkadot: { Asset: symbol } };
+  static createPolkadotAsset(name: string, id: string): Token {
+    const asset: PolkadotAsset = { name, id };
+    return { Polkadot: { Asset: asset } };
   }
 
   /**
@@ -221,19 +256,31 @@ export class TokenManager {
 
     // Handle ecosystem tokens
     if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
-      return `Ethereum:${token.Ethereum.ERC20}`;
+      return `Ethereum:${token.Ethereum.ERC20.name} (${token.Ethereum.ERC20.address})`;
     }
     if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
-      return `BNB:${token.Bnb.BEP20}`;
+      return `BNB:${token.Bnb.BEP20.name} (${token.Bnb.BEP20.address})`;
     }
     if ('Solana' in token && typeof token.Solana === 'object' && 'SPL' in token.Solana) {
-      return `Solana:${token.Solana.SPL}`;
+      return `Solana:${token.Solana.SPL.name} (${token.Solana.SPL.address})`;
     }
     if ('Tron' in token && typeof token.Tron === 'object' && 'TRC20' in token.Tron) {
-      return `TRON:${token.Tron.TRC20}`;
+      return `TRON:${token.Tron.TRC20.name} (${token.Tron.TRC20.address})`;
     }
     if ('Polkadot' in token && typeof token.Polkadot === 'object' && 'Asset' in token.Polkadot) {
-      return `Polkadot:${token.Polkadot.Asset}`;
+      return `Polkadot:${token.Polkadot.Asset.name} (${token.Polkadot.Asset.id})`;
+    }
+    if ('Optimism' in token && typeof token.Optimism === 'object' && 'ERC20' in token.Optimism) {
+      return `Optimism:${token.Optimism.ERC20.name} (${token.Optimism.ERC20.address})`;
+    }
+    if ('Arbitrum' in token && typeof token.Arbitrum === 'object' && 'ERC20' in token.Arbitrum) {
+      return `Arbitrum:${token.Arbitrum.ERC20.name} (${token.Arbitrum.ERC20.address})`;
+    }
+    if ('Polygon' in token && typeof token.Polygon === 'object' && 'ERC20' in token.Polygon) {
+      return `Polygon:${token.Polygon.ERC20.name} (${token.Polygon.ERC20.address})`;
+    }
+    if ('Base' in token && typeof token.Base === 'object' && 'ERC20' in token.Base) {
+      return `Base:${token.Base.ERC20.name} (${token.Base.ERC20.address})`;
     }
 
     return `${chain}:Unknown`;
@@ -250,55 +297,110 @@ export class TokenManager {
         if (symbol === "ETH") {
           return { Ethereum: EthereumToken.ETH };
         }
-        return { Ethereum: { ERC20: symbol } };
+        // For ERC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const erc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (erc20Match) {
+          const [, name, address] = erc20Match;
+          return { Ethereum: { ERC20: { name: name.trim(), address: address.trim() } } };
+        }
+        // Fallback: treat as name only, address will need to be resolved elsewhere
+        return { Ethereum: { ERC20: { name: symbol, address: "" } } };
       
       case "BNB":
         if (symbol === "BNB") {
           return { Bnb: BnbToken.BNB };
         }
-        return { Bnb: { BEP20: symbol } };
+        // For BEP20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const bep20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (bep20Match) {
+          const [, name, address] = bep20Match;
+          return { Bnb: { BEP20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Bnb: { BEP20: { name: symbol, address: "" } } };
       
       case "Polkadot":
         if (symbol === "DOT") {
           return { Polkadot: PolkadotToken.DOT };
         }
-        return { Polkadot: { Asset: symbol } };
+        // For Polkadot assets, expect format: "USDC (1984)" or just "USDC"
+        const assetMatch = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (assetMatch) {
+          const [, name, id] = assetMatch;
+          return { Polkadot: { Asset: { name: name.trim(), id: id.trim() } } };
+        }
+        return { Polkadot: { Asset: { name: symbol, id: "" } } };
       
       case "Solana":
         if (symbol === "SOL") {
           return { Solana: SolanaToken.SOL };
         }
-        return { Solana: { SPL: symbol } };
+        // For SPL tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const splMatch = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (splMatch) {
+          const [, name, address] = splMatch;
+          return { Solana: { SPL: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Solana: { SPL: { name: symbol, address: "" } } };
       
       case "TRON":
         if (symbol === "TRX") {
           return { Tron: TronToken.TRX };
         }
-        return { Tron: { TRC20: symbol } };
+        // For TRC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const trc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (trc20Match) {
+          const [, name, address] = trc20Match;
+          return { Tron: { TRC20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Tron: { TRC20: { name: symbol, address: "" } } };
       
       case "Optimism":
         if (symbol === "ETH") {
           return { Optimism: OptimismToken.ETH };
         }
-        return { Optimism: { ERC20: symbol } };
+        // For ERC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const optimismErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (optimismErc20Match) {
+          const [, name, address] = optimismErc20Match;
+          return { Optimism: { ERC20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Optimism: { ERC20: { name: symbol, address: "" } } };
       
       case "Arbitrum":
         if (symbol === "ETH") {
           return { Arbitrum: ArbitrumToken.ETH };
         }
-        return { Arbitrum: { ERC20: symbol } };
+        // For ERC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const arbitrumErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (arbitrumErc20Match) {
+          const [, name, address] = arbitrumErc20Match;
+          return { Arbitrum: { ERC20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Arbitrum: { ERC20: { name: symbol, address: "" } } };
       
       case "Polygon":
         if (symbol === "POL") {
           return { Polygon: PolygonToken.POL };
         }
-        return { Polygon: { ERC20: symbol } };
+        // For ERC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const polygonErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (polygonErc20Match) {
+          const [, name, address] = polygonErc20Match;
+          return { Polygon: { ERC20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Polygon: { ERC20: { name: symbol, address: "" } } };
       
       case "Base":
         if (symbol === "ETH") {
           return { Base: BaseToken.ETH };
         }
-        return { Base: { ERC20: symbol } };
+        // For ERC20 tokens, expect format: "USDC (0x123...)" or just "USDC"
+        const baseErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
+        if (baseErc20Match) {
+          const [, name, address] = baseErc20Match;
+          return { Base: { ERC20: { name: name.trim(), address: address.trim() } } };
+        }
+        return { Base: { ERC20: { name: symbol, address: "" } } };
       
       case "Bitcoin":
         if (symbol === "BTC") {

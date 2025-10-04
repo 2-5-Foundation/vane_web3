@@ -135,11 +135,7 @@ impl WasmMainServiceWorker {
         // TRANSACTION PROCESSING LAYER
         // ===================================================================================== //
 
-        let wasm_tx_processing_worker = WasmTxProcessingWorker::new((
-            ChainSupported::Bnb,
-            ChainSupported::Ethereum,
-            ChainSupported::Solana,
-        ))?;
+        let wasm_tx_processing_worker = WasmTxProcessingWorker::new()?;
         // ===================================================================================== //
 
         Ok(Self {
@@ -297,13 +293,13 @@ impl WasmMainServiceWorker {
                         .borrow_mut()
                         .push(decoded_resp.tx_nonce.into(), decoded_resp.clone());
 
-                    info!(target: "MainServiceWorker",
+                    debug!(target: "MainServiceWorker",
                           "propagating txn msg as response to rpc layer for user interaction: {decoded_resp:?}");
                 }
                 _ => {}
             },
             Err(err) => {
-                info!("Error in swarm message: {err}");
+                error!("Error in swarm message: {err}");
             }
         }
         Ok(())
