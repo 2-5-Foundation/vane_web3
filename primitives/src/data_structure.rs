@@ -572,8 +572,8 @@ pub enum Token {
 pub enum EthereumToken {
     /// Native ETH
     ETH,
-    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
-    ERC20(String),
+    /// ERC-20 tokens with name and contract address
+    ERC20 { name: String, address: String },
 }
 
 /// BNB Smart Chain ecosystem tokens
@@ -581,8 +581,8 @@ pub enum EthereumToken {
 pub enum BnbToken {
     /// Native BNB
     BNB,
-    /// BEP-20 tokens by symbol (USDT, USDC, etc.)
-    BEP20(String),
+    /// BEP-20 tokens with name and contract address
+    BEP20 { name: String, address: String },
 }
 
 /// Polkadot ecosystem tokens
@@ -590,8 +590,8 @@ pub enum BnbToken {
 pub enum PolkadotToken {
     /// Native DOT
     DOT,
-    /// Ecosystem tokens by symbol (USDT, USDC, etc.)
-    Asset(String),
+    /// Ecosystem tokens with name and asset ID
+    Asset { name: String, id: String },
 }
 
 /// Solana ecosystem tokens
@@ -599,8 +599,8 @@ pub enum PolkadotToken {
 pub enum SolanaToken {
     /// Native SOL
     SOL,
-    /// SPL tokens by symbol (USDT, USDC, etc.)
-    SPL(String),
+    /// SPL tokens with name and mint address
+    SPL { name: String, address: String },
 }
 
 /// TRON ecosystem tokens
@@ -608,8 +608,8 @@ pub enum SolanaToken {
 pub enum TronToken {
     /// Native TRX
     TRX,
-    /// TRC-20 tokens by symbol (USDT, USDC, etc.)
-    TRC20(String),
+    /// TRC-20 tokens with name and contract address
+    TRC20 { name: String, address: String },
 }
 
 /// Optimism ecosystem tokens
@@ -617,8 +617,8 @@ pub enum TronToken {
 pub enum OptimismToken {
     /// Native ETH (on Optimism)
     ETH,
-    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
-    ERC20(String),
+    /// ERC-20 tokens with name and contract address
+    ERC20 { name: String, address: String },
 }
 
 /// Arbitrum ecosystem tokens
@@ -626,8 +626,8 @@ pub enum OptimismToken {
 pub enum ArbitrumToken {
     /// Native ETH (on Arbitrum)
     ETH,
-    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
-    ERC20(String),
+    /// ERC-20 tokens with name and contract address
+    ERC20 { name: String, address: String },
 }
 
 /// Polygon ecosystem tokens
@@ -635,8 +635,8 @@ pub enum ArbitrumToken {
 pub enum PolygonToken {
     /// Native POL
     POL,
-    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
-    ERC20(String),
+    /// ERC-20 tokens with name and contract address
+    ERC20 { name: String, address: String },
 }
 
 /// Base ecosystem tokens
@@ -644,8 +644,8 @@ pub enum PolygonToken {
 pub enum BaseToken {
     /// Native ETH (on Base)
     ETH,
-    /// ERC-20 tokens by symbol (USDT, USDC, etc.)
-    ERC20(String),
+    /// ERC-20 tokens with name and contract address
+    ERC20 { name: String, address: String },
 }
 
 /// Bitcoin ecosystem tokens
@@ -666,23 +666,23 @@ impl From<Token> for String {
     fn from(value: Token) -> Self {
         match value {
             Token::Ethereum(EthereumToken::ETH) => "Ethereum:ETH".to_string(),
-            Token::Ethereum(EthereumToken::ERC20(sym)) => format!("Ethereum:{}", sym),
+            Token::Ethereum(EthereumToken::ERC20 { name, address }) => format!("Ethereum:{} ({})", name, address),
             Token::Bnb(BnbToken::BNB) => "BNB:BNB".to_string(),
-            Token::Bnb(BnbToken::BEP20(sym)) => format!("BNB:{}", sym),
+            Token::Bnb(BnbToken::BEP20 { name, address }) => format!("BNB:{} ({})", name, address),
             Token::Polkadot(PolkadotToken::DOT) => "Polkadot:DOT".to_string(),
-            Token::Polkadot(PolkadotToken::Asset(sym)) => format!("Polkadot:{}", sym),
+            Token::Polkadot(PolkadotToken::Asset { name, id }) => format!("Polkadot:{} ({})", name, id),
             Token::Solana(SolanaToken::SOL) => "Solana:SOL".to_string(),
-            Token::Solana(SolanaToken::SPL(sym)) => format!("Solana:{}", sym),
+            Token::Solana(SolanaToken::SPL { name, address }) => format!("Solana:{} ({})", name, address),
             Token::Tron(TronToken::TRX) => "TRON:TRX".to_string(),
-            Token::Tron(TronToken::TRC20(sym)) => format!("TRON:{}", sym),
+            Token::Tron(TronToken::TRC20 { name, address }) => format!("TRON:{} ({})", name, address),
             Token::Optimism(OptimismToken::ETH) => "Optimism:ETH".to_string(),
-            Token::Optimism(OptimismToken::ERC20(sym)) => format!("Optimism:{}", sym),
+            Token::Optimism(OptimismToken::ERC20 { name, address }) => format!("Optimism:{} ({})", name, address),
             Token::Arbitrum(ArbitrumToken::ETH) => "Arbitrum:ETH".to_string(),
-            Token::Arbitrum(ArbitrumToken::ERC20(sym)) => format!("Arbitrum:{}", sym),
+            Token::Arbitrum(ArbitrumToken::ERC20 { name, address }) => format!("Arbitrum:{} ({})", name, address),
             Token::Polygon(PolygonToken::POL) => "Polygon:POL".to_string(),
-            Token::Polygon(PolygonToken::ERC20(sym)) => format!("Polygon:{}", sym),
+            Token::Polygon(PolygonToken::ERC20 { name, address }) => format!("Polygon:{} ({})", name, address),
             Token::Base(BaseToken::ETH) => "Base:ETH".to_string(),
-            Token::Base(BaseToken::ERC20(sym)) => format!("Base:{}", sym),
+            Token::Base(BaseToken::ERC20 { name, address }) => format!("Base:{} ({})", name, address),
             Token::Bitcoin(BitcoinToken::BTC) => "Bitcoin:BTC".to_string(),
         }
     }
@@ -763,39 +763,7 @@ impl From<&str> for ChainSupported {
     }
 }
 
-impl ChainSupported {
-    // Method to get the URL based on the network type
-    // THIS IS NOT USED IN THE WASM CODEBASE
-    pub fn url(&self) -> String {
-        {
-            // Load .env file if it exists
-            dotenv().ok();
-        }
 
-        match self {
-            ChainSupported::Polkadot => std::env::var("POLKADOT_RPC_URL")
-                .unwrap_or_else(|_| "wss://polkadot-rpc.dwellir.com".to_string()),
-            ChainSupported::Ethereum => std::env::var("ETHEREUM_RPC_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string()),
-            ChainSupported::Bnb => std::env::var("BNB_RPC_URL")
-                .unwrap_or_else(|_| "https://bsc-dataseed.binance.org/".to_string()),
-            ChainSupported::Solana => std::env::var("SOLANA_RPC_URL")
-                .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string()),
-            ChainSupported::Tron => std::env::var("TRON_RPC_URL")
-                .unwrap_or_else(|_| "https://api.trongrid.io".to_string()),
-            ChainSupported::Optimism => std::env::var("OPTIMISM_RPC_URL")
-                .unwrap_or_else(|_| "https://mainnet.optimism.io".to_string()),
-            ChainSupported::Arbitrum => std::env::var("ARBITRUM_RPC_URL")
-                .unwrap_or_else(|_| "https://arb1.arbitrum.io/rpc".to_string()),
-            ChainSupported::Polygon => std::env::var("POLYGON_RPC_URL")
-                .unwrap_or_else(|_| "https://polygon-rpc.com".to_string()),
-            ChainSupported::Base => std::env::var("BASE_RPC_URL")
-                .unwrap_or_else(|_| "https://mainnet.base.org".to_string()),
-            ChainSupported::Bitcoin => std::env::var("BITCOIN_RPC_URL")
-                .unwrap_or_else(|_| "https://api.blockcypher.com/v1/btc/main".to_string()),
-        }
-    }
-}
 
 impl std::fmt::Display for ChainSupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

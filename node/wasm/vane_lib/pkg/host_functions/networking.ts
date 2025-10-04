@@ -75,7 +75,14 @@ type UnsignedEip1559 = {
 const USE_ANVIL = (typeof process !== 'undefined' && (process.env?.VITE_USE_ANVIL === 'true'))
   || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_USE_ANVIL === 'true');
 
-const pickRpc = (liveUrl: string): string => USE_ANVIL ? 'http://127.0.0.1:8545' : liveUrl;
+// In live mode, route RPC calls through Next.js API so the server component holds the API key.
+// We use an absolute path from the app root: "/api/transaction".
+// In local Anvil mode, we use the local JSON-RPC endpoint.
+const pickRpc = (nextApiRoute: string): string => {
+  if (USE_ANVIL) return 'http://127.0.0.1:8545';
+  // Ensure it starts with a leading slash for Next.js API routes
+  return nextApiRoute.startsWith('/') ? nextApiRoute : `/${nextApiRoute}`;
+};
 
 const CHAIN_CONFIGS: Record<ChainSupported.Ethereum, {
   chain: Chain;
@@ -84,7 +91,9 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum, {
 }> = {
   [ChainSupported.Ethereum]: {
     chain: mainnet,
-    rpcUrl: pickRpc('https://eth-mainnet.g.alchemy.com/v2/demo'),
+    // Proxy via Next.js API route in live mode. Example Next route: /api/transactions
+    // Your Next.js server should proxy JSON-RPC to your provider using server-side API keys.
+    rpcUrl: pickRpc('/api/transactions'),
     chainId: USE_ANVIL ? 31337 : 1
   }
 };
@@ -135,44 +144,35 @@ export const hostNetworking = {
         throw new Error(`Unsupported chain: ${tx.senderAddressNetwork}`);
       }
       
-      if (!tx.signedCallPayload) {
-        throw new Error("No signed call payload found - transaction must be signed first");
-      }
-      
-      if (!tx.callPayload) {
-        throw new Error("No call payload found - transaction must be created first");
-      }
-      
+      // Ensure we have signing artifacts
+      if (!tx.signedCallPayload) throw new Error("No signed call payload found - transaction must be signed first");
+      if (!tx.callPayload) throw new Error("No call payload found - transaction must be created first");
+
       if (family === 'ethereum') {
-        console.log('Submitting Ethereum transaction...');
         const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-        const publicClient = createPublicClient({
-          chain: mainnet,
-          transport: http(chainConfig.rpcUrl)
+        // Local Anvil: send directly via viem
+        if (USE_ANVIL) {
+          const publicClient = createPublicClient({ chain: mainnet, transport: http(chainConfig.rpcUrl) });
+          const [_, serializedTxBytes] = tx.callPayload;
+          const signatureBytes = tx.signedCallPayload;
+          const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
+          const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
+          const hashBytes = new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+          return hashBytes;
+        }
+
+        // Live mode: proxy to Next.js API route; server holds API keys and public client
+        const resp = await fetch(chainConfig.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'submitTx', tx }),
+          credentials: 'same-origin'
         });
-      
-        const senderAddress = tx.senderAddress as Address;
-        const [signatureHashBytes, serializedTxBytes] = tx.callPayload;
-        const signatureBytes = tx.signedCallPayload;
-           
-        // 2. Reconstruct the complete signed transaction
-        console.log('Reconstructing signed transaction...');
-        const signedTransactionHex = reconstructSignedTransaction(
-          serializedTxBytes, 
-          signatureBytes
-        );
-        
-        // 3. Submit the reconstructed signed transaction
-        console.log('Submitting signed transaction to blockchain...');
-        const hash = await publicClient.sendRawTransaction({
-          serializedTransaction: signedTransactionHex
-        });
-        
-        const hashBytes = new Uint8Array(
-          hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
-        );
-        
-        return hashBytes;
+        if (!resp.ok) throw new Error(`Proxy submitTx failed: ${resp.status}`);
+        const data = await resp.json();
+        const hashHex: string = data?.hash;
+        if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from proxy');
+        return new Uint8Array(hashHex.slice(2).match(/.{1,2}/g)!.map((b: string) => parseInt(b, 16)));
       }
   
       if (family === 'polkadot') {
@@ -200,7 +200,22 @@ export const hostNetworking = {
       }
       
       if (family === 'ethereum') {
-        return await createTxEthereum(tx);
+        // Local Anvil: build fields on client
+        if (USE_ANVIL) return await createTxEthereum(tx);
+
+        // Live mode: ask server for prepared chain data (nonce, gas, fees, tokenAddress)
+        const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
+        const resp = await fetch(chainConfig.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'prepareCreateTxEthereum', tx }),
+          credentials: 'same-origin'
+        });
+        if (!resp.ok) throw new Error(`Proxy prepareCreateTxEthereum failed: ${resp.status}`);
+        const data = await resp.json();
+        const prepared = data?.prepared as PreparedEthParams | undefined;
+        if (!prepared) throw new Error('Invalid prepared params from proxy');
+        return await createTxEthereumWithParams(tx, prepared);
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -321,6 +336,76 @@ export async function createTxEthereum(tx: TxStateMachine): Promise<TxStateMachi
   return updated;
 }
 
+// ===== Helper for live mode: construct tx using server-prepared chain data =====
+type PreparedEthParams = {
+  nonce: number;
+  gas: bigint;
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+  tokenAddress?: string | null; // required if ERC20
+};
+
+async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEthParams): Promise<TxStateMachine> {
+  const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
+
+  const sender = tx.senderAddress as Address;
+  const receiver = tx.receiverAddress as Address;
+  const amount = BigInt(tx.amount);
+
+  // Determine if this is a native token or ERC20 token
+  const isNativeToken = isNativeEthereumToken(tx.token);
+
+  let transactionData: {
+    to: Address;
+    value: bigint;
+    data: Hex;
+  };
+
+  if (isNativeToken) {
+    const value = parseEther(tx.amount.toString());
+    transactionData = { to: receiver, value, data: '0x' };
+  } else {
+    const tokenAddress = params.tokenAddress;
+    if (!tokenAddress) throw new Error('Missing tokenAddress for ERC20 transfer');
+    // Assume 18 decimals for now; server could pre-scale if needed
+    const tokenAmount = amount * BigInt(10 ** 18);
+    const data = encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [receiver, tokenAmount]
+    });
+    transactionData = { to: tokenAddress as Address, value: 0n, data };
+  }
+
+  const fields: UnsignedEip1559 = {
+    to: transactionData.to,
+    value: transactionData.value,
+    chainId: chainConfig.chainId,
+    nonce: params.nonce,
+    gas: params.gas,
+    maxFeePerGas: params.maxFeePerGas,
+    maxPriorityFeePerGas: params.maxPriorityFeePerGas,
+    data: transactionData.data,
+    accessList: [],
+    type: 'eip1559',
+  };
+
+  const signingPayload = serializeTransaction(fields) as Hex;
+  if (!signingPayload.startsWith('0x02')) throw new Error('Expected 0x02 typed payload');
+  const digest = keccak256(signingPayload) as Hex;
+
+  const updated: TxStateMachine = {
+    ...tx,
+    callPayload: [
+      new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+      new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+    ],
+    ethUnsignedTxFields: fields
+  };
+
+  return updated;
+}
+
 // Helper function to determine if a token is a native Ethereum token
 function isNativeEthereumToken(token: Token): boolean {
   if ('Ethereum' in token) {
@@ -338,7 +423,7 @@ async function getTokenAddress(token: Token, network: ChainSupported, publicClie
 
   // Extract token address from Ethereum token object
   if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
-    const tokenAddress = token.Ethereum.ERC20;
+    const tokenAddress = token.Ethereum.ERC20.address;
     
     // Validate that the address is a valid ERC20 contract
     const isValidERC20 = await validateERC20Contract(tokenAddress as Address, publicClient);

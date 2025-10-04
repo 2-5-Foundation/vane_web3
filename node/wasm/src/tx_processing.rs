@@ -47,29 +47,11 @@ pub struct WasmTxProcessingWorker {
 
 impl WasmTxProcessingWorker {
     pub fn new(
-        chain_networks: (ChainSupported, ChainSupported, ChainSupported),
     ) -> Result<Self, anyhow::Error> {
-        let (_solana, eth, bnb) = chain_networks;
-        let eth_url = eth.url();
-        let bnb_url = bnb.url().to_string();
-
-        // let eth_rpc_url = eth_url
-        //     .parse()
-        //     .map_err(|err| anyhow!("eth rpc parse error: {err}"))?;
-        // // Create a provider with the HTTP transport using the `reqwest` crate.
-        // let eth_provider = ProviderBuilder::new().on_http(eth_rpc_url);
-        //
-        // let bnb_rpc_url = bnb_url
-        //     .parse()
-        //     .map_err(|err| anyhow!("bnb rpc url parse error: {err}"))?;
-        // let bnb_provider = ProviderBuilder::new().on_http(bnb_rpc_url);
-
         Ok(Self {
             tx_staging: Rc::new(RefCell::new(Default::default())),
             sender_tx_pending: Rc::new(RefCell::new(Default::default())),
-            receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
-            // eth_client: eth_provider,
-            // bnb_client: bnb_provider,
+            receiver_tx_pending: Rc::new(RefCell::new(Default::default()))
         })
     }
 
