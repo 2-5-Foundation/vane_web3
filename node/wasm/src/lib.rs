@@ -264,7 +264,8 @@ impl WasmMainServiceWorker {
                                 // send the error to the rpc layer
                                 // there should be error reporting worker
                                 error!(target: "MainServiceWorker", "failed to create tx: {e}");
-                                decoded_resp.tx_related_errors = Some("Failed to create transaction".to_string());
+                                decoded_resp.tx_related_errors =
+                                    Some("Failed to create transaction".to_string());
                                 self.rpc_sender_channel
                                     .borrow_mut()
                                     .send(decoded_resp.clone())
@@ -422,7 +423,8 @@ impl WasmMainServiceWorker {
                                         {
                                             error!("wasm_send_request failed: {e:?}");
                                             let mut t = txn.borrow_mut().clone();
-                                            t.tx_related_errors = Some("Failed to reach receiver".to_string());
+                                            t.tx_related_errors =
+                                                Some("Failed to reach receiver".to_string());
                                             let _ = rpc_sender_channel
                                                 .borrow_mut()
                                                 .send(t.clone())

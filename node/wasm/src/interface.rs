@@ -177,7 +177,7 @@ impl PublicInterfaceWorker {
             .await
             .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        
+
         self.lru_cache
             .borrow_mut()
             .push(tx_state_machine.tx_nonce.into(), tx_state_machine.clone());
