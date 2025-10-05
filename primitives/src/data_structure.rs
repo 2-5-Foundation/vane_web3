@@ -32,7 +32,7 @@ pub struct DHTResponse {
 /// Connection state for P2P relay connections
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum ConnectionState {
-    Connected(u64), // Unix timestamp in seconds
+    Connected(u64),    // Unix timestamp in seconds
     Disconnected(u64), // Unix timestamp in seconds
 }
 
@@ -369,6 +369,10 @@ pub struct TxStateMachine {
     /// receiver address network
     #[serde(rename = "receiverAddressNetwork")]
     pub receiver_address_network: ChainSupported,
+    /// Extended field
+    /// Tx related errors and communication to the peer
+    #[serde(rename = "txRelatedErrors")]
+    pub tx_related_errors: Option<String>,
 }
 
 #[cfg(feature = "wasm")]
@@ -549,9 +553,6 @@ pub struct DbTxStateMachine {
     pub success: bool,
 }
 
-
-
-
 /// Supported tokens (flexible)
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode)]
 pub enum Token {
@@ -665,7 +666,6 @@ pub enum BitcoinToken {
     BTC,
 }
 
-
 impl Default for Token {
     fn default() -> Self {
         Token::Ethereum(EthereumToken::ETH)
@@ -676,23 +676,39 @@ impl From<Token> for String {
     fn from(value: Token) -> Self {
         match value {
             Token::Ethereum(EthereumToken::ETH) => "Ethereum:ETH".to_string(),
-            Token::Ethereum(EthereumToken::ERC20 { name, address }) => format!("Ethereum:{} ({})", name, address),
+            Token::Ethereum(EthereumToken::ERC20 { name, address }) => {
+                format!("Ethereum:{} ({})", name, address)
+            }
             Token::Bnb(BnbToken::BNB) => "BNB:BNB".to_string(),
             Token::Bnb(BnbToken::BEP20 { name, address }) => format!("BNB:{} ({})", name, address),
             Token::Polkadot(PolkadotToken::DOT) => "Polkadot:DOT".to_string(),
-            Token::Polkadot(PolkadotToken::Asset { name, id }) => format!("Polkadot:{} ({})", name, id),
+            Token::Polkadot(PolkadotToken::Asset { name, id }) => {
+                format!("Polkadot:{} ({})", name, id)
+            }
             Token::Solana(SolanaToken::SOL) => "Solana:SOL".to_string(),
-            Token::Solana(SolanaToken::SPL { name, address }) => format!("Solana:{} ({})", name, address),
+            Token::Solana(SolanaToken::SPL { name, address }) => {
+                format!("Solana:{} ({})", name, address)
+            }
             Token::Tron(TronToken::TRX) => "TRON:TRX".to_string(),
-            Token::Tron(TronToken::TRC20 { name, address }) => format!("TRON:{} ({})", name, address),
+            Token::Tron(TronToken::TRC20 { name, address }) => {
+                format!("TRON:{} ({})", name, address)
+            }
             Token::Optimism(OptimismToken::ETH) => "Optimism:ETH".to_string(),
-            Token::Optimism(OptimismToken::ERC20 { name, address }) => format!("Optimism:{} ({})", name, address),
+            Token::Optimism(OptimismToken::ERC20 { name, address }) => {
+                format!("Optimism:{} ({})", name, address)
+            }
             Token::Arbitrum(ArbitrumToken::ETH) => "Arbitrum:ETH".to_string(),
-            Token::Arbitrum(ArbitrumToken::ERC20 { name, address }) => format!("Arbitrum:{} ({})", name, address),
+            Token::Arbitrum(ArbitrumToken::ERC20 { name, address }) => {
+                format!("Arbitrum:{} ({})", name, address)
+            }
             Token::Polygon(PolygonToken::POL) => "Polygon:POL".to_string(),
-            Token::Polygon(PolygonToken::ERC20 { name, address }) => format!("Polygon:{} ({})", name, address),
+            Token::Polygon(PolygonToken::ERC20 { name, address }) => {
+                format!("Polygon:{} ({})", name, address)
+            }
             Token::Base(BaseToken::ETH) => "Base:ETH".to_string(),
-            Token::Base(BaseToken::ERC20 { name, address }) => format!("Base:{} ({})", name, address),
+            Token::Base(BaseToken::ERC20 { name, address }) => {
+                format!("Base:{} ({})", name, address)
+            }
             Token::Bitcoin(BitcoinToken::BTC) => "Bitcoin:BTC".to_string(),
         }
     }
@@ -714,7 +730,6 @@ impl From<Token> for ChainSupported {
         }
     }
 }
-
 
 /// Supported blockchain networks along with rpc provider url
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Encode, Decode, Copy)]
@@ -773,8 +788,6 @@ impl From<&str> for ChainSupported {
     }
 }
 
-
-
 impl std::fmt::Display for ChainSupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", String::from(*self))
@@ -790,7 +803,6 @@ pub struct UserAccount {
 
 /// p2p config
 pub struct P2pConfig {}
-
 
 //  --------------------------- REMOTE DB ------------------------------------------------------------ //
 

@@ -11,13 +11,13 @@ use wasm_bindgen::prelude::*;
 use web3::{transports, Web3};
 
 use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
+use k256::elliptic_curve::sec1::FromEncodedPoint;
 use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256, ByteArray, H256,
 };
-use k256::elliptic_curve::sec1::FromEncodedPoint;
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
@@ -46,12 +46,11 @@ pub struct WasmTxProcessingWorker {
 }
 
 impl WasmTxProcessingWorker {
-    pub fn new(
-    ) -> Result<Self, anyhow::Error> {
+    pub fn new() -> Result<Self, anyhow::Error> {
         Ok(Self {
             tx_staging: Rc::new(RefCell::new(Default::default())),
             sender_tx_pending: Rc::new(RefCell::new(Default::default())),
-            receiver_tx_pending: Rc::new(RefCell::new(Default::default()))
+            receiver_tx_pending: Rc::new(RefCell::new(Default::default())),
         })
     }
 
@@ -92,15 +91,14 @@ impl WasmTxProcessingWorker {
             (network, signature, msg_hash.to_vec(), sender_address)
         };
         match network {
-            ChainSupported::Ethereum | ChainSupported::Bnb | ChainSupported::Arbitrum | ChainSupported::Optimism | ChainSupported::Polygon | ChainSupported::Base => {
-                self.verify_evm_signature(address, signature, msg, who)?
-            }
-            ChainSupported::Tron => {
-                self.verify_tron_signature(address, signature, msg, who)?
-            }
-            ChainSupported::Solana => {
-                self.verify_solana_signature(address, signature, msg, who)?
-            }
+            ChainSupported::Ethereum
+            | ChainSupported::Bnb
+            | ChainSupported::Arbitrum
+            | ChainSupported::Optimism
+            | ChainSupported::Polygon
+            | ChainSupported::Base => self.verify_evm_signature(address, signature, msg, who)?,
+            ChainSupported::Tron => self.verify_tron_signature(address, signature, msg, who)?,
+            ChainSupported::Solana => self.verify_solana_signature(address, signature, msg, who)?,
             ChainSupported::Bitcoin => {
                 self.verify_bitcoin_signature(address, signature, msg, who)?
             }
@@ -205,9 +203,7 @@ impl WasmTxProcessingWorker {
                     "0x{}",
                     hex::encode(&pub_key_hash[pub_key_hash.len() - 20..])
                 ))
-                .map_err(|err| {
-                    anyhow!("failed to convert pub key hash to address: {:?}", err)
-                })?;
+                .map_err(|err| anyhow!("failed to convert pub key hash to address: {:?}", err))?;
 
                 info!("recovered addr: {:?}:  who: {who}", recovered_addr);
                 info!("address: {:?}:  who: {who}", address);

@@ -5,12 +5,17 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Result;
 use axum::{
     extract::State,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
+};
+use log::{error, info, warn};
+use primitives::data_structure::{
+    ChainSupported, DbTxStateMachine, SavedPeerInfo, StorageExport, UserAccount,
 };
 use prometheus_client::{
     encoding::text::encode,
@@ -19,9 +24,6 @@ use prometheus_client::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use log::{info, warn, error};
-use anyhow::Result;
-use primitives::data_structure::{StorageExport, UserAccount, DbTxStateMachine, SavedPeerInfo, ChainSupported};
 
 const METRICS_CONTENT_TYPE: &str = "application/openmetrics-text;charset=utf-8;version=1.0.0";
 #[derive(Debug, Clone, serde::Serialize)]
@@ -58,7 +60,6 @@ pub struct ClientSnapshot {
     pub total_value_failed: u64,
     pub saved_peers: u64,
 }
-
 
 // Simplified: no label-based families
 
@@ -120,7 +121,7 @@ pub struct ValueMetricLabels {
     pub peer_id: String,
     pub account_id: String,
     pub client_type: String,
-    pub status: String, // "success" or "failed"
+    pub status: String,     // "success" or "failed"
     pub value_type: String, // "total", "average", "count"
 }
 
@@ -154,14 +155,46 @@ impl RelayMetrics {
     }
 
     pub fn register(&self, registry: &mut Registry) {
-        registry.register("relay_circuits_accepted_total", "Total circuits accepted", self.circuits_accepted_total.clone());
-        registry.register("relay_circuits_closed_total", "Total circuits closed", self.circuits_closed_total.clone());
-        registry.register("relay_circuits_denied_total", "Total circuits denied", self.circuits_denied_total.clone());
-        registry.register("relay_reservations_accepted_total", "Total reservations accepted", self.reservations_accepted_total.clone());
-        registry.register("relay_reservations_closed_total", "Total reservations closed", self.reservations_closed_total.clone());
-        registry.register("relay_reservations_denied_total", "Total reservations denied", self.reservations_denied_total.clone());
-        registry.register("relay_reservations_timed_out_total", "Total reservations timed out", self.reservations_timed_out_total.clone());
-        registry.register("relay_connections_total", "Total connection events", self.connections_total.clone());
+        registry.register(
+            "relay_circuits_accepted_total",
+            "Total circuits accepted",
+            self.circuits_accepted_total.clone(),
+        );
+        registry.register(
+            "relay_circuits_closed_total",
+            "Total circuits closed",
+            self.circuits_closed_total.clone(),
+        );
+        registry.register(
+            "relay_circuits_denied_total",
+            "Total circuits denied",
+            self.circuits_denied_total.clone(),
+        );
+        registry.register(
+            "relay_reservations_accepted_total",
+            "Total reservations accepted",
+            self.reservations_accepted_total.clone(),
+        );
+        registry.register(
+            "relay_reservations_closed_total",
+            "Total reservations closed",
+            self.reservations_closed_total.clone(),
+        );
+        registry.register(
+            "relay_reservations_denied_total",
+            "Total reservations denied",
+            self.reservations_denied_total.clone(),
+        );
+        registry.register(
+            "relay_reservations_timed_out_total",
+            "Total reservations timed out",
+            self.reservations_timed_out_total.clone(),
+        );
+        registry.register(
+            "relay_connections_total",
+            "Total connection events",
+            self.connections_total.clone(),
+        );
     }
 }
 
@@ -181,63 +214,116 @@ impl ClientMetricsStore {
     }
 
     pub fn register(&self, registry: &mut Registry) {
-        registry.register("total_success_txs", "Total successful transactions", self.total_success_txs.clone());
-        registry.register("total_failed_txs", "Total failed transactions", self.total_failed_txs.clone());
-        registry.register("total_value_success", "Total value of successful transactions", self.total_value_success.clone());
-        registry.register("total_value_failed", "Total value of failed transactions", self.total_value_failed.clone());
-        registry.register("total_saved_peers", "Total saved peers", self.total_saved_peers.clone());
-        registry.register("tx_success_rate_percent", "Transaction success rate (percent)", self.tx_success_rate_percent.clone());
+        registry.register(
+            "total_success_txs",
+            "Total successful transactions",
+            self.total_success_txs.clone(),
+        );
+        registry.register(
+            "total_failed_txs",
+            "Total failed transactions",
+            self.total_failed_txs.clone(),
+        );
+        registry.register(
+            "total_value_success",
+            "Total value of successful transactions",
+            self.total_value_success.clone(),
+        );
+        registry.register(
+            "total_value_failed",
+            "Total value of failed transactions",
+            self.total_value_failed.clone(),
+        );
+        registry.register(
+            "total_saved_peers",
+            "Total saved peers",
+            self.total_saved_peers.clone(),
+        );
+        registry.register(
+            "tx_success_rate_percent",
+            "Transaction success rate (percent)",
+            self.tx_success_rate_percent.clone(),
+        );
     }
 
     pub fn update_from_exported_storage(&mut self, payload: ClientMetricsPayload) {
         let peer_id = payload.peer_id.clone();
         let client_type = payload.client_type.clone();
         let storage = &payload.storage_export;
-        
+
         // Update last seen timestamp
-        self.last_update_times.insert(peer_id.clone(), SystemTime::now());
-        
+        self.last_update_times
+            .insert(peer_id.clone(), SystemTime::now());
+
         // Extract account_id from user_account if available
-        let account_id = storage.user_account
+        let account_id = storage
+            .user_account
             .as_ref()
             .and_then(|ua| ua.accounts.first())
             .map(|(acc, _)| acc.clone())
             .unwrap_or_else(|| "unknown".to_string());
-        
+
         // Process basic metrics
         self.process_basic_metrics(&peer_id, &account_id, &client_type, storage);
-        
+
         // Process transaction metrics
         self.process_transaction_metrics(&peer_id, &account_id, &client_type, storage);
-        
+
         // Process value metrics
         self.process_value_metrics(&peer_id, &account_id, &client_type, storage);
-        
+
         // Process peer network metrics
         self.process_peer_network_metrics(&peer_id, &client_type, storage);
-        
+
         // Update aggregated system metrics
         self.update_aggregated_metrics(&client_type, storage);
-        
+
         info!(
             "Updated metrics for peer {} account {} ({}) - {} success txs, {} failed txs, {} saved peers", 
-            peer_id, 
-            account_id, 
+            peer_id,
+            account_id,
             client_type,
             storage.success_transactions.len(),
             storage.failed_transactions.len(),
             storage.all_saved_peers.len()
         );
     }
-    
-    fn process_basic_metrics(&mut self, _peer_id: &str, _account_id: &str, _client_type: &str, _storage: &StorageExport) {}
-    
-    fn process_transaction_metrics(&mut self, _peer_id: &str, _account_id: &str, _client_type: &str, _storage: &StorageExport) {}
-    
-    fn process_value_metrics(&mut self, _peer_id: &str, _account_id: &str, _client_type: &str, _storage: &StorageExport) {}
-    
-    fn process_peer_network_metrics(&mut self, _peer_id: &str, _client_type: &str, _storage: &StorageExport) {}
-    
+
+    fn process_basic_metrics(
+        &mut self,
+        _peer_id: &str,
+        _account_id: &str,
+        _client_type: &str,
+        _storage: &StorageExport,
+    ) {
+    }
+
+    fn process_transaction_metrics(
+        &mut self,
+        _peer_id: &str,
+        _account_id: &str,
+        _client_type: &str,
+        _storage: &StorageExport,
+    ) {
+    }
+
+    fn process_value_metrics(
+        &mut self,
+        _peer_id: &str,
+        _account_id: &str,
+        _client_type: &str,
+        _storage: &StorageExport,
+    ) {
+    }
+
+    fn process_peer_network_metrics(
+        &mut self,
+        _peer_id: &str,
+        _client_type: &str,
+        _storage: &StorageExport,
+    ) {
+    }
+
     fn infer_network_from_account(&self, account_id: &str) -> String {
         if account_id.starts_with("0x") && account_id.len() == 42 {
             "ethereum".to_string()
@@ -251,7 +337,7 @@ impl ClientMetricsStore {
             "unknown".to_string()
         }
     }
-    
+
     fn update_aggregated_metrics(&mut self, peer_id: &str, storage: &StorageExport) {
         // Compute deltas per peer to avoid double counting
         let current = (
@@ -262,24 +348,39 @@ impl ClientMetricsStore {
             storage.all_saved_peers.len() as u64,
         );
 
-        let last = self.last_totals.get(peer_id).cloned().unwrap_or((0, 0, 0, 0, 0));
+        let last = self
+            .last_totals
+            .get(peer_id)
+            .cloned()
+            .unwrap_or((0, 0, 0, 0, 0));
         let delta_success = current.0.saturating_sub(last.0);
         let delta_failed = current.1.saturating_sub(last.1);
         let delta_val_success = current.2.saturating_sub(last.2);
         let delta_val_failed = current.3.saturating_sub(last.3);
         let delta_peers = current.4.saturating_sub(last.4);
 
-        if delta_success > 0 { self.total_success_txs.inc_by(delta_success); }
-        if delta_failed > 0 { self.total_failed_txs.inc_by(delta_failed); }
-        if delta_val_success > 0 { self.total_value_success.inc_by(delta_val_success); }
-        if delta_val_failed > 0 { self.total_value_failed.inc_by(delta_val_failed); }
-        if delta_peers > 0 { self.total_saved_peers.inc_by(delta_peers); }
+        if delta_success > 0 {
+            self.total_success_txs.inc_by(delta_success);
+        }
+        if delta_failed > 0 {
+            self.total_failed_txs.inc_by(delta_failed);
+        }
+        if delta_val_success > 0 {
+            self.total_value_success.inc_by(delta_val_success);
+        }
+        if delta_val_failed > 0 {
+            self.total_value_failed.inc_by(delta_val_failed);
+        }
+        if delta_peers > 0 {
+            self.total_saved_peers.inc_by(delta_peers);
+        }
 
         // Success rate using current snapshot
         let total_tx = current.0 + current.1;
         if total_tx > 0 {
             let success_rate = (current.0 as f64 / total_tx as f64) * 100.0;
-            self.tx_success_rate_percent.set(success_rate.round() as i64);
+            self.tx_success_rate_percent
+                .set(success_rate.round() as i64);
         }
 
         self.last_totals.insert(peer_id.to_string(), current);
@@ -297,11 +398,11 @@ impl ClientMetricsStore {
             },
         );
     }
-    
+
     pub fn cleanup_stale_clients(&mut self, max_age: Duration) {
         let now = SystemTime::now();
         let mut stale_peers = Vec::new();
-        
+
         for (peer_id, last_update) in &self.last_update_times {
             if let Ok(elapsed) = now.duration_since(*last_update) {
                 if elapsed > max_age {
@@ -309,13 +410,16 @@ impl ClientMetricsStore {
                 }
             }
         }
-        
+
         for peer_id in stale_peers {
             self.last_update_times.remove(&peer_id);
             // Note: prometheus_client doesn't support removing metrics dynamically
-            // In production, you might want to use a different approach or 
+            // In production, you might want to use a different approach or
             // implement custom cleanup logic
-            warn!("Client {} metrics are stale and should be cleaned up", peer_id);
+            warn!(
+                "Client {} metrics are stale and should be cleaned up",
+                peer_id
+            );
         }
     }
 }
@@ -332,10 +436,10 @@ impl MetricService {
         let mut registry = Registry::default();
         let relay_metrics = RelayMetrics::new();
         let client_metrics = ClientMetricsStore::new();
-        
+
         relay_metrics.register(&mut registry);
         client_metrics.register(&mut registry);
-        
+
         Self {
             reg: Arc::new(Mutex::new(registry)),
             relay_metrics: Arc::new(Mutex::new(relay_metrics)),
@@ -346,11 +450,11 @@ impl MetricService {
     pub fn get_reg(&self) -> Arc<Mutex<Registry>> {
         Arc::clone(&self.reg)
     }
-    
+
     pub fn get_relay_metrics(&self) -> Arc<Mutex<RelayMetrics>> {
         Arc::clone(&self.relay_metrics)
     }
-    
+
     pub fn get_client_metrics(&self) -> Arc<Mutex<ClientMetricsStore>> {
         Arc::clone(&self.client_metrics)
     }
@@ -358,7 +462,7 @@ impl MetricService {
 
 pub async fn metrics_server(service: MetricService, port: u16) -> Result<()> {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-    
+
     // Start cleanup task for stale client metrics
     let client_metrics_cleanup = service.get_client_metrics();
     tokio::spawn(async move {
@@ -370,20 +474,23 @@ pub async fn metrics_server(service: MetricService, port: u16) -> Result<()> {
             }
         }
     });
-    
+
     let app = Router::new()
         .route("/metrics", get(respond_with_metrics))
         .route("/client-metrics-summary", get(get_client_metrics_summary))
         .route("/relay-events-summary", get(get_relay_events_summary))
         .route("/client-metrics", post(handle_client_metrics))
         .with_state(service);
-        
+
     let tcp_listener = TcpListener::bind(addr).await?;
     let local_addr = tcp_listener.local_addr()?;
-    
+
     info!("Metrics server listening on http://{}/metrics", local_addr);
-    info!("Client metrics endpoint: http://{}/client-metrics", local_addr);
-    
+    info!(
+        "Client metrics endpoint: http://{}/client-metrics",
+        local_addr
+    );
+
     axum::serve(tcp_listener, app.into_make_service()).await?;
     Ok(())
 }
@@ -391,7 +498,7 @@ pub async fn metrics_server(service: MetricService, port: u16) -> Result<()> {
 async fn respond_with_metrics(State(service): State<MetricService>) -> impl IntoResponse {
     let mut sink = String::new();
     let reg = service.get_reg();
-    
+
     match reg.lock() {
         Ok(registry) => {
             if let Err(e) = encode(&mut sink, &registry) {
@@ -424,18 +531,26 @@ async fn handle_client_metrics(
     State(service): State<MetricService>,
     Json(payload): Json<ClientMetricsPayload>,
 ) -> impl IntoResponse {
-    let account_id = payload.storage_export.user_account
+    let account_id = payload
+        .storage_export
+        .user_account
         .as_ref()
         .and_then(|ua| ua.accounts.first())
         .map(|(acc, _)| acc.clone())
         .unwrap_or_else(|| "unknown".to_string());
-    
-    info!("Received storage export from client: {} account: {} ({})", payload.peer_id, account_id, payload.client_type);
-    
+
+    info!(
+        "Received storage export from client: {} account: {} ({})",
+        payload.peer_id, account_id, payload.client_type
+    );
+
     match service.get_client_metrics().lock() {
         Ok(mut client_metrics) => {
             client_metrics.update_from_exported_storage(payload);
-            (StatusCode::OK, Json(serde_json::json!({"status": "success"})))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"status": "success"})),
+            )
         }
         Err(e) => {
             error!("Failed to acquire client metrics lock: {}", e);
@@ -451,9 +566,12 @@ async fn get_client_metrics_summary(State(service): State<MetricService>) -> imp
     match service.get_client_metrics().lock() {
         Ok(client_metrics) => {
             let list: Vec<ClientSnapshot> = client_metrics.per_client.values().cloned().collect();
-            (StatusCode::OK, Json(serde_json::json!({
-                "clients": list
-            })))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "clients": list
+                })),
+            )
         }
         Err(e) => {
             error!("Failed to acquire client metrics lock: {}", e);
@@ -479,7 +597,10 @@ async fn get_relay_events_summary(State(service): State<MetricService>) -> impl 
                     denied: m.circuit_denied.clone(),
                 },
             };
-            (StatusCode::OK, Json(serde_json::json!({ "relay": summary })))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "relay": summary })),
+            )
         }
         Err(e) => {
             error!("Failed to acquire relay metrics lock: {}", e);
@@ -493,27 +614,50 @@ async fn get_relay_events_summary(State(service): State<MetricService>) -> impl 
 
 // Helper functions for relay metrics
 impl MetricService {
-    pub fn record_circuit_event(&self, event_type: &str, _peer_id: Option<&str>, _account_id: Option<&str>) {
+    pub fn record_circuit_event(
+        &self,
+        event_type: &str,
+        _peer_id: Option<&str>,
+        _account_id: Option<&str>,
+    ) {
         if let Ok(metrics) = self.relay_metrics.lock() {
             match event_type {
-                "accepted" => { metrics.circuits_accepted_total.inc(); }
-                "closed" => { metrics.circuits_closed_total.inc(); }
+                "accepted" => {
+                    metrics.circuits_accepted_total.inc();
+                }
+                "closed" => {
+                    metrics.circuits_closed_total.inc();
+                }
                 _ => {}
             }
         }
     }
-    
-    pub fn record_reservation_event(&self, event_type: &str, _peer_id: Option<&str>, _account_id: Option<&str>) {
+
+    pub fn record_reservation_event(
+        &self,
+        event_type: &str,
+        _peer_id: Option<&str>,
+        _account_id: Option<&str>,
+    ) {
         if let Ok(metrics) = self.relay_metrics.lock() {
             match event_type {
-                "accepted" => { metrics.reservations_accepted_total.inc(); }
-                "closed" => { metrics.reservations_closed_total.inc(); }
+                "accepted" => {
+                    metrics.reservations_accepted_total.inc();
+                }
+                "closed" => {
+                    metrics.reservations_closed_total.inc();
+                }
                 _ => {}
             }
         }
     }
-    
-    pub fn record_connection_event(&self, _event_type: &str, _peer_id: Option<&str>, _account_id: Option<&str>) {
+
+    pub fn record_connection_event(
+        &self,
+        _event_type: &str,
+        _peer_id: Option<&str>,
+        _account_id: Option<&str>,
+    ) {
         if let Ok(metrics) = self.relay_metrics.lock() {
             metrics.connections_total.inc();
         }
@@ -538,20 +682,37 @@ impl MetricService {
         }
     }
 
-    pub fn record_circuit_event_pair(&self, event_type: &str, src_peer_id: &str, dst_peer_id: &str, error: Option<&str>) {
+    pub fn record_circuit_event_pair(
+        &self,
+        event_type: &str,
+        src_peer_id: &str,
+        dst_peer_id: &str,
+        error: Option<&str>,
+    ) {
         if let Ok(mut m) = self.relay_metrics.lock() {
             match event_type {
                 "accepted" => {
                     m.circuits_accepted_total.inc();
-                    m.circuit_accepted_pairs.push(PeerPair { src_peer_id: src_peer_id.to_string(), dst_peer_id: dst_peer_id.to_string() });
+                    m.circuit_accepted_pairs.push(PeerPair {
+                        src_peer_id: src_peer_id.to_string(),
+                        dst_peer_id: dst_peer_id.to_string(),
+                    });
                 }
                 "closed" => {
                     m.circuits_closed_total.inc();
-                    m.circuit_closed_pairs.push(CircuitClosedDetail { src_peer_id: src_peer_id.to_string(), dst_peer_id: dst_peer_id.to_string(), error: error.map(|e| e.to_string()) });
+                    m.circuit_closed_pairs.push(CircuitClosedDetail {
+                        src_peer_id: src_peer_id.to_string(),
+                        dst_peer_id: dst_peer_id.to_string(),
+                        error: error.map(|e| e.to_string()),
+                    });
                 }
                 "denied" => {
                     m.circuits_denied_total.inc();
-                    m.circuit_denied.push(CircuitDeniedDetail { src_peer_id: src_peer_id.to_string(), dst_peer_id: dst_peer_id.to_string(), status: error.unwrap_or("").to_string() });
+                    m.circuit_denied.push(CircuitDeniedDetail {
+                        src_peer_id: src_peer_id.to_string(),
+                        dst_peer_id: dst_peer_id.to_string(),
+                        status: error.unwrap_or("").to_string(),
+                    });
                 }
                 _ => {}
             }

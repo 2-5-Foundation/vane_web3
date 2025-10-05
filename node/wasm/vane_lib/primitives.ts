@@ -519,6 +519,8 @@ export interface TxStateMachine {
     senderAddressNetwork: ChainSupported;
     /** Receiver address network */
     receiverAddressNetwork: ChainSupported;
+    /** Tx related errors and communication to the peer */
+    txRelatedErrors?: string;
 }
 
 export class TxStateMachineManager {
