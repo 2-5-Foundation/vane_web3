@@ -30,10 +30,10 @@ use crate::{
 };
 
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface, NodeConnectionStatus, SavedPeerInfo, StorageExport,
-    Token, TxStateMachine, TxStatus, UserAccount, UserMetrics,
+    AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
+    NodeConnectionStatus, SavedPeerInfo, StorageExport, Token, TxStateMachine, TxStatus,
+    UserAccount, UserMetrics,
 };
-
 
 #[derive(Clone)]
 pub struct PublicInterfaceWorker {
@@ -114,8 +114,9 @@ impl PublicInterfaceWorker {
         info!("initiated sending transaction: receiver: {}, amount: {}, token: {:?}, sender_network: {:?}, receiver_network: {:?}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
 
         {
-            let sender_network_verified = verify_public_bytes(sender.as_str(), &token, sender_network)
-                .map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
+            let sender_network_verified =
+                verify_public_bytes(sender.as_str(), &token, sender_network)
+                    .map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
             let receiver_network_verified =
                 verify_public_bytes(receiver.as_str(), &token, receiver_network)
                     .map_err(|e| JsError::new(&format!("receiver network error: {:?}", e)))?;
@@ -164,8 +165,8 @@ impl PublicInterfaceWorker {
             eth_unsigned_tx_fields: None,
             sender_address_network: sender_network,
             receiver_address_network: receiver_network,
+            tx_related_errors: None,
         };
-
 
         // propagate the tx to lower layer (Main service worker layer)
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
@@ -176,6 +177,10 @@ impl PublicInterfaceWorker {
             .await
             .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        
+        self.lru_cache
+            .borrow_mut()
+            .push(tx_state_machine.tx_nonce.into(), tx_state_machine.clone());
         info!("propagated initiated transaction to tx handling layer");
         // Return the constructed tx to JS so callers can keep a handle
         return serde_wasm_bindgen::to_value(&tx_state_machine)
@@ -484,22 +489,23 @@ impl PublicInterfaceWorker {
     // this reports crucial p2p events
     pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
         let connection_state = self.p2p_worker.relay_connection_state.borrow();
-        
-        let (relay_connected, connection_uptime_seconds, last_connection_change) = match &*connection_state {
-            ConnectionState::Connected(connect_timestamp) => {
-                let now = (js_sys::Date::now() / 1000.0) as u64; // Current time in seconds
-                let uptime = if now > *connect_timestamp {
-                    Some(now - *connect_timestamp)
-                } else {
-                    Some(0)
-                };
-                
-                (true, uptime, Some(*connect_timestamp))
-            }
-            ConnectionState::Disconnected(disconnect_timestamp) => {
-                (false, None, Some(*disconnect_timestamp))
-            }
-        };
+
+        let (relay_connected, connection_uptime_seconds, last_connection_change) =
+            match &*connection_state {
+                ConnectionState::Connected(connect_timestamp) => {
+                    let now = (js_sys::Date::now() / 1000.0) as u64; // Current time in seconds
+                    let uptime = if now > *connect_timestamp {
+                        Some(now - *connect_timestamp)
+                    } else {
+                        Some(0)
+                    };
+
+                    (true, uptime, Some(*connect_timestamp))
+                }
+                ConnectionState::Disconnected(disconnect_timestamp) => {
+                    (false, None, Some(*disconnect_timestamp))
+                }
+            };
 
         let status = NodeConnectionStatus {
             relay_connected,
@@ -546,12 +552,12 @@ impl PublicInterfaceWorkerJs {
         sender_network: JsValue,
         receiver_network: JsValue,
     ) -> Result<JsValue, JsError> {
-        
         let token: Token = Token::from_js_value_unconditional(token)?;
-        let sender_network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(sender_network)?;
-        let receiver_network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(receiver_network)?;
+        let sender_network_chain: ChainSupported =
+            ChainSupported::from_js_value_unconditional(sender_network)?;
+        let receiver_network_chain: ChainSupported =
+            ChainSupported::from_js_value_unconditional(receiver_network)?;
 
-        
         self.inner
             .borrow()
             .initiate_transaction(

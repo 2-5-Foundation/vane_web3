@@ -1,8 +1,8 @@
-mod p2p;
 mod metric_server;
+mod p2p;
 
-use crate::p2p::RelayP2pWorker;
 use crate::metric_server::{metrics_server, MetricService};
+use crate::p2p::RelayP2pWorker;
 use anyhow::anyhow;
 use log::{error, info};
 pub use std::net::SocketAddr;
@@ -12,7 +12,12 @@ use tokio::sync::Mutex;
 pub struct MainRelayServerService {}
 
 impl MainRelayServerService {
-    pub async fn run(dns: String, port: u16, live: bool, private_key: Option<String>) -> Result<Self, anyhow::Error> {
+    pub async fn run(
+        dns: String,
+        port: u16,
+        live: bool,
+        private_key: Option<String>,
+    ) -> Result<Self, anyhow::Error> {
         info!(" 🦀...vane relay server starting...🚀 ");
 
         let p2p_worker = RelayP2pWorker::new(dns, port, live, private_key).await?;
@@ -53,8 +58,7 @@ impl MainRelayServerService {
         if let Err(err) = p2p_handle.await {
             error!("P2P worker task error: {:?}", err);
         }
-        
+
         Ok(Self {})
     }
-
 }

@@ -38,7 +38,8 @@ use libp2p_websocket_websys;
 pub use codec::Encode;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use primitives::data_structure::{
-    ConnectionState, DHTResponse, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage, TxStateMachine,
+    ConnectionState, DHTResponse, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
+    TxStateMachine,
 };
 #[derive(Clone)]
 pub struct WasmP2pWorker {
@@ -91,9 +92,11 @@ impl WasmP2pWorker {
         dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>,
         libp2p_key: String,
     ) -> Result<Self, anyhow::Error> {
-
         let self_keypair = {
-            let private_key = libp2p_key.strip_prefix("0x").unwrap_or(&libp2p_key).to_string();
+            let private_key = libp2p_key
+                .strip_prefix("0x")
+                .unwrap_or(&libp2p_key)
+                .to_string();
             let pk = hex::decode(&private_key)
                 .map_err(|e| anyhow::anyhow!("failed to decode hex private key: {e}"))?;
             libp2p::identity::Keypair::ed25519_from_bytes(pk)
@@ -191,7 +194,11 @@ impl WasmP2pWorker {
                     self.handle_app_json_events(app_json_event, sender).await;
                 }
                 WasmRelayBehaviourEvent::RelayClient(relay_client_event) => {
-                    Self::handle_relay_events(relay_client_event, self.relay_connection_state.clone()).await;
+                    Self::handle_relay_events(
+                        relay_client_event,
+                        self.relay_connection_state.clone(),
+                    )
+                    .await;
                 }
                 WasmRelayBehaviourEvent::AppClientDht(app_client_dht_event) => {
                     self.handle_dht_events(app_client_dht_event).await;
@@ -216,22 +223,21 @@ impl WasmP2pWorker {
             }
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                 info!(target:"p2p","🔴 Connection closed to peer {} (cause: {:?})", peer_id, cause);
-                
+
                 // Check if this was the relay peer
-                let relay_peer_id = self.relay_multi_addr
-                    .iter()
-                    .find_map(|protocol| {
-                        if let Protocol::P2p(relay_peer) = protocol {
-                            Some(relay_peer)
-                        } else {
-                            None
-                        }
-                    });
-                
+                let relay_peer_id = self.relay_multi_addr.iter().find_map(|protocol| {
+                    if let Protocol::P2p(relay_peer) = protocol {
+                        Some(relay_peer)
+                    } else {
+                        None
+                    }
+                });
+
                 if let Some(relay_peer) = relay_peer_id {
                     if peer_id == relay_peer {
                         let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
-                        *self.relay_connection_state.borrow_mut() = ConnectionState::Disconnected(now);
+                        *self.relay_connection_state.borrow_mut() =
+                            ConnectionState::Disconnected(now);
                         info!(target:"p2p","🔴 Relay connection lost");
                     }
                 }
@@ -284,13 +290,14 @@ impl WasmP2pWorker {
             SwarmEvent::ExternalAddrExpired { address } => {
                 info!(target:"p2p","⚡ External address expired: {}", address);
             }
-            SwarmEvent::NewExternalAddrOfPeer { peer_id, address, .. } => {
+            SwarmEvent::NewExternalAddrOfPeer {
+                peer_id, address, ..
+            } => {
                 info!(target:"p2p","⚡ New external address of peer: {}", address);
-            },
+            }
             _ => {
                 info!(target:"p2p","⚡ Unhandled swarm event: {:?}", events);
             }
-
         }
     }
 
@@ -737,13 +744,13 @@ impl P2pNetworkService {
         target_url: Multiaddr,
         peer_id: &PeerId,
     ) -> Result<(), anyhow::Error> {
-        let (response_sender, mut response_receiver) =
+        let (response_sender, response_receiver) =
             tokio_with_wasm::alias::sync::oneshot::channel::<Result<(), anyhow::Error>>();
 
         let dial_command = NetworkCommand::Dial {
             target_multi_addr: target_url.clone(),
             target_peer_id: peer_id.clone(),
-            oneshot_sender: response_sender
+            oneshot_sender: response_sender,
         };
 
         self.p2p_command_tx
@@ -758,8 +765,13 @@ impl P2pNetworkService {
 
         match futures::future::select(dht, timeout).await {
             futures::future::Either::Left((Ok(result), _)) => result,
-            futures::future::Either::Left((Err(e), _)) => Err(anyhow!("PeerId dialing channel error: {}", e)),
-            futures::future::Either::Right((_elapsed, _)) => Err(anyhow!("PeerId dialing timeout: peer {} did not respond within 10 seconds", peer_id)),
+            futures::future::Either::Left((Err(e), _)) => {
+                Err(anyhow!("PeerId dialing channel error: {}", e))
+            }
+            futures::future::Either::Right((_elapsed, _)) => Err(anyhow!(
+                "PeerId dialing timeout: peer {} did not respond within 10 seconds",
+                peer_id
+            )),
         }
     }
 

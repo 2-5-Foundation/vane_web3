@@ -12,16 +12,23 @@ pub mod vane_crypto {
         network: ChainSupported,
     ) -> Result<ChainSupported, anyhow::Error> {
         match token {
-            Token::Ethereum(_) | Token::Bnb(_) | Token::Optimism(_) | Token::Arbitrum(_) | Token::Polygon(_) | Token::Base(_) => {
+            Token::Ethereum(_)
+            | Token::Bnb(_)
+            | Token::Optimism(_)
+            | Token::Arbitrum(_)
+            | Token::Polygon(_)
+            | Token::Base(_) => {
                 let token_network: ChainSupported = token.clone().into();
                 if token_network != network {
                     return Err(anyhow!("Token network does not match the network"));
                 }
                 // EVM-compatible address verification
-                let address: alloy::primitives::Address = account.parse()
+                let address: alloy::primitives::Address = account
+                    .parse()
                     .map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
                 let eip55 = address.to_checksum(None);
-                let returned_address = alloy_primitives::Address::parse_checksummed(&eip55, None).map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
+                let returned_address = alloy_primitives::Address::parse_checksummed(&eip55, None)
+                    .map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
                 if **returned_address == **address {
                     Ok(token_network)
                 } else {

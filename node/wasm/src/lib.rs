@@ -26,7 +26,8 @@ use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
 use log::{debug, error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, StorageExport, SwarmMessage, TxStateMachine, TxStatus, UserAccount
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, StorageExport,
+    SwarmMessage, TxStateMachine, TxStatus, UserAccount,
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_timer::TryFutureExt;
@@ -63,7 +64,7 @@ impl WasmMainServiceWorker {
         network: String,
         live: bool,
         libp2p_key: String,
-        storage: Option<StorageExport>
+        storage: Option<StorageExport>,
     ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
@@ -263,6 +264,14 @@ impl WasmMainServiceWorker {
                                 // send the error to the rpc layer
                                 // there should be error reporting worker
                                 error!(target: "MainServiceWorker", "failed to create tx: {e}");
+                                decoded_resp.tx_related_errors = Some("Failed to create transaction".to_string());
+                                self.rpc_sender_channel
+                                    .borrow_mut()
+                                    .send(decoded_resp.clone())
+                                    .await?;
+                                self.lru_cache
+                                    .borrow_mut()
+                                    .push(decoded_resp.tx_nonce.into(), decoded_resp.clone());
                                 // should not continue with the tx
                                 return Ok(());
                             }
@@ -336,7 +345,7 @@ impl WasmMainServiceWorker {
                     Some(Protocol::P2p(id)) => id,
                     _ => return Err(anyhow::anyhow!("peer id not found")),
                 };
-                
+
                 // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
                 p2p_network_service
                     .borrow_mut()
@@ -408,20 +417,28 @@ impl WasmMainServiceWorker {
 
                                         if let Err(e) = p2p_network_service
                                             .borrow_mut()
-                                            .wasm_send_request(txn, peer_id, multi_addr)
+                                            .wasm_send_request(txn.clone(), peer_id, multi_addr)
                                             .await
                                         {
                                             error!("wasm_send_request failed: {e:?}");
+                                            let mut t = txn.borrow_mut().clone();
+                                            t.tx_related_errors = Some("Failed to reach receiver".to_string());
+                                            let _ = rpc_sender_channel
+                                                .borrow_mut()
+                                                .send(t.clone())
+                                                .await;
+                                            lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
                                             return;
                                         }
 
-                                        return; // success path completed
+                                        return;
                                     } else {
                                         warn!(target: "MainServiceWorker", "DHT returned empty value (attempt {}/{})", attempt, max_attempts);
                                     }
                                 }
                             }
 
+                            // here we should have the error worker
                             // DHT internal error
                             future::Either::Left((Err(e), _)) => {
                                 warn!(target: "MainServiceWorker", "host_get_dht internal error (attempt {}/{}): {e:?}", attempt, max_attempts);
@@ -725,12 +742,20 @@ impl WasmMainServiceWorker {
         network: String,
         live: bool,
         libp2p_key: String,
-        storage: Option<StorageExport>
+        storage: Option<StorageExport>,
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let main_worker = Self::new(relay_node_multi_addr, account, network, live, libp2p_key, storage).await?;
+        let main_worker = Self::new(
+            relay_node_multi_addr,
+            account,
+            network,
+            live,
+            libp2p_key,
+            storage,
+        )
+        .await?;
 
         // ====================================================================================== //
 
@@ -810,7 +835,9 @@ impl WasmMainServiceWorker {
         // Apply saved peers using record_saved_user_peers method
         for saved_peer in storage_export.all_saved_peers {
             for account_id in saved_peer.account_ids {
-                db_worker.record_saved_user_peers(account_id, saved_peer.peer_id.clone()).await?;
+                db_worker
+                    .record_saved_user_peers(account_id, saved_peer.peer_id.clone())
+                    .await?;
             }
         }
 
@@ -819,7 +846,7 @@ impl WasmMainServiceWorker {
             db_worker.update_success_tx(tx).await?;
         }
 
-        // Apply failed transactions  
+        // Apply failed transactions
         for tx in storage_export.failed_transactions {
             db_worker.update_failed_tx(tx).await?;
         }
@@ -827,7 +854,6 @@ impl WasmMainServiceWorker {
         info!("Successfully applied storage export data");
         Ok(())
     }
-
 }
 
 #[wasm_bindgen]
@@ -837,7 +863,7 @@ pub async fn start_vane_web3(
     network: String,
     live: bool,
     libp2p_key: String,
-    storage: JsValue
+    storage: JsValue,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
     let storage = if storage.is_undefined() || storage.is_null() {
         None
@@ -854,7 +880,16 @@ pub async fn start_vane_web3(
 
     log::debug!("Rust debug log test from inside WASM");
 
-    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live, libp2p_key, storage).await {
+    match WasmMainServiceWorker::run(
+        relay_node_multi_addr,
+        account,
+        network,
+        live,
+        libp2p_key,
+        storage,
+    )
+    .await
+    {
         Ok(public_interface_worker) => {
             // Convert the PublicInterfaceWorker to PublicInterfaceWorkerJs and return it
             let js_worker =

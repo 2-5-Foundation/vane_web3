@@ -1,9 +1,8 @@
 use anyhow::{Result, anyhow};
+use clap::{Parser, Subcommand};
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
-use clap::{Parser, Subcommand};
-
 
 fn log_setup() -> Result<(), anyhow::Error> {
     CombinedLogger::init(vec![
@@ -57,7 +56,12 @@ async fn main() -> Result<(), anyhow::Error> {
     log_setup()?;
     let args = Args::parse();
     match args.command {
-        Commands::RelayNode { dns, port, live, private_key } => {
+        Commands::RelayNode {
+            dns,
+            port,
+            live,
+            private_key,
+        } => {
             vane_relay_node::MainRelayServerService::run(dns, port, live, private_key).await?;
         }
     }
