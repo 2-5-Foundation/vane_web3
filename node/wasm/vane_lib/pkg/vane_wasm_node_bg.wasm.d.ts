@@ -1,7 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
+export const start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any) => any;
 export const __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
 export const publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
 export const publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
@@ -28,8 +28,8 @@ export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_export_6: WebAssembly.Table;
 export const __externref_table_dealloc: (a: number) => void;
 export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-export const closure1206_externref_shim: (a: number, b: number, c: any) => void;
-export const closure1563_externref_shim: (a: number, b: number, c: any) => void;
+export const closure1217_externref_shim: (a: number, b: number, c: any) => void;
+export const closure1573_externref_shim: (a: number, b: number, c: any) => void;
 export const _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-export const closure1961_externref_shim: (a: number, b: number, c: any, d: any) => void;
+export const closure1971_externref_shim: (a: number, b: number, c: any, d: any) => void;
 export const __wbindgen_start: () => void;

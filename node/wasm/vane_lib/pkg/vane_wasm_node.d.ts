@@ -1,6 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
-export function start_vane_web3(relay_node_multi_addr: string, account: string, network: string, live: boolean): Promise<PublicInterfaceWorkerJs>;
+export function start_vane_web3(relay_node_multi_addr: string, account: string, network: string, live: boolean, libp2p_key: string, storage: any): Promise<PublicInterfaceWorkerJs>;
 export class PublicInterfaceWorkerJs {
   private constructor();
   free(): void;
@@ -29,7 +29,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
+  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any) => any;
   readonly __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
   readonly publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
@@ -56,10 +56,10 @@ export interface InitOutput {
   readonly __wbindgen_export_6: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-  readonly closure1206_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1563_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1217_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1573_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-  readonly closure1961_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure1971_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

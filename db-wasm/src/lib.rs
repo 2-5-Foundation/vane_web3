@@ -219,6 +219,17 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Ok(())
     }
 
+    async fn set_nonce(&self, nonce: u32) -> Result<(), anyhow::Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(NONCE_TABLE)?;
+            table.insert(&NONCE_KEY, &nonce)?;
+        }
+        write_txn.commit()?;
+
+        Ok(())
+    }
+
     async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
         let write_txn = self.db.begin_write()?;
         {
@@ -570,6 +581,13 @@ impl DbWorkerInterface for InMemoryDbWorker {
         Ok(())
     }
 
+    async fn set_nonce(&self, nonce: u32) -> Result<(), anyhow::Error> {
+        self.nonces
+            .borrow_mut()
+            .insert(NONCE_KEY.to_string(), nonce);
+        Ok(())
+    }
+
     async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error> {
         let user_account = self
             .user_accounts
@@ -905,6 +923,13 @@ impl DbWorkerInterface for DbWorker {
         match self {
             DbWorker::Opfs(worker) => worker.increment_nonce().await,
             DbWorker::InMemory(worker) => worker.increment_nonce().await,
+        }
+    }
+
+    async fn set_nonce(&self, nonce: u32) -> Result<(), anyhow::Error> {
+        match self {
+            DbWorker::Opfs(worker) => worker.set_nonce(nonce).await,
+            DbWorker::InMemory(worker) => worker.set_nonce(nonce).await,
         }
     }
 

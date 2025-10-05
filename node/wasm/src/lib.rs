@@ -26,8 +26,7 @@ use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
 use log::{debug, error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
-    TxStateMachine, TxStatus, UserAccount,
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, StorageExport, SwarmMessage, TxStateMachine, TxStatus, UserAccount
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_timer::TryFutureExt;
@@ -63,6 +62,8 @@ impl WasmMainServiceWorker {
         account: String,
         network: String,
         live: bool,
+        libp2p_key: String,
+        storage: Option<StorageExport>
     ) -> Result<Self, anyhow::Error> {
         // CHANNELS
         // ===================================================================================== //
@@ -104,6 +105,7 @@ impl WasmMainServiceWorker {
             account.clone(),
             p2p_command_recv,
             dht_query_result_tx,
+            libp2p_key,
         )
         .await
         .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
@@ -116,6 +118,11 @@ impl WasmMainServiceWorker {
             accounts: vec![(account, ChainSupported::from(network.as_str()))],
         };
         db_worker.set_user_account(user_account).await?;
+
+        // Apply storage export data if provided
+        if let Some(storage_export) = storage {
+            Self::apply_storage_export(db_worker.clone(), storage_export).await?;
+        }
 
         // TRANSACTION RPC WORKER / PUBLIC INTERFACE
         // ===================================================================================== //
@@ -717,11 +724,13 @@ impl WasmMainServiceWorker {
         account: String,
         network: String,
         live: bool,
+        libp2p_key: String,
+        storage: Option<StorageExport>
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let main_worker = Self::new(relay_node_multi_addr, account, network, live).await?;
+        let main_worker = Self::new(relay_node_multi_addr, account, network, live, libp2p_key, storage).await?;
 
         // ====================================================================================== //
 
@@ -782,6 +791,43 @@ impl WasmMainServiceWorker {
 
         Ok(public_interface_worker)
     }
+
+    /// Apply storage export data to the database
+    async fn apply_storage_export(
+        db_worker: Rc<impl DbWorkerInterface>,
+        storage_export: StorageExport,
+    ) -> Result<(), anyhow::Error> {
+        info!("Applying storage export data to database");
+
+        // Apply user account if provided
+        if let Some(user_account) = storage_export.user_account {
+            db_worker.set_user_account(user_account).await?;
+        }
+
+        // Apply nonce - set it to the exported value
+        db_worker.set_nonce(storage_export.nonce).await?;
+
+        // Apply saved peers using record_saved_user_peers method
+        for saved_peer in storage_export.all_saved_peers {
+            for account_id in saved_peer.account_ids {
+                db_worker.record_saved_user_peers(account_id, saved_peer.peer_id.clone()).await?;
+            }
+        }
+
+        // Apply successful transactions
+        for tx in storage_export.success_transactions {
+            db_worker.update_success_tx(tx).await?;
+        }
+
+        // Apply failed transactions  
+        for tx in storage_export.failed_transactions {
+            db_worker.update_failed_tx(tx).await?;
+        }
+
+        info!("Successfully applied storage export data");
+        Ok(())
+    }
+
 }
 
 #[wasm_bindgen]
@@ -790,7 +836,15 @@ pub async fn start_vane_web3(
     account: String,
     network: String,
     live: bool,
+    libp2p_key: String,
+    storage: JsValue
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
+    let storage = if storage.is_undefined() || storage.is_null() {
+        None
+    } else {
+        Some(StorageExport::from_js_value_unconditional(storage)?)
+    };
+
     // Initialize WASM logging to forward logs to JavaScript
     if live {
         let _ = crate::logging::init_wasm_logging();
@@ -799,9 +853,8 @@ pub async fn start_vane_web3(
     }
 
     log::debug!("Rust debug log test from inside WASM");
-    log::info!("Rust info log test from inside WASM");
 
-    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live).await {
+    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live, libp2p_key, storage).await {
         Ok(public_interface_worker) => {
             // Convert the PublicInterfaceWorker to PublicInterfaceWorkerJs and return it
             let js_worker =

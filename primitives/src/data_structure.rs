@@ -397,6 +397,16 @@ impl ChainSupported {
         Ok(chain_supported)
     }
 }
+
+#[cfg(feature = "wasm")]
+impl StorageExport {
+    pub fn from_js_value_unconditional(value: JsValue) -> Result<Self, JsError> {
+        let storage_export: StorageExport = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| JsError::new(&format!("Failed to deserialize StorageExport: {:?}", e)))?;
+        Ok(storage_export)
+    }
+}
+
 impl TxStateMachine {
     pub fn increment_version(&mut self) {
         self.tx_version = self.tx_version.saturating_add(1);
@@ -809,6 +819,7 @@ pub trait DbWorkerInterface: Sized {
     ) -> Result<UserAccount, anyhow::Error>;
 
     async fn get_nonce(&self) -> Result<u32, anyhow::Error>;
+    async fn set_nonce(&self, nonce: u32) -> Result<(), anyhow::Error>;
 
     // get all related network id accounts
     async fn get_user_account(&self) -> Result<UserAccount, anyhow::Error>;
