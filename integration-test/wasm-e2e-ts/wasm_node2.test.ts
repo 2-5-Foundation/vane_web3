@@ -15,8 +15,14 @@ import {
   ChainSupported
 } from '../../node/wasm/vane_lib/primitives.js';
 import { logWasmExports, waitForWasmInitialization, setupWasmLogging, loadRelayNodeInfo, RelayNodeInfo, getWallets } from './utils/wasm_utils.js';
-import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions } from 'viem'
+import { TestClient,LocalAccount, WalletActions, WalletClient, WalletClientConfig, hexToBytes, formatEther, PublicActions, bytesToHex } from 'viem'
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js'
+import {
+  mnemonicGenerate,
+  mnemonicValidate,
+  mnemonicToMiniSecret,
+  ed25519PairFromSeed
+} from '@polkadot/util-crypto';
 
 // THE SECOND NODE TEST IS THE SAME AS THE FIRST NODE TEST BUT WITH A DIFFERENT WALLET
 
@@ -26,6 +32,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   let walletClient: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string | undefined = undefined;
   let privkey: string | undefined = undefined;
+  let libp2pKey: string;
   let sender_client_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
   let nodeCoordinator: NodeCoordinator;
   
@@ -56,11 +63,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       nodeCoordinator = NodeCoordinator.getInstance();
       nodeCoordinator.registerNode('RECEIVER_NODE');
 
+      // generate a libp2p key
+      const mnemonic = mnemonicGenerate();
+      const miniSecret = mnemonicToMiniSecret(mnemonic);
+      libp2pKey = bytesToHex(miniSecret);
+
       // Initialize WASM node using vane_lib
       await initializeNode({
         relayMultiAddr: relayInfo!.multiAddr,
         account: wasm_client_address!,
         network: "Ethereum",
+        libp2pKey: libp2pKey,
         live: false,
         logLevel: LogLevel.Debug
       });

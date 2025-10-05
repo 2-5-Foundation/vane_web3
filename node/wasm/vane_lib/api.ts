@@ -18,6 +18,8 @@ type InitOptions = {
   relayMultiAddr: string;
   account: string;
   network: string;
+  libp2pKey: string;
+  storage?: StorageExport;
   live?: boolean;
   logLevel?: LogLevel | number;
 };
@@ -38,7 +40,7 @@ async function ensureWasmInitialized(): Promise<void> {
  * @returns Promise that resolves to the initialized worker interface
  */
 export async function initializeNode(options: InitOptions): Promise<PublicInterfaceWorkerJs> {
-  const { relayMultiAddr, account, network, live = false, logLevel } = options;
+  const { relayMultiAddr, account, network, libp2pKey, live = false, logLevel, storage } = options;
 
   await ensureWasmInitialized();
 
@@ -46,7 +48,7 @@ export async function initializeNode(options: InitOptions): Promise<PublicInterf
     hostLogging.setLogLevel(Number(logLevel));
   }
 
-  nodeWorker = await start_vane_web3(relayMultiAddr, account, network, live);
+  nodeWorker = await start_vane_web3(relayMultiAddr, account, network, live, libp2pKey, storage);
   return nodeWorker;
 }
 

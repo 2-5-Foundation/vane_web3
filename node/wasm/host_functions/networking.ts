@@ -93,7 +93,7 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum, {
     chain: mainnet,
     // Proxy via Next.js API route in live mode. Example Next route: /api/transactions
     // Your Next.js server should proxy JSON-RPC to your provider using server-side API keys.
-    rpcUrl: pickRpc('/api/transactions'),
+    rpcUrl: pickRpc('/api/prepare-evm'),
     chainId: USE_ANVIL ? 31337 : 1
   }
 };
@@ -162,12 +162,13 @@ export const hostNetworking = {
         }
 
         // Live mode: proxy to Next.js API route; server holds API keys and public client
-        const resp = await fetch(chainConfig.rpcUrl, {
+        const resp = await fetch('/api/tx/submit-evm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'submitTx', tx }),
-          credentials: 'same-origin'
-        });
+          credentials: 'same-origin',
+          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+        })
+
         if (!resp.ok) throw new Error(`Proxy submitTx failed: ${resp.status}`);
         const data = await resp.json();
         const hashHex: string = data?.hash;
@@ -208,9 +209,9 @@ export const hostNetworking = {
         const resp = await fetch(chainConfig.rpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'prepareCreateTxEthereum', tx }),
-          credentials: 'same-origin'
-        });
+          credentials: 'same-origin',
+          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+        })
         if (!resp.ok) throw new Error(`Proxy prepareCreateTxEthereum failed: ${resp.status}`);
         const data = await resp.json();
         const prepared = data?.prepared as PreparedEthParams | undefined;

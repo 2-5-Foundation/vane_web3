@@ -55,6 +55,43 @@ if ! "$PROJECT_ROOT/scripts/build-wasm-package.sh"; then
     exit 1
 fi
 
+# Step 2: Start DHT service
+echo -e "${YELLOW}Step 2: Starting DHT service...${NC}"
+cd "$PROJECT_ROOT/node/wasm/host_functions"
+echo -e "${BLUE}Starting DHT service on port 8787...${NC}"
+bunx wrangler dev --port 8787 &
+DHT_PID=$!
+
+# Wait for DHT service to be ready
+echo -e "${YELLOW}Waiting for DHT service to be ready...${NC}"
+sleep 5
+
+# Clear all keys in the DHT database
+echo -e "${YELLOW}Clearing DHT database...${NC}"
+cd "$PROJECT_ROOT/node/wasm/host_functions"
+
+# List all keys in the KV store
+echo -e "${YELLOW}Listing all keys in DHT database...${NC}"
+KEYS_JSON=$(bunx wrangler kv key list --binding=KV --local --preview 2>/dev/null)
+
+if [ $? -eq 0 ] && [ ! -z "$KEYS_JSON" ]; then
+    echo -e "${YELLOW}Found keys in DHT database, deleting them...${NC}"
+    
+    # Extract key names from JSON and delete them one by one
+    echo "$KEYS_JSON" | jq -r '.[].name' | while read -r key; do
+        if [ ! -z "$key" ]; then
+            echo -e "${YELLOW}Deleting key: $key${NC}"
+            bunx wrangler kv key delete "$key" --binding=KV --local --preview > /dev/null 2>&1
+        fi
+    done
+    
+    echo -e "${GREEN}✅ DHT database cleared${NC}"
+else
+    echo -e "${YELLOW}No keys found in DHT database or error listing keys${NC}"
+fi
+
+echo -e "${GREEN}✅ DHT service started (PID: $DHT_PID)${NC}"
+
 # Return to test directory
 cd "$PROJECT_ROOT/integration-test/wasm-e2e-ts"
 echo -e "${GREEN}✅ All components built successfully${NC}"
@@ -244,7 +281,7 @@ start_node "WASM Node 3 (Malicious)" "$RED"
 
 # Add delay between node starts to prevent connection conflicts
 echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 1
+sleep 5
 
 # Start Node 1
 start_node "WASM Node 1" "$GREEN"
@@ -258,7 +295,30 @@ echo -e "1. Close the terminal windows manually"
 echo -e "2. Or run: pkill -f 'vitest run'"
 echo -e "3. To stop relay node: pkill -f 'start-relay'"
 echo -e "4. To stop HTTP server: pkill -f 'http.server'"
+echo -e "5. To stop DHT service: pkill -f 'wrangler dev'"
 echo ""
+
+# Cleanup function
+cleanup() {
+    echo -e "${YELLOW}Cleaning up...${NC}"
+    if [ ! -z "$DHT_PID" ]; then
+        echo -e "${YELLOW}Stopping DHT service (PID: $DHT_PID)...${NC}"
+        kill $DHT_PID 2>/dev/null
+    fi
+    if [ ! -z "$HTTP_PID" ]; then
+        echo -e "${YELLOW}Stopping HTTP server (PID: $HTTP_PID)...${NC}"
+        kill $HTTP_PID 2>/dev/null
+    fi
+    if [ ! -z "$RELAY_PID" ]; then
+        echo -e "${YELLOW}Stopping relay node (PID: $RELAY_PID)...${NC}"
+        kill $RELAY_PID 2>/dev/null
+    fi
+    echo -e "${GREEN}✅ Cleanup completed${NC}"
+    exit 0
+}
+
+# Set up cleanup trap
+trap cleanup SIGINT SIGTERM
 
 # Keep this script running to show status
 echo -e "${YELLOW}Press Ctrl+C to exit this script (nodes will continue running)${NC}"

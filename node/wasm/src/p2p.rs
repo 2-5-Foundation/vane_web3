@@ -89,8 +89,17 @@ impl WasmP2pWorker {
         user_account_id: String,
         command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,
         dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>,
+        libp2p_key: String,
     ) -> Result<Self, anyhow::Error> {
-        let self_keypair = libp2p::identity::Keypair::generate_ed25519();
+
+        let self_keypair = {
+            let private_key = libp2p_key.strip_prefix("0x").unwrap_or(&libp2p_key).to_string();
+            let pk = hex::decode(&private_key)
+                .map_err(|e| anyhow::anyhow!("failed to decode hex private key: {e}"))?;
+            libp2p::identity::Keypair::ed25519_from_bytes(pk)
+                .map_err(|e| anyhow::anyhow!("failed to decode private key: {e}"))?
+        };
+
         let peer_id = self_keypair.public().to_peer_id().to_base58();
 
         let peer_id: PeerId = PeerId::from_str(&peer_id)

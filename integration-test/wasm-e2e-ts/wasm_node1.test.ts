@@ -27,7 +27,12 @@ import {
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js';
 import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, PublicActions, formatEther } from 'viem';
 import { sign, serializeSignature } from 'viem/accounts';
-
+import {
+  mnemonicGenerate,
+  mnemonicValidate,
+  mnemonicToMiniSecret,
+  ed25519PairFromSeed
+} from '@polkadot/util-crypto';
 // using vane_lib as a library
 
 
@@ -37,6 +42,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let walletClient: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string;
   let privkey: string;
+  let libp2pKey: string;
   const receiver_client_address: string = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
   const wrong_receiver_client_address: string = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 
@@ -67,11 +73,17 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     nodeCoordinator = NodeCoordinator.getInstance();
     nodeCoordinator.registerNode('SENDER_NODE');
 
+    // generate a libp2p key
+    const mnemonic = mnemonicGenerate();
+    const miniSecret = mnemonicToMiniSecret(mnemonic);
+    libp2pKey = bytesToHex(miniSecret);
+
     // Initialize WASM node using vane_lib
     await initializeNode({
       relayMultiAddr: relayInfo.multiAddr,
       account: wasm_client_address,
       network: "Ethereum",
+      libp2pKey: libp2pKey,
       live: false,
       logLevel: LogLevel.Debug
     });
