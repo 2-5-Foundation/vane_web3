@@ -125,7 +125,7 @@ impl WasmP2pWorker {
             .boxed();
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(core::time::Duration::from_secs(300)); // 5 minutes waiting time for a response
+            .with_request_timeout(core::time::Duration::from_secs(610)); // 10 minutes waiting time for a response with 10 second buffer
 
         let mut dht_config = KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol"));
         dht_config.set_kbucket_inserts(libp2p::kad::BucketInserts::Manual);
@@ -159,7 +159,7 @@ impl WasmP2pWorker {
             combined_behaviour,
             peer_id,
             libp2p::swarm::Config::with_wasm_executor()
-                .with_idle_connection_timeout(std::time::Duration::from_secs(12000)),
+                .with_idle_connection_timeout(std::time::Duration::from_secs(700)),
         );
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
