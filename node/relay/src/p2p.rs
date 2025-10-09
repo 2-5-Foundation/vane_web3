@@ -17,7 +17,7 @@ use futures::future::Either;
 use libp2p::kad::Event as DhtEvent;
 use libp2p::relay::Event as RelayServerEvent;
 use libp2p::Transport;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -193,19 +193,19 @@ impl RelayP2pWorker {
                     info!(target:"p2p","listener closed: {:?}, addresses {:?}, reason {:?}",listener_id,addresses,reason);
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    info!(target:"p2p","new listen addr: {:?}",address);
+                    debug!(target:"p2p","new listen addr: {:?}",address);
                 }
                 SwarmEvent::ExpiredListenAddr { address, .. } => {
-                    info!(target:"p2p","expired listen addr: {:?}",address);
+                    debug!(target:"p2p","expired listen addr: {:?}",address);
                 }
                 SwarmEvent::NewExternalAddrCandidate { address, .. } => {
-                    info!(target:"p2p","new external addr candidate: {:?}",address);
+                    debug!(target:"p2p","new external addr candidate: {:?}",address);
                 }
                 SwarmEvent::ExternalAddrConfirmed { address, .. } => {
-                    info!(target:"p2p","external addr confirmed: {:?}",address);
+                    debug!(target:"p2p","external addr confirmed: {:?}",address);
                 }
                 SwarmEvent::ExternalAddrExpired { address, .. } => {
-                    info!(target:"p2p","external addr expired: {:?}",address);
+                    debug!(target:"p2p","external addr expired: {:?}",address);
                 }
                 SwarmEvent::NewExternalAddrOfPeer {
                     peer_id, address, ..
