@@ -185,6 +185,13 @@ export function getWallets(): [TestClient & WalletActions & PublicActions,string
     transport: http(),
   }).extend(walletActions).extend(publicActions),'0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a']
   
-  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3]];
+  const [walletClient4,privkey4] = [createTestClient({
+    account: privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6'), 
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(),
+  }).extend(walletActions).extend(publicActions),'0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6']
+  
+  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3], [walletClient4,privkey4]];
 }
 

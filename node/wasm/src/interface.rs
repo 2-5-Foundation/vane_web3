@@ -96,9 +96,7 @@ impl PublicInterfaceWorker {
         self.p2p_network_service
             .add_account_to_dht(account_id, user_account.multi_addr)
             .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
-        Ok(())
+            .map_err(|e| JsError::new(&format!("{:?}", e)))
     }
 
     pub async fn initiate_transaction(

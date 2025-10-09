@@ -163,7 +163,6 @@ impl WasmP2pWorker {
         );
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
-
         Ok(Self {
             node_id: peer_id,
             user_circuit_multi_addr,
@@ -516,27 +515,6 @@ impl WasmP2pWorker {
         }
     }
 
-    async fn announce_dht(
-        user_account_id: String,
-        full_circuit_address: Multiaddr,
-    ) -> Result<(), anyhow::Error> {
-        // substitute dht
-        // gracefully shutdown point
-        let account_key = user_account_id;
-        let value = full_circuit_address.to_string();
-        if let Ok(response) = host_set_dht(account_key, value).await {
-            if let Some(error_msg) = &response.error {
-                error!(target: "p2p","failed to set dht: {error_msg}");
-            } else {
-                info!(target: "p2p","dht record added and started providing: {response:?}");
-            }
-        } else {
-            error!(target: "p2p","failed to set dht, internal error");
-        }
-
-        Ok(())
-    }
-
     pub async fn start_swarm(
         &self,
         sender_channel: Rc<
@@ -811,10 +789,12 @@ impl P2pNetworkService {
 
     pub async fn wasm_send_response(
         &mut self,
-        outbound_id: u64,
         response: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), anyhow::Error> {
         let txn_state = response.borrow().clone();
+
+        // error handler worker for system should handle this
+        let outbound_id = txn_state.outbound_req_id.expect("no outbound req id found");
 
         let channel = self
             .clone()

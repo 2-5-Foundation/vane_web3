@@ -8,7 +8,9 @@ import {
   senderConfirm,
   revertTransaction,
   fetchPendingTxUpdates,
-  exportStorage
+  exportStorage,
+  addAccount,
+  receiverConfirm
 } from '../../node/wasm/vane_lib/api.js';
 import {
   TxStateMachine,
@@ -40,8 +42,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let relayInfo: any | null = null;
   let nodeCoordinator: NodeCoordinator;
   let walletClient: TestClient & WalletActions & PublicActions;
+  let walletClient2: TestClient & WalletActions & PublicActions;
   let wasm_client_address: string;
+  let wasm_client_address2: string;
   let privkey: string;
+  let privkey2: string;
   let libp2pKey: string;
   const receiver_client_address: string = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
   const wrong_receiver_client_address: string = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
@@ -60,6 +65,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     walletClient = getWallets()[0][0] as TestClient & WalletActions & PublicActions;
     privkey = getWallets()[0][1];
     wasm_client_address = walletClient.account!.address;
+    walletClient2 = getWallets()[3][0] as TestClient & WalletActions & PublicActions;
+    privkey2 = getWallets()[3][1];
+    wasm_client_address2 = walletClient2.account!.address;
     console.log('🔑 WASM_CLIENT_ADDRESS', wasm_client_address);
 
     // Set up logging
@@ -447,26 +455,93 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     
   });
 
-  test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
-    // i think this should be static test no need for recev end as the transaction wont even initiate
-    // and later on we can see the cross chain shenanigans
-  });
+  test("should successfuly send transaction and confirm to self",async () => {
+    console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
+    const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
-  test("should successfully revert and cancel transaction if sender tries to wrongfully send cross chain transaction", async () => {
-    
-  });
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    await addAccount(wasm_client_address2, ChainSupported.Ethereum);
 
-  test("should successfully send cross chain transaction", async () => {
-    
-  });
+    const storage:StorageExport = await exportStorage() as StorageExport;
+    expect(storage.user_account?.accounts.length).toEqual(2);
 
-  test("should successfully handle fees conversion via intents", async () => {
-    
-  });
+    initiateTransaction(
+      wasm_client_address,
+      wasm_client_address2,
+      BigInt(10),
+      ethToken,
+      'Maji',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
-  test("should be able to collect fees from different chains based on transactions", async () => {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const latestTx = receiverReceivedTx[0];
+    if (!walletClient2) throw new Error('walletClient not initialized');
+    const recvAccount = walletClient2.account!;
+    // @ts-ignore
+    const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
+    const recvTxManager = new TxStateMachineManager(latestTx);
+    recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+    const recvUpdatedTx = recvTxManager.getTx();
+    await receiverConfirm(recvUpdatedTx);
+
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const senderPendinglatestTx = senderPendingTx[0];
+
+    if (!walletClient) throw new Error('walletClient not initialized');
+    if (!walletClient.account) throw new Error('walletClient account not available');
+    if (!senderPendinglatestTx.callPayload) {
+      throw new Error('No call payload found');
+    }
+    if (!senderPendinglatestTx.ethUnsignedTxFields) {
+      throw new Error('No unsigned transaction fields found');
+    }
+
+    const account = walletClient.account!;
+    if (!account.signMessage) {
+      throw new Error('Account signMessage function not available');
+    }
+    const [txHash, txBytes] = senderPendinglatestTx.callPayload!;
+    const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
     
-  });
+    const txManager = new TxStateMachineManager(senderPendinglatestTx);
+    txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+    const updatedTx = txManager.getTx();
+    console.log('🔑 TX UPDATED', updatedTx.status);
+    await senderConfirm(updatedTx);
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
+    expect(balanceChange).toEqual(10);
+    
+});
+
+  // test("should succesfully revert and cancel transaction if wrong network is selected by sender", async () => {
+  //   // i think this should be static test no need for recev end as the transaction wont even initiate
+  //   // and later on we can see the cross chain shenanigans
+  // });
+
+  // test("should successfully revert and cancel transaction if sender tries to wrongfully send cross chain transaction", async () => {
+    
+  // });
+
+  // test("should successfully send cross chain transaction", async () => {
+    
+  // });
+
+  // test("should successfully handle fees conversion via intents", async () => {
+    
+  // });
+
+  // test("should be able to collect fees from different chains based on transactions", async () => {
+    
+  // });
 
   afterAll(() => {
     nodeCoordinator?.stop();
