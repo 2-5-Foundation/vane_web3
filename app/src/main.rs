@@ -4,7 +4,8 @@ use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
 
-fn log_setup() -> Result<(), anyhow::Error> {
+fn log_setup(live: bool) -> Result<(), anyhow::Error> {
+    if live {
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -19,6 +20,22 @@ fn log_setup() -> Result<(), anyhow::Error> {
         ),
     ])
     .unwrap();
+    }else {
+        CombinedLogger::init(vec![
+            TermLogger::new(
+                LevelFilter::Debug,
+                Config::default(),
+                TerminalMode::Mixed,
+                ColorChoice::Auto,
+            ),
+            WriteLogger::new(
+                LevelFilter::Debug,
+                Config::default(),
+                File::create("vane.log").unwrap(),
+            ),
+        ])
+        .unwrap();
+    }
     Ok(())
 }
 
@@ -45,6 +62,10 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         live: bool,
 
+        /// Reading from the credentials file
+        #[arg(long = "private-key-file")]
+        private_key_file: Option<std::path::PathBuf>,
+
         /// Ed25519 private key (hex). Accepts --private-key and --private_key
         #[arg(long = "private-key", visible_alias = "private_key")]
         private_key: Option<String>,
@@ -53,16 +74,34 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    log_setup()?;
     let args = Args::parse();
     match args.command {
         Commands::RelayNode {
             dns,
             port,
             live,
+            private_key_file,
             private_key,
         } => {
-            vane_relay_node::MainRelayServerService::run(dns, port, live, private_key).await?;
+            log_setup(live)?;
+
+            if live && private_key_file.is_none() && private_key.is_none() {
+                anyhow::bail!("No private key passed in live mode");
+            }
+
+            fn resolve_key(cli_key: &Option<String>, cli_file: &Option<std::path::PathBuf>) -> anyhow::Result<String> {
+                use std::{fs, path::Path};
+                if let Some(p) = cli_file { return Ok(fs::read_to_string(p)?.trim().to_owned()); }
+                if let Some(k) = cli_key  { return Ok(k.trim().to_owned()); } // dev only
+                anyhow::bail!("No private key");
+            }
+
+            let private_key_opt = if live {
+                Some(resolve_key(&private_key, &private_key_file)?)
+            } else {
+                None
+            };
+            vane_relay_node::MainRelayServerService::run(dns, port, live, private_key_opt).await?;
         }
     }
     Ok(())
