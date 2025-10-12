@@ -114,13 +114,14 @@ impl PublicInterfaceWorker {
         {
             let sender_network_verified =
                 verify_public_bytes(sender.as_str(), &token, sender_network)
-                    .map_err(|e| JsError::new(&format!("sender network error: {:?}", e)))?;
+                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             let receiver_network_verified =
                 verify_public_bytes(receiver.as_str(), &token, receiver_network)
-                    .map_err(|e| JsError::new(&format!("receiver network error: {:?}", e)))?;
+                    .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             // add if the route is supported
-            verify_route(sender_network.clone(), receiver_network.clone())
-                .map_err(|e| JsError::new(&format!("route error: {:?}", e)))?;
+            if let Err(e) = verify_route(sender_network.clone(), receiver_network.clone()) {
+                return Err(JsError::new(&format!("{:?}", e)));
+            }
         }
 
         info!("successfully initially verified sender and receiver and related network bytes");
@@ -190,7 +191,13 @@ impl PublicInterfaceWorker {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
-            return Ok(());
+            return Err(JsError::new("Transaction already reverted"));
+        }
+        if let TxStatus::ReceiverNotRegistered = tx.status {
+            return Err(JsError::new("Receiver not registered"));
+        }
+        if let TxStatus::RecvAddrFailed = tx.status {
+            return Err(JsError::new("Receiver address failed"));
         }
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
@@ -304,7 +311,13 @@ impl PublicInterfaceWorker {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
-            return Ok(());
+            return Err(JsError::new("Transaction already reverted"));
+        }
+        if let TxStatus::ReceiverNotRegistered = tx.status {
+            return Err(JsError::new("Receiver not registered"));
+        }
+        if let TxStatus::RecvAddrFailed = tx.status {
+            return Err(JsError::new("Receiver address failed"));
         }
         if tx.recv_signature.is_none() {
             // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
