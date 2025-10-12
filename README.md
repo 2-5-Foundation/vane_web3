@@ -25,7 +25,7 @@ DEMO POST
 https://x.com/MrishoLukamba/status/1866162459800707165
 
 
-[App:](https://wwww.vaneweb3.com)
+[App:](https://www.vaneweb3.com)
 
 Sentiments:
 
