@@ -12,16 +12,21 @@
     "build-wasm-package": "../../scripts/build-wasm-package.sh"
   },
   "devDependencies": {
-    "vitest": "^3.2.4",
     "@vitest/browser": "^3.2.4",
     "playwright": "1.55.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vite-plugin-node-polyfills": "^0.24.0",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@polkadot/keyring": "^13.5.6",
     "@polkadot/util-crypto": "^13.5.6",
     "@solana/kit": "^4.0.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/spl-token-metadata": "^0.1.6",
     "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
+    "process": "^0.11.10",
     "tweetnacl": "^1.0.3",
     "viem": "^2.35.1"
   }

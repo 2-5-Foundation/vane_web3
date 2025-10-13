@@ -5,6 +5,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use codec::Encode;
 use core::{cell::RefCell, fmt, str::FromStr};
 
 use anyhow::anyhow;
@@ -25,6 +26,7 @@ use tokio_with_wasm::alias::sync::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
+    HashMap,
     cryptography::{verify_public_bytes, verify_route},
     p2p::{P2pNetworkService, WasmP2pWorker},
 };
@@ -51,8 +53,9 @@ pub struct PublicInterfaceWorker {
     pub peer_id: PeerId,
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
+    pub tx_integrity: Rc<RefCell<HashMap<u32, [u8;32]>>>,
     //// tx pending store
-    pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
+    pub lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
     /// Flag to track if a watcher is already active to prevent multiple concurrent watchers
     pub watcher_active: Rc<RefCell<bool>>,
     /// List of registered callbacks for transaction updates
@@ -67,7 +70,7 @@ impl PublicInterfaceWorker {
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
-        lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>,
+        lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>,
     ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
@@ -77,6 +80,7 @@ impl PublicInterfaceWorker {
             user_rpc_update_sender_channel,
             peer_id,
             lru_cache,
+            tx_integrity: Rc::new(RefCell::new(HashMap::new())),
             watcher_active: Rc::new(RefCell::new(false)),
             tx_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
@@ -161,7 +165,6 @@ impl PublicInterfaceWorker {
             tx_version: 0,
             token,
             code_word,
-            eth_unsigned_tx_fields: None,
             sender_address_network: sender_network,
             receiver_address_network: receiver_network,
             tx_related_errors: None,
@@ -169,6 +172,21 @@ impl PublicInterfaceWorker {
 
         // propagate the tx to lower layer (Main service worker layer)
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
+
+        // set the integraty hash for the tx
+        let data_to_hash = (
+            &tx_state_machine.sender_address,
+            &tx_state_machine.receiver_address,
+            &tx_state_machine.sender_address_network,
+            &tx_state_machine.receiver_address_network,
+            &tx_state_machine.multi_id,
+            &tx_state_machine.token,
+            &tx_state_machine.amount,
+            &tx_state_machine.code_word
+        ).encode();
+
+        let integrity_hash = blake2_256(&data_to_hash);
+        self.tx_integrity.borrow_mut().insert(tx_state_machine.tx_nonce.into(), integrity_hash);
 
         let sender = sender_channel.clone();
         sender
@@ -319,16 +337,37 @@ impl PublicInterfaceWorker {
         if let TxStatus::RecvAddrFailed = tx.status {
             return Err(JsError::new("Receiver address failed"));
         }
+
+        // Store the code_word before it gets moved
+        let code_word = tx.code_word.clone();
+        
+        let data_to_hash = (
+            tx.sender_address.clone(),
+            tx.receiver_address.clone(),
+            tx.sender_address_network.clone(),
+            tx.receiver_address_network.clone(),
+            tx.multi_id.clone(),
+            tx.token.clone(),
+            tx.amount.clone(),
+            code_word
+        ).encode();
+
+        let tx_integrity = blake2_256(&data_to_hash);
+
+        // Store the integrity value to avoid temporary value issues
+        let recv_tx_integrity = self.tx_integrity.borrow().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Tx integrity failed")))?.clone();
+        if &tx_integrity != &recv_tx_integrity {
+            Err(anyhow!("Tx integrity failed".to_string()))
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?
+        }
+
         if tx.recv_signature.is_none() {
-            // return error as we do not accept any other TxStatus at this api and the receiver should have signed for confirmation
             Err(anyhow!("Receiver did not confirm".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
-            // verify the tx-state-machine integrity
-            // TODO
-            // tx status to TxStatus::RecvAddrConfirmed
+            
             tx.recv_confirmed();
             tx.increment_version();
             let sender = sender_channel.clone();
@@ -462,7 +501,7 @@ impl PublicInterfaceWorker {
 
     // Cache maintenance
     pub fn clear_reverted_from_cache(&self) {
-        let keys: Vec<u64> = self
+        let keys: Vec<u32> = self
             .lru_cache
             .borrow()
             .iter()
@@ -480,7 +519,7 @@ impl PublicInterfaceWorker {
     }
 
     pub fn clear_finalized_from_cache(&self) {
-        let keys: Vec<u64> = self
+        let keys: Vec<u32> = self
             .lru_cache
             .borrow()
             .iter()

@@ -32,9 +32,18 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL,
   Message,
-  PublicKey
+  PublicKey,
+  VersionedTransaction,
+  TransactionMessage,
+  VersionedMessage,
 } from "@solana/web3.js";
 import { getTransferSolInstruction } from '@solana-program/system'
+import {
+  getAssociatedTokenAddress, createTransferCheckedInstruction, transfer,
+  createAssociatedTokenAccountInstruction,getMint,
+  TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
+} from '@solana/spl-token';
+
 import { ChainSupported, type TxStateMachine, type Token } from '../vane_lib/primitives';
 
 // ERC20 ABI for token transfers and validation
@@ -186,7 +195,8 @@ export const hostNetworking = {
         if (USE_ANVIL) {
           const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
           const publicClient = createPublicClient({ chain: mainnet, transport: http(chainConfig.rpcUrl) });
-          const [_, serializedTxBytes] = tx.callPayload;
+          const serializedTxBytes = 'ethereum' in tx.callPayload! ? tx.callPayload.ethereum.callPayload[1] : null;
+          if (!serializedTxBytes) throw new Error('Invalid call payload for Ethereum transaction');
           const signatureBytes = tx.signedCallPayload;
           const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
@@ -214,7 +224,8 @@ export const hostNetworking = {
         if (USE_ANVIL) {
           const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
           const publicClient = createPublicClient({ chain: bsc, transport: http(chainConfig.rpcUrl) });
-          const [_, serializedTxBytes] = tx.callPayload;
+          const serializedTxBytes = 'bnb' in tx.callPayload! ? tx.callPayload.bnb.callPayload[1] : null;
+          if (!serializedTxBytes) throw new Error('Invalid call payload for Ethereum transaction');
           const signatureBytes = tx.signedCallPayload;
           const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
@@ -244,21 +255,32 @@ export const hostNetworking = {
       if (family === 'solana') {     
         if (USE_ANVIL) {
           const connection = new SolanaConnection("http://localhost:8899", "confirmed");
-          const rawSignatureBytes = tx.signedCallPayload!;
-          let recoverTx = SolanaTransaction.populate(Message.from(tx.callPayload![1]));
-          
-          if (rawSignatureBytes.length !== 64) {
+          const rawSignatureBytes = new Uint8Array(tx.signedCallPayload!);
+
+          if (!('solana' in tx.callPayload!)) throw new Error('Invalid call payload for Solana transaction');
+          const vmsg = VersionedMessage.deserialize(tx.callPayload.solana.callPayload);
+          const lastValidBlockHeight = tx.callPayload.solana.latestBlockHeight;
+          let vtx  = new VersionedTransaction(vmsg);
+          if (rawSignatureBytes.length != 64) {
             throw new Error('ed25519 signature must be 64 bytes');
+          };
+
+          vtx.addSignature(new PublicKey(tx.senderAddress), rawSignatureBytes);
+
+          const sig = await connection.sendRawTransaction(vtx.serialize());
+          const result = await connection.confirmTransaction(
+            {
+              signature: sig,
+              blockhash: vmsg.recentBlockhash,
+              lastValidBlockHeight: lastValidBlockHeight,
+            },
+            'confirmed'
+          );
+          if (!result.value) {
+            throw new Error('Transaction failed in confirmation');
           }
-          const sigBuf = new Uint8Array(rawSignatureBytes);
 
-          // @ts-ignore 
-          // in browser Buffer is not defined
-          recoverTx.addSignature(new PublicKey(tx.senderAddress), sigBuf);
-          const signedTx = recoverTx.serialize();
-          const txHash = await connection.sendRawTransaction(signedTx);
-
-          return new Uint8Array(txHash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+          return new Uint8Array(sig.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
         }
 
         const resp = await fetch("api/tx/submit-solana", {
@@ -394,7 +416,7 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
     };
   } else {
     // ERC20 token transfer
-    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork, publicClient);
+    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork);
     if (!tokenAddress) {
       throw new Error(`Invalid ERC20 token address for ${JSON.stringify(tx.token)}`);
     }
@@ -457,14 +479,17 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
 
   const updated: TxStateMachine = {
     ...tx,
-    callPayload: [
-      // digest as bytes (32)
-      new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      // unsigned payload bytes (what you hashed)
-      new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-    ],
-    // tip: keep fields so the sender can call signTransaction with the same data
-    ethUnsignedTxFields: fields
+    callPayload: {
+      ethereum: {
+        ethUnsignedTxFields: fields,
+        callPayload: [
+          // digest as bytes (32)
+          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          // unsigned payload bytes (what you hashed)
+          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+        ]
+      }
+    }
   };
 
   return updated;
@@ -503,7 +528,7 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
     };
   } else {
     // BEP20 token transfer (reuse Ethereum helper)
-    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork, publicClient);
+    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork);
     if (!tokenAddress) {
       throw new Error(`Invalid BEP20 token address for ${JSON.stringify(tx.token)}`);
     }
@@ -567,14 +592,17 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
   const updated: TxStateMachine = {
     ...tx,
-    callPayload: [
-      // digest as bytes (32)
-      new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      // unsigned payload bytes (what you hashed)
-      new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-    ],
-    // tip: keep fields so the sender can call signTransaction with the same data
-    ethUnsignedTxFields: eip1559Fields
+    callPayload: {
+      bnb: {
+        bnbLegacyTxFields: eip1559Fields,
+        callPayload: [
+          // digest as bytes (32)
+          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          // unsigned payload bytes (what you hashed)
+          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+        ]
+      }
+    }
   };
 
   return updated;
@@ -588,30 +616,101 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   const isNativeSol = isNativeSolToken(tx.token);
   
   if (isNativeSol) {
-   let unsignedTx = new SolanaTransaction().add(
-    SystemProgram.transfer({
-      fromPubkey: new PublicKey(tx.senderAddress),
-      toPubkey: new PublicKey(tx.receiverAddress),
-      lamports: Number(tx.amount) * LAMPORTS_PER_SOL
-    })
-  );
+    const from = new PublicKey(tx.senderAddress);
+    const to   = new PublicKey(tx.receiverAddress);
+  
+    // Build the transfer instruction
+    const lamports =
+      typeof tx.amount === 'bigint'
+        ? tx.amount * BigInt(LAMPORTS_PER_SOL)
+        : Math.round(Number(tx.amount) * LAMPORTS_PER_SOL);
+  
+    const transferIx = SystemProgram.transfer({
+      fromPubkey: from,
+      toPubkey: to,
+      lamports: Number(lamports),
+    });
+  
+    // Compile to a v0 message
+    const msgV0 = new TransactionMessage({
+      payerKey: from,
+      recentBlockhash: blockhash,
+      instructions: [transferIx],
+    }).compileToV0Message();
+  
+    const unsigned = new VersionedTransaction(msgV0);
+    const messageBytes = unsigned.message.serialize();
+    
+    const updated: TxStateMachine = {
+      ...tx,
+      callPayload: {
+        solana: {
+          callPayload: messageBytes as Uint8Array,
+          latestBlockHeight: lastValidBlockHeight,
+        }
+      },
+    };
+  
+    return updated;
 
-  unsignedTx.recentBlockhash = blockhash;
-  unsignedTx.feePayer = new PublicKey(tx.senderAddress);
-  const bufferNeedToSign = unsignedTx.serializeMessage();
-  const unsignedTxBytes = new Uint8Array(bufferNeedToSign.buffer, bufferNeedToSign.byteOffset, bufferNeedToSign.byteLength);
-  const hash = keccak256(unsignedTxBytes);
-  const updated: TxStateMachine = {
-    ...tx,
-    callPayload: [
-      new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      unsignedTxBytes,
-    ],
-  };
-  return updated;
   } else {
-    // SPL token transfer (not implemented yet)
-    throw new Error('SPL token transfers not implemented yet');
+    // SPL token transfer
+    const tokenAddress  = await getSPLTokenAddress(tx.token, tx.senderAddressNetwork);
+    if (!tokenAddress) {
+      throw new Error(`Invalid SPL token address for ${JSON.stringify(tx.token)}`);
+    }
+    const mint = new PublicKey(tokenAddress);
+    const connection = new SolanaConnection("http://localhost:8899", 'confirmed');
+    const info = await connection.getAccountInfo(mint);
+    if (!info) throw new Error('Mint not found');
+    const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+    
+    const fromAta = await getAssociatedTokenAddress(mint, new PublicKey(tx.senderAddress), false, programId);
+    const toAta = await getAssociatedTokenAddress(mint, new PublicKey(tx.receiverAddress), false, programId);
+    const ixs = [];
+    const toInfo = await connection.getAccountInfo(toAta);
+
+    if (!toInfo) {
+      ixs.push(
+        createAssociatedTokenAccountInstruction(
+          new PublicKey(tx.senderAddress),
+          toAta,
+          new PublicKey(tx.receiverAddress),
+          mint,
+          programId
+        )
+      );
+    }
+
+    const minInfo = await getMint(connection, mint, 'confirmed',programId);
+    const decimals = minInfo.decimals;
+    
+    ixs.push(
+      createTransferCheckedInstruction(
+        fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount * (10n ** BigInt(decimals)), decimals, [], programId
+      )
+    );
+   
+    const msg = new TransactionMessage({
+      payerKey: new PublicKey(tx.senderAddress),
+      recentBlockhash: blockhash,
+      instructions: ixs,
+    }).compileToV0Message();
+    
+    const unsigned = new VersionedTransaction(msg);
+    
+    const messageBytes = unsigned.message.serialize();
+    
+    const updated: TxStateMachine = {
+      ...tx,
+      callPayload: {
+        solana: {
+          callPayload: new Uint8Array(messageBytes),
+          latestBlockHeight: lastValidBlockHeight,
+        }
+      },
+    };
+    return updated;
   }
 }
 
@@ -688,11 +787,15 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
 
   const updated: TxStateMachine = {
     ...tx,
-    callPayload: [
-      new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-    ],
-    ethUnsignedTxFields: fields
+    callPayload: {
+      ethereum: {
+        ethUnsignedTxFields: fields,
+        callPayload: [
+          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+        ]
+      }
+    }
   };
 
   return updated;
@@ -715,10 +818,12 @@ async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash:
   const hash = keccak256(unsignedTxBytes);
   const updated: TxStateMachine = {
     ...tx,
-    callPayload: [
-      new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      unsignedTxBytes,
-    ],
+    callPayload: {
+      solana: {
+        callPayload: unsignedTxBytes,
+        latestBlockHeight: params.lastValidBlockHeight,
+      }
+    },
   };
   return updated;
 
@@ -789,11 +894,15 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
 
   const updated: TxStateMachine = {
     ...tx,
-    callPayload: [
-      new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-      new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-    ],
-    ethUnsignedTxFields: eip1559Fields
+    callPayload: {
+      bnb: {
+        bnbLegacyTxFields: eip1559Fields,
+        callPayload: [
+          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+        ]
+      }
+    }
   };
 
   return updated;
@@ -815,7 +924,7 @@ function isNativeBSCToken(token: Token): boolean {
 }
 
 // Helper function to get token contract address and validate it's a valid ERC20 contract
-async function getTokenAddress(token: Token, network: ChainSupported, publicClient: any): Promise<string | null> {
+async function getTokenAddress(token: Token, network: ChainSupported): Promise<string | null> {
   // Support EVM-compatible networks: Ethereum & BSC (no on-chain validation)
   const isEthereum = network === ChainSupported.Ethereum;
   const isBsc = network === ChainSupported.Bnb;
@@ -827,6 +936,18 @@ async function getTokenAddress(token: Token, network: ChainSupported, publicClie
 
   if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
     return token.Bnb.BEP20.address || null;
+  }
+
+  return null;
+}
+
+async function getSPLTokenAddress(token: Token, network: ChainSupported): Promise<string | null> {
+  // Support Solana network only
+  const isSolana = network === ChainSupported.Solana;
+  if (!isSolana) return null;
+
+  if ('Solana' in token && typeof token.Solana === 'object' && 'SPL' in token.Solana) {
+    return token.Solana.SPL.address || null;
   }
 
   return null;

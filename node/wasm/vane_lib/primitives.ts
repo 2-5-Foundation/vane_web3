@@ -483,6 +483,26 @@ export interface UnsignedEip1559 {
     type: 'eip1559';
 }
 
+export type ChainTransactionType = 
+    | {
+        ethereum: {
+            ethUnsignedTxFields: UnsignedEip1559;
+            callPayload: [Uint8Array, Uint8Array];
+        };
+    }
+    | {
+        solana: {
+            callPayload: Uint8Array;
+            latestBlockHeight: number;
+        };
+    }
+    | {
+        bnb: {
+            callPayload: [Uint8Array, Uint8Array];
+            bnbLegacyTxFields: UnsignedEip1559;
+        };
+    };
+
 /** Transaction data structure state machine, passed in rpc and p2p swarm */
 export interface TxStateMachine {
     senderAddress: string;
@@ -504,7 +524,7 @@ export interface TxStateMachine {
     /** Signed call payload (signed hash of the transaction) */
     signedCallPayload?: Uint8Array;
     /** Call payload (hash of transaction and raw transaction bytes) */
-    callPayload?: [Uint8Array, Uint8Array] | null; // ([u8; 32], Vec<u8>) in Rust
+    callPayload?: ChainTransactionType | null;
     /** Inbound Request id for p2p */
     inboundReqId?: number; // Option<u64> in Rust -> number | undefined in TS
     /** Outbound Request id for p2p */
@@ -513,8 +533,6 @@ export interface TxStateMachine {
     txNonce: number; // u32 in Rust -> number in TS
     /** Monotonic version for conflict/race resolution across async boundaries */
     txVersion: number; // u32 in Rust -> number in TS
-    /** Unsigned transaction fields for EIP-1559 transactions */
-    ethUnsignedTxFields?: UnsignedEip1559 | null;
     /** Sender address network */
     senderAddressNetwork: ChainSupported;
     /** Receiver address network */
@@ -534,7 +552,7 @@ export class TxStateMachineManager {
       this.tx.recvSignature = signature;
     }
    
-    setCallPayload(payload: [Uint8Array, Uint8Array] | null): void {
+    setCallPayload(payload: ChainTransactionType | null): void {
       this.tx.callPayload = payload;
     }
    

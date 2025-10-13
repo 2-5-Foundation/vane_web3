@@ -54,7 +54,7 @@ pub struct WasmMainServiceWorker {
     pub dht_query_context: Rc<RefCell<HashMap<u32, (Rc<RefCell<TxStateMachine>>, String)>>>,
 
     // moka cache
-    pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>,
+    pub lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>,
 }
 
 impl WasmMainServiceWorker {
@@ -93,7 +93,7 @@ impl WasmMainServiceWorker {
 
         // Use bounded cache to prevent memory overflow in WASM environment
         // 10,000 entries should be sufficient for most use cases while preventing unbounded growth
-        let lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>> = Rc::new(RefCell::new(
+        let lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>> = Rc::new(RefCell::new(
             LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
         ));
 
@@ -291,6 +291,7 @@ impl WasmMainServiceWorker {
                             let db_tx = DbTxStateMachine {
                                 tx_hash: vec![],
                                 amount: decoded_resp.amount.clone(),
+                                token: decoded_resp.token.clone(),
                                 sender: decoded_resp.sender_address.clone(),
                                 receiver: decoded_resp.receiver_address.clone(),
                                 sender_network: decoded_resp.sender_address_network.clone(),
@@ -551,6 +552,7 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: vec![],
                         amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
                         sender_network: txn_inner.sender_address_network.clone(),
@@ -621,6 +623,7 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: tx_hash.to_vec(),
                         amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
                         sender_network: txn_inner.sender_address_network.clone(),
@@ -657,6 +660,7 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: vec![],
                         amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
                         sender_network: txn_inner.sender_address_network.clone(),
@@ -681,6 +685,7 @@ impl WasmMainServiceWorker {
             let db_tx = DbTxStateMachine {
                 tx_hash: vec![],
                 amount: txn_inner.amount.clone(),
+                token: txn_inner.token.clone(),
                 sender: txn_inner.sender_address.clone(),
                 receiver: txn_inner.receiver_address.clone(),
                 sender_network: txn_inner.sender_address_network.clone(),
@@ -760,6 +765,7 @@ impl WasmMainServiceWorker {
         let db_tx = DbTxStateMachine {
             tx_hash: vec![],
             amount: txn_inner.amount.clone(),
+            token: txn_inner.token.clone(),
             sender: txn_inner.sender_address.clone(),
             receiver: txn_inner.receiver_address.clone(),
             sender_network: txn_inner.sender_address_network.clone(),

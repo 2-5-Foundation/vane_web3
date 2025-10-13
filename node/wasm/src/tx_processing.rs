@@ -13,7 +13,7 @@ use web3::{transports, Web3};
 
 use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
 use k256::elliptic_curve::sec1::FromEncodedPoint;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
+use primitives::data_structure::{ChainSupported, ChainTransactionType, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
     keccak_256, ByteArray, H256,
@@ -63,7 +63,7 @@ impl WasmTxProcessingWorker {
         tx: &TxStateMachine,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        let (network, signature, (msg_hash, raw_msg), address) = if who == "Receiver" {
+        let (network, signature,msg, address) = if who == "Receiver" {
             info!(target: "WasmTxProcessingWorker", "receiver address verification");
 
             let network = tx.receiver_address_network;
@@ -75,7 +75,7 @@ impl WasmTxProcessingWorker {
             let recv_address = tx.receiver_address.clone();
             let msg = tx.receiver_address.as_bytes().to_vec();
 
-            (network, signature, (msg.clone(),msg), recv_address)
+            (network, signature, msg, recv_address)
         } else {
             info!(target: "WasmTxProcessingWorker", "sender address verification");
             // who == Sender
@@ -85,14 +85,29 @@ impl WasmTxProcessingWorker {
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
 
-            // TODO: how to handle this panic
-            let (msg_hash, raw_tx) = tx
+            // Extract appropriate message based on chain type
+            // handle error worker should handle this panic
+            let msg = match tx
                 .call_payload
                 .as_ref()
-                .expect("unexpected error, call payload should be available");
+                .expect("unexpected error, call payload should be available")
+            {
+                ChainTransactionType::Ethereum { call_payload, .. } => {
+                    // Ethereum needs the hash (first element of tuple)
+                    call_payload.0.clone()
+                }
+                ChainTransactionType::Bnb { call_payload, .. } => {
+                    // BNB needs the hash (first element of tuple)
+                    call_payload.0.clone()
+                }
+                ChainTransactionType::Solana { call_payload, .. } => {
+                    // Solana needs the raw transaction
+                    call_payload.clone()
+                }
+            };
             let sender_address = tx.sender_address.clone();
 
-            (network, signature, (msg_hash.to_vec(),raw_tx.to_vec()), sender_address)
+            (network, signature, msg, sender_address)
         };
         match network {
             ChainSupported::Ethereum
@@ -100,14 +115,14 @@ impl WasmTxProcessingWorker {
             | ChainSupported::Arbitrum
             | ChainSupported::Optimism
             | ChainSupported::Polygon
-            | ChainSupported::Base => self.verify_evm_signature(address, signature, msg_hash, who)?,
-            ChainSupported::Tron => self.verify_tron_signature(address, signature, msg_hash, who)?,
-            ChainSupported::Solana => self.verify_solana_signature(address, signature, raw_msg, who)?,
+            | ChainSupported::Base => self.verify_evm_signature(address, signature, msg, who)?,
+            ChainSupported::Tron => self.verify_tron_signature(address, signature, msg, who)?,
+            ChainSupported::Solana => self.verify_solana_signature(address, signature, msg, who)?,
             ChainSupported::Bitcoin => {
-                self.verify_bitcoin_signature(address, signature, msg_hash, who)?
+                self.verify_bitcoin_signature(address, signature, msg, who)?
             }
             ChainSupported::Polkadot => {
-                self.verify_polkadot_signature(address, signature, raw_msg, who)?
+                self.verify_polkadot_signature(address, signature, msg, who)?
             }
         }
         Ok(())
