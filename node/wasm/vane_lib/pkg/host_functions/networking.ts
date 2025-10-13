@@ -421,13 +421,18 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
       throw new Error(`Invalid ERC20 token address for ${JSON.stringify(tx.token)}`);
     }
 
-    // Convert amount to token's smallest unit (most ERC20 tokens use 18 decimals)
-    const tokenAmount = amount * BigInt(10 ** 18);
+    const decimals = await publicClient.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'decimals',
+    });
+  
+    const value = parseUnits(String(tx.amount), decimals);
 
     const data = encodeFunctionData({
       abi: ERC20_ABI,
       functionName: 'transfer',
-      args: [receiver, tokenAmount]
+      args: [receiver, value]
     });
 
     transactionData = {
@@ -533,13 +538,18 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
       throw new Error(`Invalid BEP20 token address for ${JSON.stringify(tx.token)}`);
     }
 
-    // Convert amount to token's smallest unit (most BEP20 tokens use 18 decimals)
-    const tokenAmount = amount * BigInt(10 ** 18);
-
+    const decimals = await publicClient.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'decimals',
+    });
+  
+    const value = parseUnits(String(tx.amount), decimals);
+   
     const data = encodeFunctionData({
       abi: ERC20_ABI,
       functionName: 'transfer',
-      args: [receiver, tokenAmount]
+      args: [receiver, value]
     });
 
     transactionData = {
