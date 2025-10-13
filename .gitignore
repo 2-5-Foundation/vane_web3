@@ -22,6 +22,8 @@ node_modules/
 # Test results
 **/test-results/
 **/__screenshots__/
+test-ledger/
+temp_project/
 
 # Log files
 *.log

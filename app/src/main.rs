@@ -6,21 +6,21 @@ use std::fs::File;
 
 fn log_setup(live: bool) -> Result<(), anyhow::Error> {
     if live {
-    CombinedLogger::init(vec![
-        TermLogger::new(
-            LevelFilter::Info,
-            Config::default(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        ),
-        WriteLogger::new(
-            LevelFilter::Info,
-            Config::default(),
-            File::create("vane.log").unwrap(),
-        ),
-    ])
-    .unwrap();
-    }else {
+        CombinedLogger::init(vec![
+            TermLogger::new(
+                LevelFilter::Info,
+                Config::default(),
+                TerminalMode::Mixed,
+                ColorChoice::Auto,
+            ),
+            WriteLogger::new(
+                LevelFilter::Info,
+                Config::default(),
+                File::create("vane.log").unwrap(),
+            ),
+        ])
+        .unwrap();
+    } else {
         CombinedLogger::init(vec![
             TermLogger::new(
                 LevelFilter::Debug,
@@ -89,10 +89,17 @@ async fn main() -> Result<(), anyhow::Error> {
                 anyhow::bail!("No private key passed in live mode");
             }
 
-            fn resolve_key(cli_key: &Option<String>, cli_file: &Option<std::path::PathBuf>) -> anyhow::Result<String> {
+            fn resolve_key(
+                cli_key: &Option<String>,
+                cli_file: &Option<std::path::PathBuf>,
+            ) -> anyhow::Result<String> {
                 use std::{fs, path::Path};
-                if let Some(p) = cli_file { return Ok(fs::read_to_string(p)?.trim().to_owned()); }
-                if let Some(k) = cli_key  { return Ok(k.trim().to_owned()); } // dev only
+                if let Some(p) = cli_file {
+                    return Ok(fs::read_to_string(p)?.trim().to_owned());
+                }
+                if let Some(k) = cli_key {
+                    return Ok(k.trim().to_owned());
+                } // dev only
                 anyhow::bail!("No private key");
             }
 

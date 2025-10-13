@@ -16,6 +16,9 @@
   ],
   "dependencies": {
     "@polkadot/api": "^16.4.4",
+    "@solana-program/system": "^0.8.1",
+    "@solana/kit": "^4.0.0",
+    "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "viem": "^2.33.3"
   }

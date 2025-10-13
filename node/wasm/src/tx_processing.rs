@@ -5,6 +5,7 @@ use core::{cell::RefCell, str::FromStr};
 use std::fmt::format;
 
 use anyhow::anyhow;
+use base58ck;
 use log::{error, info};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
@@ -12,12 +13,15 @@ use web3::{transports, Web3};
 
 use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
 use k256::elliptic_curve::sec1::FromEncodedPoint;
-use primitives::data_structure::{ChainSupported, TxStateMachine, ETH_SIG_MSG_PREFIX};
+use primitives::data_structure::{ChainSupported, ChainTransactionType, TxStateMachine, ETH_SIG_MSG_PREFIX};
 use sp_core::{
     blake2_256, ecdsa as EthSignature,
-    ed25519::{Public as EdPublic, Signature as EdSignature},
     keccak_256, ByteArray, H256,
 };
+use base58::FromBase58;
+use base58::ToBase58;
+
+use ed25519_compact::{PublicKey as Ed25519PublicKey,Signature as Ed25519Signature};
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
@@ -59,7 +63,7 @@ impl WasmTxProcessingWorker {
         tx: &TxStateMachine,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        let (network, signature, msg, address) = if who == "Receiver" {
+        let (network, signature,msg, address) = if who == "Receiver" {
             info!(target: "WasmTxProcessingWorker", "receiver address verification");
 
             let network = tx.receiver_address_network;
@@ -81,14 +85,29 @@ impl WasmTxProcessingWorker {
                 .signed_call_payload
                 .ok_or(anyhow!("original sender didnt signed"))?;
 
-            // TODO: how to handle this panic
-            let (msg_hash, _raw_tx) = tx
+            // Extract appropriate message based on chain type
+            // handle error worker should handle this panic
+            let msg = match tx
                 .call_payload
                 .as_ref()
-                .expect("unexpected error, call payload should be available");
+                .expect("unexpected error, call payload should be available")
+            {
+                ChainTransactionType::Ethereum { call_payload, .. } => {
+                    // Ethereum needs the hash (first element of tuple)
+                    call_payload.0.clone()
+                }
+                ChainTransactionType::Bnb { call_payload, .. } => {
+                    // BNB needs the hash (first element of tuple)
+                    call_payload.0.clone()
+                }
+                ChainTransactionType::Solana { call_payload, .. } => {
+                    // Solana needs the raw transaction
+                    call_payload.clone()
+                }
+            };
             let sender_address = tx.sender_address.clone();
 
-            (network, signature, msg_hash.to_vec(), sender_address)
+            (network, signature, msg, sender_address)
         };
         match network {
             ChainSupported::Ethereum
@@ -190,6 +209,7 @@ impl WasmTxProcessingWorker {
         match signature.recover_from_prehash(<&B256>::from(&hashed_msg)) {
             Ok(recovered_addr) => {
                 // check if the recovered key is a point on the secp256k1 curve
+                // and we are doing this check here instead of very_bytes is because we cant get ECDSA public key before
                 let recv_addr = recovered_addr.clone();
                 let encoded_point = recv_addr.to_encoded_point(false).to_bytes().to_vec();
 
@@ -240,8 +260,15 @@ impl WasmTxProcessingWorker {
         msg: Vec<u8>,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        info!("Solana signature verification for {who}: {address}");
-        todo!("Solana signature verification not implemented yet")
+        
+        let public_key = Ed25519PublicKey::from_slice(&address.from_base58().map_err(|_| anyhow!("invalid solana address"))?)?;
+        let signature = Ed25519Signature::from_slice(&signature)?;
+        if let Ok(_) = public_key.verify(msg.as_slice(), &signature) {
+            Ok(())
+        } else {
+            Err(anyhow!("solana signature verification failed"))
+        }
+   
     }
 
     /// Verify signature for Bitcoin

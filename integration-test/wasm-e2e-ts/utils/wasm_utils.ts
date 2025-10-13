@@ -5,7 +5,13 @@ import { foundry } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 import { PublicInterfaceWorkerJs } from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
 import { logger } from '../../../node/wasm/host_functions/logging.js';
-
+import { getAssociatedTokenAddress, getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  Connection as SolanaConnection,
+  LAMPORTS_PER_SOL,
+  Keypair,
+  PublicKey,
+} from "@solana/web3.js";
 
 export function logWasmExports() {
     console.log('📦 WASM Module Exports:');
@@ -163,6 +169,49 @@ export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<Rela
   });
 }
 
+export async function getSplTokenBalance(
+  connection: SolanaConnection,
+  tokenAddress: PublicKey,   // the mint (a.k.a. token address)
+  owner: PublicKey           // the wallet whose balance you want
+) {
+  // 1) Which token program owns this mint?
+  const mintInfo = await connection.getAccountInfo(tokenAddress);
+  if (!mintInfo) throw new Error('Mint not found');
+  const programId = mintInfo.owner.equals(TOKEN_2022_PROGRAM_ID)
+    ? TOKEN_2022_PROGRAM_ID
+    : TOKEN_PROGRAM_ID;
+
+  // 2) Derive the owner’s ATA for this mint
+  const ata = await getAssociatedTokenAddress(tokenAddress, owner, false, programId);
+
+  // 3) If ATA doesn’t exist → balance is 0
+  const ataInfo = await connection.getAccountInfo(ata);
+  if (!ataInfo) {
+    // Also useful: pull decimals so you can format 0 properly
+    const mint = await getMint(connection, tokenAddress, 'confirmed', programId);
+    return {
+      ata,
+      amountRaw: 0n,
+      decimals: mint.decimals,
+      uiAmount: 0,
+      uiAmountString: '0',
+      exists: false,
+    };
+  }
+
+  // 4) Read the balance
+  const bal = await connection.getTokenAccountBalance(ata, 'confirmed');
+  // bal.value.amount is a decimal-string of raw units; use BigInt for precision
+  return {
+    ata,
+    amountRaw: BigInt(bal.value.amount),
+    decimals: bal.value.decimals,
+    uiAmount: bal.value.uiAmount ?? Number(bal.value.uiAmountString),
+    uiAmountString: bal.value.uiAmountString,
+    exists: true,
+  };
+}
+
 export function getWallets(): [TestClient & WalletActions & PublicActions,string][] {
   const [walletClient1,privkey1] = [createTestClient({
     account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
@@ -185,6 +234,13 @@ export function getWallets(): [TestClient & WalletActions & PublicActions,string
     transport: http(),
   }).extend(walletActions).extend(publicActions),'0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a']
   
-  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3]];
+  const [walletClient4,privkey4] = [createTestClient({
+    account: privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6'), 
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(),
+  }).extend(walletActions).extend(publicActions),'0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6']
+  
+  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3], [walletClient4,privkey4]];
 }
 

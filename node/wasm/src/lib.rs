@@ -54,7 +54,7 @@ pub struct WasmMainServiceWorker {
     pub dht_query_context: Rc<RefCell<HashMap<u32, (Rc<RefCell<TxStateMachine>>, String)>>>,
 
     // moka cache
-    pub lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>>,
+    pub lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>,
 }
 
 impl WasmMainServiceWorker {
@@ -93,7 +93,7 @@ impl WasmMainServiceWorker {
 
         // Use bounded cache to prevent memory overflow in WASM environment
         // 10,000 entries should be sufficient for most use cases while preventing unbounded growth
-        let lru_cache: Rc<RefCell<LruCache<u64, TxStateMachine>>> = Rc::new(RefCell::new(
+        let lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>> = Rc::new(RefCell::new(
             LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
         ));
 
@@ -115,7 +115,12 @@ impl WasmMainServiceWorker {
             P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
 
         let user_account = UserAccount {
-            multi_addr: p2p_worker.user_circuit_multi_addr.to_string(),
+            multi_addr: p2p_worker
+                .user_circuit_multi_addr
+                .clone()
+                .with_p2p(p2p_worker.node_id)
+                .expect("failed to add p2p protocol")
+                .to_string(),
             accounts: vec![(account, ChainSupported::from(network.as_str()))],
         };
         db_worker.set_user_account(user_account).await?;
@@ -286,6 +291,7 @@ impl WasmMainServiceWorker {
                             let db_tx = DbTxStateMachine {
                                 tx_hash: vec![],
                                 amount: decoded_resp.amount.clone(),
+                                token: decoded_resp.token.clone(),
                                 sender: decoded_resp.sender_address.clone(),
                                 receiver: decoded_resp.receiver_address.clone(),
                                 sender_network: decoded_resp.sender_address_network.clone(),
@@ -336,6 +342,23 @@ impl WasmMainServiceWorker {
         let lru_cache = self.lru_cache.clone();
 
         // 1) try local DB first
+        // But first check if it is the same user
+        let target_user_profile = db.get_user_account().await?;
+        if target_user_profile
+            .accounts
+            .iter()
+            .any(|(acc, _)| *acc == target_id)
+        {
+            // send to interface/rpc make the receiver confirm
+            lru_cache
+                .borrow_mut()
+                .push(txn.borrow().tx_nonce.into(), txn.borrow().clone());
+            rpc_sender_channel
+                .borrow_mut()
+                .send(txn.borrow().clone())
+                .await?;
+            return Ok(());
+        }
         match db.get_saved_user_peers(target_id.clone()).await {
             Ok(addr_str) => {
                 let multi_addr = addr_str
@@ -364,6 +387,7 @@ impl WasmMainServiceWorker {
             Err(_) => {
                 // 2) DB miss → spawn DHT fallback and return immediately
                 info!(target: "MainServiceWorker", "DB miss, spawning DHT fallback");
+
                 let p2p_network_service = p2p_network_service.clone();
                 let rpc_sender_channel = rpc_sender_channel.clone();
                 let lru_cache = lru_cache.clone();
@@ -480,12 +504,86 @@ impl WasmMainServiceWorker {
 
     pub async fn handle_recv_addr_confirmed_tx_state(
         &self,
-        id: u64,
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
+        // check if the receiver is the same user
+        let target_user_profile = self.db_worker.get_user_account().await?;
+        if target_user_profile
+            .accounts
+            .iter()
+            .any(|(acc, _)| *acc == txn.borrow().receiver_address)
+        {
+            let mut txn_inner = txn.borrow().clone();
+            let validation_result = {
+                let tx_processing = self.wasm_tx_processing_worker.borrow();
+                tx_processing.validate_receiver_and_sender_address(&txn_inner, "Receiver")
+            };
+
+            match validation_result {
+                Ok(_) => {
+                    txn_inner.recv_confirmation_passed();
+                    txn_inner.increment_version();
+                    info!(target: "MainServiceWorker", "receiver confirmation passed");
+
+                    let mut tx_processing = self.wasm_tx_processing_worker.borrow_mut();
+                    if let Err(e) = tx_processing.create_tx(&mut txn_inner).await {
+                        // send the error to the rpc layer
+                        // there should be error reporting worker
+                        error!(target: "MainServiceWorker", "failed to create tx: {e}");
+                        txn_inner.tx_related_errors =
+                            Some("Failed to create transaction".to_string());
+                        self.rpc_sender_channel
+                            .borrow_mut()
+                            .send(txn_inner.clone())
+                            .await?;
+                        self.lru_cache
+                            .borrow_mut()
+                            .push(txn_inner.tx_nonce.into(), txn_inner.clone());
+                        // should not continue with the tx
+                        return Ok(());
+                    }
+                }
+                Err(err) => {
+                    txn_inner.recv_confirmation_failed();
+                    txn_inner.increment_version();
+                    error!(target: "MainServiceWorker",
+                      "receiver confirmation failed: {err}");
+
+                    let db_tx = DbTxStateMachine {
+                        tx_hash: vec![],
+                        amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
+                        sender: txn_inner.sender_address.clone(),
+                        receiver: txn_inner.receiver_address.clone(),
+                        sender_network: txn_inner.sender_address_network.clone(),
+                        receiver_network: txn_inner.receiver_address_network.clone(),
+                        success: false,
+                    };
+                    self.db_worker.update_failed_tx(db_tx).await?;
+                }
+            }
+            if let Err(e) = self
+                .rpc_sender_channel
+                .borrow_mut()
+                .try_send(txn_inner.clone())
+            {
+                //handle this error on the error worker
+                error!("Failed to send response to RPC channel: {}", e);
+                return Err(e.into());
+            }
+
+            self.lru_cache
+                .borrow_mut()
+                .push(txn_inner.tx_nonce.into(), txn_inner.clone());
+            debug!(target: "MainServiceWorker",
+                          "propagating txn msg as response to rpc layer for user interaction: {txn_inner:?}");
+
+            return Ok(());
+        }
+        // if the receiver is not the same user, send to p2p network
         self.p2p_network_service
             .borrow_mut()
-            .wasm_send_response(id, txn)
+            .wasm_send_response(txn)
             .await?;
         Ok(())
     }
@@ -525,6 +623,7 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: tx_hash.to_vec(),
                         amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
                         sender_network: txn_inner.sender_address_network.clone(),
@@ -561,6 +660,7 @@ impl WasmMainServiceWorker {
                     let db_tx = DbTxStateMachine {
                         tx_hash: vec![],
                         amount: txn_inner.amount.clone(),
+                        token: txn_inner.token.clone(),
                         sender: txn_inner.sender_address.clone(),
                         receiver: txn_inner.receiver_address.clone(),
                         sender_network: txn_inner.sender_address_network.clone(),
@@ -585,6 +685,7 @@ impl WasmMainServiceWorker {
             let db_tx = DbTxStateMachine {
                 tx_hash: vec![],
                 amount: txn_inner.amount.clone(),
+                token: txn_inner.token.clone(),
                 sender: txn_inner.sender_address.clone(),
                 receiver: txn_inner.receiver_address.clone(),
                 sender_network: txn_inner.sender_address_network.clone(),
@@ -664,6 +765,7 @@ impl WasmMainServiceWorker {
         let db_tx = DbTxStateMachine {
             tx_hash: vec![],
             amount: txn_inner.amount.clone(),
+            token: txn_inner.token.clone(),
             sender: txn_inner.sender_address.clone(),
             receiver: txn_inner.receiver_address.clone(),
             sender_network: txn_inner.sender_address_network.clone(),
@@ -704,12 +806,8 @@ impl WasmMainServiceWorker {
                     info!(target:"MainServiceWorker","handling incoming receiver addr-confirmation tx updates");
                     debug!(target:"MainServiceWorker","handling incoming receiver addr-confirmation tx updates: {:?}",txn.clone());
 
-                    let inbound_id = txn.inbound_req_id.expect("no inbound req id found");
-                    self.handle_recv_addr_confirmed_tx_state(
-                        inbound_id,
-                        Rc::new(RefCell::new(txn.clone())),
-                    )
-                    .await?;
+                    self.handle_recv_addr_confirmed_tx_state(Rc::new(RefCell::new(txn.clone())))
+                        .await?;
                 }
 
                 TxStatus::NetConfirmed => {

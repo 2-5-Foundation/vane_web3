@@ -2,8 +2,11 @@ pub use vane_crypto::*;
 pub mod vane_crypto {
     use anyhow::anyhow;
     use base58::FromBase58;
+    use base58ck::decode_check;
     use curve25519_dalek::edwards::CompressedEdwardsY;
     use primitives::data_structure::{ChainSupported, Token};
+    use ed25519_compact::PublicKey as Ed25519PublicKey;
+
 
     // verify checksum of addresses
     pub fn verify_public_bytes(
@@ -40,8 +43,21 @@ pub mod vane_crypto {
                 todo!("TRON address verification not implemented yet")
             }
             Token::Solana(_) => {
-                // Solana address verification
-                todo!("Solana address verification not implemented yet")
+                let token_network: ChainSupported = token.clone().into();
+                if token_network != network {
+                    return Err(anyhow!("Token network does not match the network"));
+                }
+                log::info!("account: {:?}", &account);
+                let key_bytes_vec = account.from_base58().map_err(|_| anyhow!("invalid solana address"))?;
+                if key_bytes_vec.len() != 32 {
+                    return Err(anyhow!("Invalid key length: expected 32 bytes"));
+                }
+
+                if let Ok(_) = Ed25519PublicKey::from_slice(key_bytes_vec.as_slice()) {
+                    Ok(token_network)
+                } else {
+                    Err(anyhow!("invalid solana address"))
+                }
             }
             Token::Bitcoin(_) => {
                 // Bitcoin address verification

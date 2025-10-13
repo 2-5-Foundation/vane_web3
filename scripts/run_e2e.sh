@@ -265,23 +265,90 @@ else
     fi
 fi
 
+# Step 3: Fund Solana accounts
+echo -e "${YELLOW}Step 3: Funding Solana accounts...${NC}"
+cd "$PROJECT_ROOT"
+if [ -f "scripts/fund-solana.sh" ]; then
+    echo -e "${BLUE}Running fund-solana.sh to create and fund Solana accounts...${NC}"
+    chmod +x scripts/fund-solana.sh
+    if ./scripts/fund-solana.sh; then
+        echo -e "${GREEN}✅ Solana accounts funded successfully${NC}"
+        
+        # Copy token mint file to test directory
+        if [ -f "token_mint.txt" ]; then
+            cp token_mint.txt integration-test/wasm-e2e-ts/
+            echo -e "${GREEN}✅ Token mint file copied to test directory${NC}"
+        fi
+        
+        # Copy token info file to test directory
+        if [ -f "token_info.txt" ]; then
+            cp token_info.txt integration-test/wasm-e2e-ts/
+            echo -e "${GREEN}✅ Token info file copied to test directory${NC}"
+        fi
+    else
+        echo -e "${RED}❌ Failed to fund Solana accounts. Continuing anyway...${NC}"
+    fi
+else
+    echo -e "${RED}⚠️  fund-solana.sh not found. Solana accounts may not be properly funded.${NC}"
+fi
+
+# Step 4: Fund EVM accounts (Ethereum and BNB Chain)
+echo -e "${YELLOW}Step 4: Funding EVM accounts...${NC}"
+cd "$PROJECT_ROOT"
+if [ -f "scripts/fund-evm.sh" ]; then
+    echo -e "${BLUE}Running fund-evm.sh to create and fund EVM tokens...${NC}"
+    chmod +x scripts/fund-evm.sh
+    if ./scripts/fund-evm.sh; then
+        echo -e "${GREEN}✅ EVM tokens funded successfully${NC}"
+        
+        # Copy EVM token info file to test directory
+        if [ -f "evm_token_info.txt" ]; then
+            cp evm_token_info.txt integration-test/wasm-e2e-ts/
+            echo -e "${GREEN}✅ EVM token info file copied to test directory${NC}"
+        fi
+        
+        # Extract token addresses and create simple text files for HTTP serving
+        if [ -f "evm_token_info.txt" ]; then
+            echo -e "${BLUE}Extracting EVM token addresses...${NC}"
+            
+            # Extract BNB Chain token address
+            BNB_TOKEN=$(grep "Token Address:" evm_token_info.txt | head -1 | awk '{print $3}')
+            if [ ! -z "$BNB_TOKEN" ]; then
+                echo "$BNB_TOKEN" > integration-test/wasm-e2e-ts/bnb_token.txt
+                echo -e "${GREEN}✅ BNB Chain token address: $BNB_TOKEN${NC}"
+            fi
+            
+            # Extract Ethereum token address
+            ETH_TOKEN=$(grep "Token Address:" evm_token_info.txt | tail -1 | awk '{print $3}')
+            if [ ! -z "$ETH_TOKEN" ]; then
+                echo "$ETH_TOKEN" > integration-test/wasm-e2e-ts/eth_token.txt
+                echo -e "${GREEN}✅ Ethereum token address: $ETH_TOKEN${NC}"
+            fi
+        fi
+    else
+        echo -e "${RED}❌ Failed to fund EVM accounts. Continuing anyway...${NC}"
+    fi
+else
+    echo -e "${RED}⚠️  fund-evm.sh not found. EVM accounts may not be properly funded.${NC}"
+fi
+
 echo ""
 echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 
 # Start Node 2
-start_node "WASM Node 2" "$BLUE"
+# start_node "WASM Node 2" "$BLUE"
 
-# Add delay between node starts
-echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 1
+# # Add delay between node starts
+# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+# sleep 1
 
-# Start Malicious Node 3
-start_node "WASM Node 3 (Malicious)" "$RED"
+# # Start Malicious Node 3
+# start_node "WASM Node 3 (Malicious)" "$RED"
 
-# Add delay between node starts to prevent connection conflicts
-echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 5
+# # Add delay between node starts to prevent connection conflicts
+# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+# sleep 5
 
 # Start Node 1
 start_node "WASM Node 1" "$GREEN"

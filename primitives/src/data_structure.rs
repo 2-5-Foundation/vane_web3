@@ -343,7 +343,7 @@ pub struct TxStateMachine {
     pub signed_call_payload: Option<Vec<u8>>,
     /// call payload (hash of transaction and raw transaction bytes)
     #[serde(rename = "callPayload")]
-    pub call_payload: Option<([u8; 32], Vec<u8>)>,
+    pub call_payload: Option<ChainTransactionType>,
     /// Inbound Request id for p2p
     #[serde(rename = "inboundReqId")]
     #[serde(serialize_with = "serialize_u64_as_string")]
@@ -360,9 +360,6 @@ pub struct TxStateMachine {
     /// monotonic version for conflict/race resolution across async boundaries
     #[serde(rename = "txVersion")]
     pub tx_version: u32,
-    /// unsigned transaction fields for EIP-1559 transactions
-    #[serde(rename = "ethUnsignedTxFields")]
-    pub eth_unsigned_tx_fields: Option<UnsignedEip1559>,
     /// sender address network
     #[serde(rename = "senderAddressNetwork")]
     pub sender_address_network: ChainSupported,
@@ -373,6 +370,32 @@ pub struct TxStateMachine {
     /// Tx related errors and communication to the peer
     #[serde(rename = "txRelatedErrors")]
     pub tx_related_errors: Option<String>,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub enum ChainTransactionType {
+    #[serde(rename = "ethereum")]
+    Ethereum{
+        #[serde(rename = "ethUnsignedTxFields")]
+        eth_unsigned_tx_fields: UnsignedEip1559,
+        #[serde(rename = "callPayload")]
+        call_payload: (Vec<u8>, Vec<u8>),
+    },
+    #[serde(rename = "solana")]
+    Solana{
+        #[serde(rename = "callPayload")]
+        call_payload: Vec<u8>,
+        #[serde(rename = "latestBlockHeight")]
+        latest_block_height: u64,
+    },
+    #[serde(rename = "bnb")]
+    Bnb{
+        #[serde(rename = "callPayload")]
+        call_payload: (Vec<u8>, Vec<u8>),
+        #[serde(rename = "bnbLegacyTxFields")]
+        bnb_legacy_tx_fields: UnsignedEip1559,
+    },
 }
 
 #[cfg(feature = "wasm")]
@@ -541,6 +564,8 @@ pub struct DbTxStateMachine {
     pub tx_hash: Vec<u8>,
     // amount to be sent
     pub amount: u128,
+    // token
+    pub token: Token,
     // sender
     pub sender: String,
     // receiver
