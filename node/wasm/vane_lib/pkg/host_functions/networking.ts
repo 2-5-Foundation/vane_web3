@@ -14,11 +14,13 @@ import {
   type Transaction,
   type Hex,
   serializeTransaction,
-  hexToSignature,
+  parseSignature,
   parseTransaction,
   recoverAddress,
   encodeFunctionData,
-  getContract
+  getContract,
+  erc20Abi,
+  bytesToHex
 } from 'viem';
 
 import type { TransactionSerializedEIP1559 } from 'viem';
@@ -37,7 +39,6 @@ import {
   TransactionMessage,
   VersionedMessage,
 } from "@solana/web3.js";
-import { getTransferSolInstruction } from '@solana-program/system'
 import {
   getAssociatedTokenAddress, createTransferCheckedInstruction, transfer,
   createAssociatedTokenAccountInstruction,getMint,
@@ -46,42 +47,6 @@ import {
 
 import { ChainSupported, type TxStateMachine, type Token } from '../../primitives';
 
-// ERC20 ABI for token transfers and validation
-const ERC20_ABI = [
-  {
-    name: 'transfer',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' }
-    ],
-    outputs: [{ name: '', type: 'bool' }]
-  },
-  {
-    name: 'balanceOf',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: 'account', type: 'address' }
-    ],
-    outputs: [{ name: '', type: 'uint256' }]
-  },
-  {
-    name: 'totalSupply',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint256' }]
-  },
-  {
-    name: 'decimals',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint8' }]
-  }
-] as const;
 
 type UnsignedEip1559 = {
   to: Address;
@@ -151,28 +116,15 @@ function getChainFamily(chain: ChainSupported): 'ethereum' | 'bsc' | 'solana' | 
   return 'unknown';
 }
 
-// ===== Solana helper functions =====
 
-function reconstructSignedTransaction(
-  serializedTxBytes: Uint8Array, 
-  signedCallPayload: Uint8Array
-): `0x${string}` {
-  
-  // Parse unsigned transaction
-  const serializedTxHex = '0x' + Array.from(serializedTxBytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  
-  const unsignedTx = parseTransaction(serializedTxHex as `0x${string}`);
-  
-  // Parse signature into r, s, v components
-  const signatureHex = '0x' + Array.from(signedCallPayload)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  
-  const signature = hexToSignature(signatureHex as `0x${string}`);
-  
-  // Let viem handle EIP-155 signature computation correctly
+export function reconstructSignedTransaction(unsignedBytes: Uint8Array, signatureBytes: Uint8Array): `0x${string}` {
+  const unsignedHex = bytesToHex(unsignedBytes);
+  const unsignedTx = parseTransaction(unsignedHex);
+
+  const signatureHex = bytesToHex(signatureBytes);
+  const signature = parseSignature(signatureHex);
+
+  // viem computes the correct v / y-parity when serializing with a parsed signature
   return serializeTransaction(unsignedTx as any, signature);
 }
 
@@ -393,7 +345,6 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
 
   const sender = tx.senderAddress as Address;
   const receiver = tx.receiverAddress as Address;
-  const amount = BigInt(tx.amount);
 
   const nonce = await publicClient.getTransactionCount({ address: sender });
 
@@ -423,14 +374,14 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
 
     const decimals = await publicClient.readContract({
       address: tokenAddress as `0x${string}`,
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'decimals',
     });
   
     const value = parseUnits(String(tx.amount), decimals);
 
     const data = encodeFunctionData({
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'transfer',
       args: [receiver, value]
     });
@@ -540,14 +491,14 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
     const decimals = await publicClient.readContract({
       address: tokenAddress as `0x${string}`,
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'decimals',
     });
   
     const value = parseUnits(String(tx.amount), decimals);
    
     const data = encodeFunctionData({
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'transfer',
       args: [receiver, value]
     });
@@ -725,17 +676,16 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
 }
 
 // ===== Helper for live mode: construct tx using server-prepared chain data =====
-// ===== Helper for live mode: construct tx using server-prepared chain data =====
-type PreparedEthParams = {
+export type PreparedEthParams = {
   nonce: number;
   gas: bigint;
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
   tokenAddress?: string | null; // required if ERC20
-  tokenDecimals?: number | null; // required if ERC20
+  tokenDecimals?: number | null
 };
 
-type PreparedBSCParams = {
+export type PreparedBSCParams = {
   nonce: number;
   gas: bigint;
   gasPrice: bigint;
@@ -748,7 +698,6 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
 
   const sender = tx.senderAddress as Address;
   const receiver = tx.receiverAddress as Address;
-  const amount = BigInt(tx.amount);
 
   // Determine if this is a native token or ERC20 token
   const isNativeToken = isNativeEthereumToken(tx.token);
@@ -767,11 +716,11 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
     if (!tokenAddress) throw new Error('Missing tokenAddress for ERC20 transfer');
     
     // Use decimals provided by server
-    const decimals = params.tokenDecimals || 18; // fallback to 18 if not provided
+    const decimals = params.tokenDecimals!
     const tokenAmount = parseUnits(tx.amount.toString(), decimals);
     
     const data = encodeFunctionData({
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'transfer',
       args: [receiver, tokenAmount]
     });
@@ -825,7 +774,6 @@ async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash:
   unsignedTx.feePayer = new PublicKey(tx.senderAddress);
   const bufferNeedToSign = unsignedTx.serializeMessage();
   const unsignedTxBytes = new Uint8Array(bufferNeedToSign.buffer, bufferNeedToSign.byteOffset, bufferNeedToSign.byteLength);
-  const hash = keccak256(unsignedTxBytes);
   const updated: TxStateMachine = {
     ...tx,
     callPayload: {
@@ -843,7 +791,6 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
 
   const receiver = tx.receiverAddress as Address;
-  const amount = BigInt(tx.amount);
 
   // Determine if this is a native token or BEP20 token
   const isNativeToken = isNativeBSCToken(tx.token);
@@ -862,11 +809,11 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
     if (!tokenAddress) throw new Error('Missing tokenAddress for BEP20 transfer');
     
     // Use decimals provided by server
-    const decimals = params.tokenDecimals || 18; // fallback to 18 if not provided
+    const decimals = params.tokenDecimals!;
     const tokenAmount = parseUnits(tx.amount.toString(), decimals);
     
     const data = encodeFunctionData({
-      abi: ERC20_ABI,
+      abi: erc20Abi,
       functionName: 'transfer',
       args: [receiver, tokenAmount]
     });

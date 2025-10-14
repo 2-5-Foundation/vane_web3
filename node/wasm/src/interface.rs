@@ -167,7 +167,6 @@ impl PublicInterfaceWorker {
             code_word,
             sender_address_network: sender_network,
             receiver_address_network: receiver_network,
-            tx_related_errors: None,
         };
 
         // propagate the tx to lower layer (Main service worker layer)

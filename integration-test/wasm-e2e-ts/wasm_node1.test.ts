@@ -588,83 +588,83 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     
 // });
 
-// test("should successfully send to EVM chain and confirm", async () => {
-//   console.log(" \n \n TEST CASE 7: should successfully send to EVM chain and confirm (BNB)");
-//   const [walletClient1,privkey1] = [createTestClient({
-//     account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
-//     chain: bsc,
-//     mode: 'anvil',
-//     transport: http('http://127.0.0.1:8555'),
-//   }).extend(walletActions).extend(publicActions),'0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80']
+test("should successfully send to EVM chain and confirm", async () => {
+  console.log(" \n \n TEST CASE 7: should successfully send to EVM chain and confirm (BNB)");
+  const [walletClient1,privkey1] = [createTestClient({
+    account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
+    chain: bsc,
+    mode: 'anvil',
+    transport: http('http://127.0.0.1:8555'),
+  }).extend(walletActions).extend(publicActions),'0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80']
 
-//   // Fetch BNB balance
-//   const balanceBefore = await walletClient1.getBalance({
-//     address: walletClient1.account.address
-//   });
+  // Fetch BNB balance
+  const balanceBefore = await walletClient1.getBalance({
+    address: walletClient1.account.address
+  });
 
-//   await addAccount(wasm_client_address2, ChainSupported.Bnb);
+  await addAccount(wasm_client_address2, ChainSupported.Bnb);
 
-//   const bnbToken = TokenManager.createNativeToken(ChainSupported.Bnb);
-//   await initiateTransaction(
-//     wasm_client_address,
-//     wasm_client_address2,
-//     BigInt(10),
-//     bnbToken,
-//     'Maji',
-//     ChainSupported.Bnb,
-//     ChainSupported.Bnb
-//   )
+  const bnbToken = TokenManager.createNativeToken(ChainSupported.Bnb);
+  await initiateTransaction(
+    wasm_client_address,
+    wasm_client_address2,
+    BigInt(10),
+    bnbToken,
+    'Maji',
+    ChainSupported.Bnb,
+    ChainSupported.Bnb
+  )
 
-//   await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
 
-//   const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const latestTx = receiverReceivedTx[0];
-//   if (!walletClient2) throw new Error('walletClient not initialized');
-//   const recvAccount = walletClient2.account!;
-//   // @ts-ignore
-//   const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
-//   const recvTxManager = new TxStateMachineManager(latestTx);
-//   recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-//   const recvUpdatedTx = recvTxManager.getTx();
-//   await receiverConfirm(recvUpdatedTx);
+  const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  const latestTx = receiverReceivedTx[0];
+  if (!walletClient2) throw new Error('walletClient not initialized');
+  const recvAccount = walletClient2.account!;
+  // @ts-ignore
+  const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
+  const recvTxManager = new TxStateMachineManager(latestTx);
+  recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+  const recvUpdatedTx = recvTxManager.getTx();
+  await receiverConfirm(recvUpdatedTx);
 
-//   await new Promise(resolve => setTimeout(resolve, 5000));
-//   const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const senderPendinglatestTx = senderPendingTx[0];
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  const senderPendinglatestTx = senderPendingTx[0];
 
-//   if (!walletClient) throw new Error('walletClient not initialized');
-//   if (!walletClient.account) throw new Error('walletClient account not available');
-//   if (!senderPendinglatestTx.callPayload) {
-//     throw new Error('No call payload found');
-//   }
-//   if (!senderPendinglatestTx.callPayload || !('bnb' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.bnb.bnbLegacyTxFields) {
-//     throw new Error('No unsigned transaction fields found');
-//   }
+  if (!walletClient) throw new Error('walletClient not initialized');
+  if (!walletClient.account) throw new Error('walletClient account not available');
+  if (!senderPendinglatestTx.callPayload) {
+    throw new Error('No call payload found');
+  }
+  if (!senderPendinglatestTx.callPayload || !('bnb' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.bnb.bnbLegacyTxFields) {
+    throw new Error('No unsigned transaction fields found');
+  }
 
-//   const account = walletClient.account!;
-//   if (!account.signMessage) {
-//     throw new Error('Account signMessage function not available');
-//   }
-//   if (!senderPendinglatestTx.callPayload || !('bnb' in senderPendinglatestTx.callPayload)) {
-//     throw new Error('No BNB call payload found');
-//   }
-//   const [txHash, txBytes] = senderPendinglatestTx.callPayload.bnb.callPayload;
-//   const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+  const account = walletClient.account!;
+  if (!account.signMessage) {
+    throw new Error('Account signMessage function not available');
+  }
+  if (!senderPendinglatestTx.callPayload || !('bnb' in senderPendinglatestTx.callPayload)) {
+    throw new Error('No BNB call payload found');
+  }
+  const [txHash, txBytes] = senderPendinglatestTx.callPayload.bnb.callPayload;
+  const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
   
-//   const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//   txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-//   const updatedTx = txManager.getTx();
-//   console.log('🔑 TX UPDATED', updatedTx.status);
-//   await senderConfirm(updatedTx);
+  const txManager = new TxStateMachineManager(senderPendinglatestTx);
+  txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+  const updatedTx = txManager.getTx();
+  console.log('🔑 TX UPDATED', updatedTx.status);
+  await senderConfirm(updatedTx);
 
-//   await new Promise(resolve => setTimeout(resolve, 2000));
-//   const balanceAfter = await walletClient1.getBalance({
-//     address: walletClient1.account.address
-//   });
-//   const balanceChange = Math.ceil(Number(formatEther(balanceBefore))) - Math.ceil(Number(formatEther(balanceAfter)));
-//   expect(balanceChange).toEqual(10);
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  const balanceAfter = await walletClient1.getBalance({
+    address: walletClient1.account.address
+  });
+  const balanceChange = Math.ceil(Number(formatEther(balanceBefore))) - Math.ceil(Number(formatEther(balanceAfter)));
+  expect(balanceChange).toEqual(10);
 
-// })
+})
 
 // test("should successfully send BEP20 token transaction", async () => {
 //   console.log(" \n \n TEST CASE 8: should successfully send BEP20 token transaction");
@@ -741,68 +741,68 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
 // })
 
-// test("should successfully send to Solana chain and confirm", async () => {
-//   console.log(" \n \n TEST CASE 9: should successfully send to Solana chain and confirm");
-//   const solanaToken = TokenManager.createNativeToken(ChainSupported.Solana);
-//   const lamports = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
-//   const solBalanceBefore = lamports / LAMPORTS_PER_SOL;
-//   console.log('🔑 SOL BALANCE BEFORE', solBalanceBefore);
-//   try {
-//     await addAccount(solWasmWalletAddress2, ChainSupported.Solana);
-//   } catch (e) {
-//     console.error('addAccount failed', e);
-//     throw e;
-//   }
+test("should successfully send to Solana chain and confirm", async () => {
+  console.log(" \n \n TEST CASE 9: should successfully send to Solana chain and confirm");
+  const solanaToken = TokenManager.createNativeToken(ChainSupported.Solana);
+  const lamports = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
+  const solBalanceBefore = lamports / LAMPORTS_PER_SOL;
+  console.log('🔑 SOL BALANCE BEFORE', solBalanceBefore);
+  try {
+    await addAccount(solWasmWalletAddress2, ChainSupported.Solana);
+  } catch (e) {
+    console.error('addAccount failed', e);
+    throw e;
+  }
 
-//   initiateTransaction(
-//     solWasmWalletAddress,
-//     solWasmWalletAddress2,
-//     BigInt(10),
-//     solanaToken,
-//     'SOLANA',
-//     ChainSupported.Solana,
-//     ChainSupported.Solana
-//   )
+  initiateTransaction(
+    solWasmWalletAddress,
+    solWasmWalletAddress2,
+    BigInt(10),
+    solanaToken,
+    'SOLANA',
+    ChainSupported.Solana,
+    ChainSupported.Solana
+  )
 
-//   await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
 
-//   const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const latestTx = receiverReceivedTx[0];
-//   const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
-//   const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
+  const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  const latestTx = receiverReceivedTx[0];
+  const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
+  const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
 
-//   const recvTxManager = new TxStateMachineManager(latestTx);
-//   recvTxManager.setReceiverSignature(signature);
-//   const recvUpdatedTx = recvTxManager.getTx();
-//   await receiverConfirm(recvUpdatedTx);
+  const recvTxManager = new TxStateMachineManager(latestTx);
+  recvTxManager.setReceiverSignature(signature);
+  const recvUpdatedTx = recvTxManager.getTx();
+  await receiverConfirm(recvUpdatedTx);
 
-//   await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
 
-//   const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const senderPendinglatestTx = senderPendingTx[0];
-//   if (!senderPendinglatestTx.callPayload || !('solana' in senderPendinglatestTx.callPayload)) {
-//     throw new Error('No Solana call payload found');
-//   }
-//   const callPayload = senderPendinglatestTx.callPayload.solana.callPayload;
-//   const txSignature = nacl.sign.detached(new Uint8Array(callPayload), solWasmWallet.secretKey);
-//   if(txSignature.length !== 64) {
-//     throw new Error('txSignature length is not 64');
-//   }
+  const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  const senderPendinglatestTx = senderPendingTx[0];
+  if (!senderPendinglatestTx.callPayload || !('solana' in senderPendinglatestTx.callPayload)) {
+    throw new Error('No Solana call payload found');
+  }
+  const callPayload = senderPendinglatestTx.callPayload.solana.callPayload;
+  const txSignature = nacl.sign.detached(new Uint8Array(callPayload), solWasmWallet.secretKey);
+  if(txSignature.length !== 64) {
+    throw new Error('txSignature length is not 64');
+  }
   
-//   const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//   txManager.setSignedCallPayload(txSignature);
-//   const updatedTx = txManager.getTx();
-//   await senderConfirm(updatedTx);
+  const txManager = new TxStateMachineManager(senderPendinglatestTx);
+  txManager.setSignedCallPayload(txSignature);
+  const updatedTx = txManager.getTx();
+  await senderConfirm(updatedTx);
 
-//   await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 5000));
 
-//   const lamportsAfter = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
-//   const solBalanceAfter = lamportsAfter / LAMPORTS_PER_SOL;
-//   console.log('🔑 SOL BALANCE AFTER', solBalanceAfter);
-//   const balanceChange = Math.ceil(solBalanceBefore) - Math.ceil(solBalanceAfter);
-//   expect(balanceChange).toEqual(10);
+  const lamportsAfter = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
+  const solBalanceAfter = lamportsAfter / LAMPORTS_PER_SOL;
+  console.log('🔑 SOL BALANCE AFTER', solBalanceAfter);
+  const balanceChange = Math.ceil(solBalanceBefore) - Math.ceil(solBalanceAfter);
+  expect(balanceChange).toEqual(10);
 
-// })
+})
 
 //  test("should successfully send SPL token to Solana chain and confirm", async () => {
 //   console.log(" \n \n TEST CASE 10: should successfully send SPL token to Solana chain and confirm");
