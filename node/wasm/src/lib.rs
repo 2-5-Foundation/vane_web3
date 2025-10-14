@@ -269,8 +269,7 @@ impl WasmMainServiceWorker {
                                 // send the error to the rpc layer
                                 // there should be error reporting worker
                                 error!(target: "MainServiceWorker", "failed to create tx: {e}");
-                                decoded_resp.tx_related_errors =
-                                    Some("Failed to create transaction".to_string());
+                                decoded_resp.status = TxStatus::TxError(format!("Failed to create transaction "));
                                 self.rpc_sender_channel
                                     .borrow_mut()
                                     .send(decoded_resp.clone())
@@ -447,8 +446,7 @@ impl WasmMainServiceWorker {
                                         {
                                             error!("wasm_send_request failed: {e:?}");
                                             let mut t = txn.borrow_mut().clone();
-                                            t.tx_related_errors =
-                                                Some("Failed to reach receiver".to_string());
+                                            t.status = TxStatus::TxError("Failed to reach receiver".to_string());
                                             let _ = rpc_sender_channel
                                                 .borrow_mut()
                                                 .send(t.clone())
@@ -530,8 +528,7 @@ impl WasmMainServiceWorker {
                         // send the error to the rpc layer
                         // there should be error reporting worker
                         error!(target: "MainServiceWorker", "failed to create tx: {e}");
-                        txn_inner.tx_related_errors =
-                            Some("Failed to create transaction".to_string());
+                        txn_inner.status = TxStatus::TxError("Failed to create transaction".to_string());
                         self.rpc_sender_channel
                             .borrow_mut()
                             .send(txn_inner.clone())
@@ -645,30 +642,15 @@ impl WasmMainServiceWorker {
                 Err(err) => {
                     // here some errors wont get the tx to be resubmitted
                     error!(target: "MainServiceWorker","tx submission failed: {err:?}");
-                    txn_inner.tx_submission_failed(format!(
-                        "{err:?}: the tx will be resubmitted rest assured"
-                    ));
+                    txn_inner.tx_submission_failed("Failed to submit transaction".to_string());
+        
                     self.rpc_sender_channel
                         .borrow_mut()
                         .send(txn_inner.clone())
                         .await?;
                     self.lru_cache
                         .borrow_mut()
-                        .push(txn_inner.tx_nonce.into(), txn_inner.clone());
-                    // if retries fails
-                    // update local db on failed tx
-                    let db_tx = DbTxStateMachine {
-                        tx_hash: vec![],
-                        amount: txn_inner.amount.clone(),
-                        token: txn_inner.token.clone(),
-                        sender: txn_inner.sender_address.clone(),
-                        receiver: txn_inner.receiver_address.clone(),
-                        sender_network: txn_inner.sender_address_network.clone(),
-                        receiver_network: txn_inner.receiver_address_network.clone(),
-                        success: false,
-                    };
-                    self.db_worker.update_failed_tx(db_tx).await?;
-                    info!(target: "MainServiceWorker","Db recorded failed tx");
+                        .push(txn_inner.tx_nonce.into(), txn_inner.clone());                   
                 }
             }
         } else {

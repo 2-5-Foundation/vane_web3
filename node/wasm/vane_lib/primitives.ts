@@ -453,6 +453,7 @@ export class TokenManager {
 // For status that contains data
 interface TxStatusData {
     FailedToSubmitTxn: string;
+    TxError: string;
     TxSubmissionPassed: { hash: Uint8Array };
     Reverted: string;
 }
@@ -466,6 +467,7 @@ export type TxStatus =
     | { type: "SenderConfirmationfailed" }
     | { type: "RecvAddrFailed" }
     | { type: "FailedToSubmitTxn", data: TxStatusData["FailedToSubmitTxn"] }
+    | { type: "TxError", data: TxStatusData["TxError"] }
     | { type: "TxSubmissionPassed", data: TxStatusData["TxSubmissionPassed"] }
     | { type: "ReceiverNotRegistered" }
     | { type: "Reverted", data: TxStatusData["Reverted"] }
@@ -537,8 +539,6 @@ export interface TxStateMachine {
     senderAddressNetwork: ChainSupported;
     /** Receiver address network */
     receiverAddressNetwork: ChainSupported;
-    /** Tx related errors and communication to the peer */
-    txRelatedErrors?: string;
 }
 
 export class TxStateMachineManager {

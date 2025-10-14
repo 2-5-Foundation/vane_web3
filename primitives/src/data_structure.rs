@@ -85,6 +85,8 @@ pub enum TxStatus {
     RecvAddrFailed,
     /// if transaction failed to be submitted due to some reasons
     FailedToSubmitTxn(String),
+    /// any errors related to the tx
+    TxError(String),
     /// if submission passed (tx-hash)
     TxSubmissionPassed([u8; 32]),
     /// if the receiver has not registered to vane yet
@@ -365,11 +367,7 @@ pub struct TxStateMachine {
     pub sender_address_network: ChainSupported,
     /// receiver address network
     #[serde(rename = "receiverAddressNetwork")]
-    pub receiver_address_network: ChainSupported,
-    /// Extended field
-    /// Tx related errors and communication to the peer
-    #[serde(rename = "txRelatedErrors")]
-    pub tx_related_errors: Option<String>,
+    pub receiver_address_network: ChainSupported
 }
 
 
