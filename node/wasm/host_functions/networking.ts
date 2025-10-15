@@ -323,8 +323,7 @@ export const hostNetworking = {
 
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        const { blockhash, lastValidBlockHeight, feesAmount } = data?.prepared as { blockhash: string, lastValidBlockHeight: number, feesAmount: number };
-        return await createTxSolanaWithParams(tx, { blockhash, lastValidBlockHeight, feesAmount });
+        return data?.prepared as TxStateMachine
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -671,9 +670,13 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
     const unsigned = new VersionedTransaction(msg);
     
     const messageBytes = unsigned.message.serialize();
+
+    const fee = await connection.getFeeForMessage(unsigned.message, 'confirmed');
+    const feesInSol = fee?.value ? fee.value / LAMPORTS_PER_SOL : 0;
     
     const updated: TxStateMachine = {
       ...tx,
+      feesAmount: Number(feesInSol),
       callPayload: {
         solana: {
           callPayload: new Uint8Array(messageBytes),
@@ -701,6 +704,13 @@ export type PreparedBSCParams = {
   gasPrice: bigint;
   tokenAddress?: string | null; // required if BEP20
   tokenDecimals?: number | null; // required if BEP20
+};
+
+export type PreparedSolanaParams = {
+  blockhash: string;
+  lastValidBlockHeight: number;
+  feesAmount: number;
+
 };
 
 async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEthParams): Promise<TxStateMachine> {
@@ -773,33 +783,6 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
   return updated;
 }
 
-async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash: string, lastValidBlockHeight: number, feesAmount: number }): Promise<TxStateMachine> {
-  
-  let unsignedTx = new SolanaTransaction().add(
-    SystemProgram.transfer({
-      fromPubkey: new PublicKey(tx.senderAddress),
-      toPubkey: new PublicKey(tx.receiverAddress),
-      lamports: Number(tx.amount) * LAMPORTS_PER_SOL
-    })
-  );
-
-  unsignedTx.recentBlockhash = params.blockhash;
-  unsignedTx.feePayer = new PublicKey(tx.senderAddress);
-  const bufferNeedToSign = unsignedTx.serializeMessage();
-  const unsignedTxBytes = new Uint8Array(bufferNeedToSign.buffer, bufferNeedToSign.byteOffset, bufferNeedToSign.byteLength);
-  const updated: TxStateMachine = {
-    ...tx,
-    feesAmount: params.feesAmount,
-    callPayload: {
-      solana: {
-        callPayload: unsignedTxBytes,
-        latestBlockHeight: params.lastValidBlockHeight,
-      }
-    },
-  };
-  return updated;
-
-}
 
 async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCParams): Promise<TxStateMachine> {
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
