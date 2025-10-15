@@ -20,7 +20,8 @@ import {
   encodeFunctionData,
   getContract,
   erc20Abi,
-  bytesToHex
+  bytesToHex,
+  formatEther
 } from 'viem';
 
 import type { TransactionSerializedEIP1559 } from 'viem';
@@ -322,8 +323,8 @@ export const hostNetworking = {
 
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        const { blockhash, lastValidBlockHeight } = data?.prepared as { blockhash: string, lastValidBlockHeight: number };
-        return await createTxSolanaWithParams(tx, { blockhash, lastValidBlockHeight });
+        const { blockhash, lastValidBlockHeight, feesAmount } = data?.prepared as { blockhash: string, lastValidBlockHeight: number, feesAmount: number };
+        return await createTxSolanaWithParams(tx, { blockhash, lastValidBlockHeight, feesAmount });
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -413,6 +414,7 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
     maxPriorityFeePerGas = gasPrice;
   }
 
+  let feesInEth = formatEther(gas * maxFeePerGas);
 
   const fields: UnsignedEip1559 = {
     to: transactionData.to,
@@ -435,6 +437,7 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
 
   const updated: TxStateMachine = {
     ...tx,
+    feesAmount: Number(feesInEth),
     callPayload: {
       ethereum: {
         ethUnsignedTxFields: fields,
@@ -461,7 +464,6 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
   const sender = tx.senderAddress as Address;
   const receiver = tx.receiverAddress as Address;
-  const amount = BigInt(tx.amount);
 
   const nonce = await publicClient.getTransactionCount({ address: sender });
 
@@ -520,6 +522,9 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
   // BSC uses legacy gas pricing, not EIP-1559
   const gasPrice = await publicClient.getGasPrice();
 
+  const feesInBNB = formatEther(gas * gasPrice);
+
+
   const fields: UnsignedLegacy = {
     to: transactionData.to,
     value: transactionData.value,
@@ -553,6 +558,7 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
   const updated: TxStateMachine = {
     ...tx,
+    feesAmount: Number(feesInBNB),
     callPayload: {
       bnb: {
         bnbLegacyTxFields: eip1559Fields,
@@ -601,9 +607,13 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   
     const unsigned = new VersionedTransaction(msgV0);
     const messageBytes = unsigned.message.serialize();
+
+    const fee = await connection.getFeeForMessage(unsigned.message, 'confirmed');
+    const feesInSol = fee?.value ? fee.value / LAMPORTS_PER_SOL : 0;
     
     const updated: TxStateMachine = {
       ...tx,
+      feesAmount: Number(feesInSol),
       callPayload: {
         solana: {
           callPayload: messageBytes as Uint8Array,
@@ -740,12 +750,15 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
     type: 'eip1559',
   };
 
+  const feesInEth = formatEther(params.gas * params.maxFeePerGas);
+
   const signingPayload = serializeTransaction(fields) as Hex;
   if (!signingPayload.startsWith('0x02')) throw new Error('Expected 0x02 typed payload');
   const digest = keccak256(signingPayload) as Hex;
 
   const updated: TxStateMachine = {
     ...tx,
+    feesAmount: Number(feesInEth),
     callPayload: {
       ethereum: {
         ethUnsignedTxFields: fields,
@@ -760,7 +773,7 @@ async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEt
   return updated;
 }
 
-async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash: string, lastValidBlockHeight: number }): Promise<TxStateMachine> {
+async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash: string, lastValidBlockHeight: number, feesAmount: number }): Promise<TxStateMachine> {
   
   let unsignedTx = new SolanaTransaction().add(
     SystemProgram.transfer({
@@ -776,6 +789,7 @@ async function createTxSolanaWithParams(tx: TxStateMachine, params: { blockhash:
   const unsignedTxBytes = new Uint8Array(bufferNeedToSign.buffer, bufferNeedToSign.byteOffset, bufferNeedToSign.byteLength);
   const updated: TxStateMachine = {
     ...tx,
+    feesAmount: params.feesAmount,
     callPayload: {
       solana: {
         callPayload: unsignedTxBytes,
@@ -831,6 +845,8 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
     type: 'legacy',
   };
 
+  const feesInBNB = formatEther(params.gas * params.gasPrice);
+
   const signingPayload = serializeTransaction(fields) as Hex;
   if (!signingPayload.startsWith('0x')) throw new Error('Expected 0x legacy payload');
   const digest = keccak256(signingPayload) as Hex;
@@ -851,6 +867,7 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
 
   const updated: TxStateMachine = {
     ...tx,
+    feesAmount: Number(feesInBNB),
     callPayload: {
       bnb: {
         bnbLegacyTxFields: eip1559Fields,
