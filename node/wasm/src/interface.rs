@@ -157,6 +157,7 @@ impl PublicInterfaceWorker {
             recv_signature: None,
             status: TxStatus::default(),
             amount,
+            fees_amount: 0,
             signed_call_payload: None,
             call_payload: None,
             inbound_req_id: None,

@@ -523,6 +523,8 @@ export interface TxStateMachine {
     codeWord: string;
     /** Amount to be sent */
     amount: bigint; // u128 in Rust -> bigint in TS
+    /** Fees amount */
+    feesAmount: number; // u8 in Rust -> number in TS
     /** Signed call payload (signed hash of the transaction) */
     signedCallPayload?: Uint8Array;
     /** Call payload (hash of transaction and raw transaction bytes) */
@@ -596,7 +598,8 @@ export class TxStateMachineManager {
       amount: bigint,
       codeWord: string,
       senderPublicKey: string | null,
-      receiverPublicKey: string | null
+      receiverPublicKey: string | null,
+      feesAmount: number = 0
     ): TxStateMachineManager {
       return new TxStateMachineManager({
         senderAddress,
@@ -607,6 +610,7 @@ export class TxStateMachineManager {
         token,
         status: {type: "Genesis"},
         amount,
+        feesAmount,
         txNonce: 0,
         txVersion: 0,
         codeWord,

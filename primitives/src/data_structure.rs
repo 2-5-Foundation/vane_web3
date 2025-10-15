@@ -340,6 +340,9 @@ pub struct TxStateMachine {
     pub code_word: String,
     /// amount to be sent
     pub amount: u128,
+    /// fees amount
+    #[serde(rename = "feesAmount")]
+    pub fees_amount: u8,
     /// signed call payload (signed hash of the transaction)
     #[serde(rename = "signedCallPayload")]
     pub signed_call_payload: Option<Vec<u8>>,
