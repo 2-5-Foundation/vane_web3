@@ -105,7 +105,7 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Bnb, {
     chain: bsc,
     // Proxy via Next.js API route in live mode to get prepared chain data
     rpcUrl: pickRpc('/api/prepare-bsc', ChainSupported.Bnb),
-    chainId: USE_ANVIL ? 56 : 56
+    chainId: USE_ANVIL ? 2192 : 56
   }
 };
 
@@ -147,12 +147,14 @@ export const hostNetworking = {
         // Local Anvil: send directly via viem
         if (USE_ANVIL) {
           const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-          const publicClient = createPublicClient({ chain: mainnet, transport: http(chainConfig.rpcUrl) });
+          const publicClient = createPublicClient({ chain: chainConfig.chain, transport: http(chainConfig.rpcUrl) });
           const serializedTxBytes = 'ethereum' in tx.callPayload! ? tx.callPayload.ethereum.callPayload[1] : null;
           if (!serializedTxBytes) throw new Error('Invalid call payload for Ethereum transaction');
           const signatureBytes = tx.signedCallPayload;
           const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
+          // Ensure it's mined before returning (Anvil auto-mines, but wait for safety)
+          await publicClient.waitForTransactionReceipt({ hash });
           const hashBytes = new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
           return hashBytes;
         }
@@ -178,10 +180,12 @@ export const hostNetworking = {
           const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
           const publicClient = createPublicClient({ chain: bsc, transport: http(chainConfig.rpcUrl) });
           const serializedTxBytes = 'bnb' in tx.callPayload! ? tx.callPayload.bnb.callPayload[1] : null;
-          if (!serializedTxBytes) throw new Error('Invalid call payload for Ethereum transaction');
+          if (!serializedTxBytes) throw new Error('Invalid call payload for BSC transaction');
           const signatureBytes = tx.signedCallPayload;
           const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
+          // Wait for receipt to ensure balance updates are visible
+          await publicClient.waitForTransactionReceipt({ hash });
           const hashBytes = new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
           return hashBytes;
         }
@@ -541,26 +545,13 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
   const digest = keccak256(signingPayload) as Hex;
 
-  // Convert legacy fields to EIP-1559 format for storage compatibility
-  const eip1559Fields: UnsignedEip1559 = {
-    to: fields.to,
-    value: fields.value,
-    chainId: fields.chainId,
-    nonce: fields.nonce,
-    gas: fields.gas,
-    maxFeePerGas: fields.gasPrice, // Use gasPrice as maxFeePerGas for BSC
-    maxPriorityFeePerGas: fields.gasPrice, // Use gasPrice as maxPriorityFeePerGas for BSC
-    data: fields.data,
-    accessList: [],
-    type: 'eip1559',
-  };
-
+  
   const updated: TxStateMachine = {
     ...tx,
     feesAmount: Number(feesInBNB),
     callPayload: {
       bnb: {
-        bnbLegacyTxFields: eip1559Fields,
+        bnbLegacyTxFields: fields,
         callPayload: [
           // digest as bytes (32)
           new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
@@ -834,26 +825,14 @@ async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCPara
   if (!signingPayload.startsWith('0x')) throw new Error('Expected 0x legacy payload');
   const digest = keccak256(signingPayload) as Hex;
 
-  // Convert legacy fields to EIP-1559 format for storage compatibility
-  const eip1559Fields: UnsignedEip1559 = {
-    to: fields.to,
-    value: fields.value,
-    chainId: fields.chainId,
-    nonce: fields.nonce,
-    gas: fields.gas,
-    maxFeePerGas: fields.gasPrice, // Use gasPrice as maxFeePerGas for BSC
-    maxPriorityFeePerGas: fields.gasPrice, // Use gasPrice as maxPriorityFeePerGas for BSC
-    data: fields.data,
-    accessList: [],
-    type: 'eip1559',
-  };
+  
 
   const updated: TxStateMachine = {
     ...tx,
     feesAmount: Number(feesInBNB),
     callPayload: {
       bnb: {
-        bnbLegacyTxFields: eip1559Fields,
+        bnbLegacyTxFields: fields,
         callPayload: [
           new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
           new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),

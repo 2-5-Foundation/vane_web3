@@ -314,6 +314,22 @@ pub struct UnsignedEip1559 {
     pub tx_type: String, // "eip1559"
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub struct UnsignedBnbLegacy {
+    pub to: String,
+    pub value: u128,
+    #[serde(rename = "chainId")]
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub gas: u64,
+    #[serde(rename = "gasPrice")]
+    pub gas_price: u64,
+    #[serde(rename = "data")]
+    pub data: Option<String>,
+    #[serde(rename = "type")]
+    pub tx_type: String, // "legacy"
+}
+
 /// Transaction data structure state machine, passed in rpc and p2p swarm
 #[derive(Clone, Default, PartialEq, Debug, Deserialize, Serialize, Encode, Decode)]
 pub struct TxStateMachine {
@@ -342,7 +358,7 @@ pub struct TxStateMachine {
     pub amount: u128,
     /// fees amount
     #[serde(rename = "feesAmount")]
-    pub fees_amount: u8,
+    pub fees_amount: f32,
     /// signed call payload (signed hash of the transaction)
     #[serde(rename = "signedCallPayload")]
     pub signed_call_payload: Option<Vec<u8>>,
@@ -395,7 +411,7 @@ pub enum ChainTransactionType {
         #[serde(rename = "callPayload")]
         call_payload: (Vec<u8>, Vec<u8>),
         #[serde(rename = "bnbLegacyTxFields")]
-        bnb_legacy_tx_fields: UnsignedEip1559,
+        bnb_legacy_tx_fields: UnsignedBnbLegacy,
     },
 }
 

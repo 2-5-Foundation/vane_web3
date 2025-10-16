@@ -100,7 +100,8 @@ impl PublicInterfaceWorker {
         self.p2p_network_service
             .add_account_to_dht(account_id, user_account.multi_addr)
             .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+        Ok(())
     }
 
     pub async fn initiate_transaction(
@@ -157,7 +158,7 @@ impl PublicInterfaceWorker {
             recv_signature: None,
             status: TxStatus::default(),
             amount,
-            fees_amount: 0,
+            fees_amount: 0.0,
             signed_call_payload: None,
             call_payload: None,
             inbound_req_id: None,
