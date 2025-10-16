@@ -262,18 +262,27 @@ impl WasmP2pWorker {
                 self.dht_announce_once.call_once(|| {
                     info!(target: "p2p", "Announcing to DHT for the first time");
                     wasm_bindgen_futures::spawn_local(async move {
-                        match host_set_dht(account_key, value).await {
-                            Ok(response) => {
-                                if let Some(error_msg) = &response.error {
-                                    error!(target: "p2p","failed to set dht: {error_msg}");
-                                } else {
-                                    info!(target: "p2p","dht record added and started providing: {response:?}");
+                        // Retry up to 3 times with simple backoff
+                        for attempt in 1..=3u32 {
+                            match host_set_dht(account_key.clone(), value.clone()).await {
+                                Ok(response) => {
+                                    if let Some(error_msg) = &response.error {
+                                        warn!(target: "p2p", "DHT announce attempt {attempt} failed: {error_msg}");
+                                    } else {
+                                        info!(target: "p2p","DHT record added and started providing: {response:?}");
+                                        return;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(target: "p2p","DHT announce attempt {attempt} internal error: {e:?}");
                                 }
                             }
-                            Err(e) => {
-                                error!(target: "p2p","failed to set dht, internal error: {e:?}");
-                            }
+                            // backoff 300ms, 600ms, 900ms
+                            let delay_ms = 300 * attempt;
+                            TimeoutFuture::new(delay_ms.into()).await;
                         }
+                        // Exhausted retries
+                        panic!("fatal: DHT announce failed after 3 attempts");
                     });
                 });
             }

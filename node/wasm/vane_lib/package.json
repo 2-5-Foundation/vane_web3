@@ -14,7 +14,7 @@
   },
   "scripts": {
     "clean": "rm -rf dist pkg/host_functions",
-    "prebuild": "mkdir -p pkg/host_functions && cp -R ../host_functions/*.ts pkg/host_functions/ && sed -i '' -e \"s#'../vane_lib/primitives'#'../../primitives'#g\" pkg/host_functions/*.ts",
+    "prebuild": "mkdir -p pkg/host_functions && cp -R ../host_functions/. pkg/host_functions/ && rm -rf pkg/host_functions/node_modules pkg/host_functions/.wrangler && sed -i '' -e \"s#'../vane_lib/primitives'#'../../primitives'#g\" pkg/host_functions/*.ts",
     "build": "bun run clean && bun run prebuild && bun build ./main.ts --outdir dist && bun run build:types",
     "build:types": "tsc --emitDeclarationOnly --outDir dist"
   },

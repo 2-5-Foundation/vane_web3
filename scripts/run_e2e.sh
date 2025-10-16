@@ -268,29 +268,29 @@ fi
 # Step 3: Fund Solana accounts
 echo -e "${YELLOW}Step 3: Funding Solana accounts...${NC}"
 cd "$PROJECT_ROOT"
-if [ -f "scripts/fund-solana.sh" ]; then
-    echo -e "${BLUE}Running fund-solana.sh to create and fund Solana accounts...${NC}"
-    chmod +x scripts/fund-solana.sh
-    if ./scripts/fund-solana.sh; then
-        echo -e "${GREEN}✅ Solana accounts funded successfully${NC}"
+# if [ -f "scripts/fund-solana.sh" ]; then
+#     echo -e "${BLUE}Running fund-solana.sh to create and fund Solana accounts...${NC}"
+#     chmod +x scripts/fund-solana.sh
+#     if ./scripts/fund-solana.sh; then
+#         echo -e "${GREEN}✅ Solana accounts funded successfully${NC}"
         
-        # Copy token mint file to test directory
-        if [ -f "token_mint.txt" ]; then
-            cp token_mint.txt integration-test/wasm-e2e-ts/
-            echo -e "${GREEN}✅ Token mint file copied to test directory${NC}"
-        fi
+#         # Copy token mint file to test directory
+#         if [ -f "token_mint.txt" ]; then
+#             cp token_mint.txt integration-test/wasm-e2e-ts/
+#             echo -e "${GREEN}✅ Token mint file copied to test directory${NC}"
+#         fi
         
-        # Copy token info file to test directory
-        if [ -f "token_info.txt" ]; then
-            cp token_info.txt integration-test/wasm-e2e-ts/
-            echo -e "${GREEN}✅ Token info file copied to test directory${NC}"
-        fi
-    else
-        echo -e "${RED}❌ Failed to fund Solana accounts. Continuing anyway...${NC}"
-    fi
-else
-    echo -e "${RED}⚠️  fund-solana.sh not found. Solana accounts may not be properly funded.${NC}"
-fi
+#         # Copy token info file to test directory
+#         if [ -f "token_info.txt" ]; then
+#             cp token_info.txt integration-test/wasm-e2e-ts/
+#             echo -e "${GREEN}✅ Token info file copied to test directory${NC}"
+#         fi
+#     else
+#         echo -e "${RED}❌ Failed to fund Solana accounts. Continuing anyway...${NC}"
+#     fi
+# else
+#     echo -e "${RED}⚠️  fund-solana.sh not found. Solana accounts may not be properly funded.${NC}"
+# fi
 
 # Step 4: Fund EVM accounts (Ethereum and BNB Chain)
 echo -e "${YELLOW}Step 4: Funding EVM accounts...${NC}"

@@ -485,6 +485,19 @@ export interface UnsignedEip1559 {
     type: 'eip1559';
 }
 
+// BNB legacy unsigned transaction (no EIP-1559)
+export interface UnsignedBnbLegacy {
+    to: string;
+    value: bigint;
+    chainId: number;
+    nonce: number;
+    gas: bigint;
+    gasPrice: bigint;
+    data?: string;
+    type: 'legacy';
+}
+
+
 export type ChainTransactionType = 
     | {
         ethereum: {
@@ -501,7 +514,7 @@ export type ChainTransactionType =
     | {
         bnb: {
             callPayload: [Uint8Array, Uint8Array];
-            bnbLegacyTxFields: UnsignedEip1559;
+            bnbLegacyTxFields: UnsignedBnbLegacy;
         };
     };
 
