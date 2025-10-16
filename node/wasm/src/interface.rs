@@ -85,6 +85,21 @@ impl PublicInterfaceWorker {
             tx_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
     }
+    pub fn compute_tx_integrity_hash(tx: &TxStateMachine) -> [u8;32] {
+        
+        let data_to_hash = (
+            tx.sender_address.clone(),
+            tx.receiver_address.clone(),
+            tx.sender_address_network.clone(),
+            tx.receiver_address_network.clone(),
+            tx.multi_id.clone(),
+            tx.token.clone(),
+            tx.amount.clone()
+        ).encode();
+
+        let integrity_hash = blake2_256(&data_to_hash);
+        integrity_hash
+    }
 }
 
 impl PublicInterfaceWorker {
@@ -174,20 +189,8 @@ impl PublicInterfaceWorker {
         // propagate the tx to lower layer (Main service worker layer)
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
 
-        // set the integraty hash for the tx
-        let data_to_hash = (
-            &tx_state_machine.sender_address,
-            &tx_state_machine.receiver_address,
-            &tx_state_machine.sender_address_network,
-            &tx_state_machine.receiver_address_network,
-            &tx_state_machine.multi_id,
-            &tx_state_machine.token,
-            &tx_state_machine.amount,
-            &tx_state_machine.code_word
-        ).encode();
-
-        let integrity_hash = blake2_256(&data_to_hash);
-        self.tx_integrity.borrow_mut().insert(tx_state_machine.tx_nonce.into(), integrity_hash);
+        let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx_state_machine);
+        self.tx_integrity.borrow_mut().insert(tx_state_machine.tx_nonce.into(), tx_integrity_hash);
 
         let sender = sender_channel.clone();
         sender
@@ -207,6 +210,14 @@ impl PublicInterfaceWorker {
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
+        
+        let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
+        let recv_tx_integrity = self.tx_integrity.borrow_mut().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Failed get transaction integrity from cache")))?.clone();
+        if tx_integrity_hash != recv_tx_integrity {
+            Err(anyhow!("Transaction integrity failed".to_string()))
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?
+        }
+        
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
@@ -272,6 +283,7 @@ impl PublicInterfaceWorker {
         let receiver_channel = self.rpc_receiver_channel.clone();
         let callbacks = self.tx_callbacks.clone();
         let watcher_active = self.watcher_active.clone();
+        let tx_integrity_store = self.tx_integrity.clone();
 
         // Spawn a single background task to continuously poll for transaction updates
         wasm_bindgen_futures::spawn_local(async move {
@@ -281,7 +293,9 @@ impl PublicInterfaceWorker {
                 match receiver.recv().await {
                     Some(tx_update) => {
                         debug!("watch_tx_updates: {:?}", tx_update);
-
+                        // save in tx_integrity
+                        let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx_update);
+                        tx_integrity_store.borrow_mut().insert(tx_update.tx_nonce.into(), tx_integrity_hash);
                         // Convert transaction to JS value
                         let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
                             .unwrap_or_else(|_| JsValue::NULL);
@@ -317,7 +331,11 @@ impl PublicInterfaceWorker {
             .lru_cache
             .borrow()
             .iter()
-            .map(|(_k, v)| v.clone())
+            .map(|(_k, v)| {
+                let tx_integrity_hash = Self::compute_tx_integrity_hash(v);
+                self.tx_integrity.borrow_mut().insert(v.tx_nonce.into(), tx_integrity_hash);
+                v.clone()
+            })
             .collect::<Vec<TxStateMachine>>();
         debug!("lru: {tx_updates:?}");
 
@@ -339,26 +357,10 @@ impl PublicInterfaceWorker {
             return Err(JsError::new("Receiver address failed"));
         }
 
-        // Store the code_word before it gets moved
-        let code_word = tx.code_word.clone();
-        
-        let data_to_hash = (
-            tx.sender_address.clone(),
-            tx.receiver_address.clone(),
-            tx.sender_address_network.clone(),
-            tx.receiver_address_network.clone(),
-            tx.multi_id.clone(),
-            tx.token.clone(),
-            tx.amount.clone(),
-            code_word
-        ).encode();
-
-        let tx_integrity = blake2_256(&data_to_hash);
-
-        // Store the integrity value to avoid temporary value issues
-        let recv_tx_integrity = self.tx_integrity.borrow().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Tx integrity failed")))?.clone();
-        if &tx_integrity != &recv_tx_integrity {
-            Err(anyhow!("Tx integrity failed".to_string()))
+        let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
+        let recv_tx_integrity = self.tx_integrity.borrow_mut().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Failed get transaction integrity from cache")))?.clone();
+        if tx_integrity_hash != recv_tx_integrity {
+            Err(anyhow!("Transaction integrity failed".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         }
 
