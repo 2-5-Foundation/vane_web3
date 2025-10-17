@@ -835,6 +835,15 @@ export class StorageExportManager {
     getStorage(): StorageExport {
         return { ...this.storage };
     }
+    
+    /**
+     * Get largest transaction failed amount
+     */
+    getLargestFailedTransactionAmount(): number {
+        return this.storage.failed_transactions.reduce((max, tx) => {
+            return Math.max(max, Number(tx.amount));
+        }, 0);
+    }
 
     /**
      * Create a human-readable summary
@@ -843,6 +852,7 @@ export class StorageExportManager {
         totalTransactions: number;
         successfulTransactions: number;
         failedTransactions: number;
+        largestFailedTransactionAmount: number;
         successRate: string;
         totalValueSuccess: number;
         totalValueFailed: number;
@@ -854,6 +864,7 @@ export class StorageExportManager {
         return {
             totalTransactions: this.getTotalTransactionCount(),
             successfulTransactions: this.storage.success_transactions.length,
+            largestFailedTransactionAmount: this.getLargestFailedTransactionAmount(),
             failedTransactions: this.storage.failed_transactions.length,
             successRate: `${this.getSuccessRate().toFixed(2)}%`,
             totalValueSuccess: this.storage.total_value_success,
