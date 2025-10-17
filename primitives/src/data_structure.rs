@@ -386,28 +386,27 @@ pub struct TxStateMachine {
     pub sender_address_network: ChainSupported,
     /// receiver address network
     #[serde(rename = "receiverAddressNetwork")]
-    pub receiver_address_network: ChainSupported
+    pub receiver_address_network: ChainSupported,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum ChainTransactionType {
     #[serde(rename = "ethereum")]
-    Ethereum{
+    Ethereum {
         #[serde(rename = "ethUnsignedTxFields")]
         eth_unsigned_tx_fields: UnsignedEip1559,
         #[serde(rename = "callPayload")]
         call_payload: (Vec<u8>, Vec<u8>),
     },
     #[serde(rename = "solana")]
-    Solana{
+    Solana {
         #[serde(rename = "callPayload")]
         call_payload: Vec<u8>,
         #[serde(rename = "latestBlockHeight")]
         latest_block_height: u64,
     },
     #[serde(rename = "bnb")]
-    Bnb{
+    Bnb {
         #[serde(rename = "callPayload")]
         call_payload: (Vec<u8>, Vec<u8>),
         #[serde(rename = "bnbLegacyTxFields")]

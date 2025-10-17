@@ -12,16 +12,15 @@ use wasm_bindgen::prelude::*;
 use web3::{transports, Web3};
 
 use alloy::primitives::{Address, Signature as EcdsaSignature, SignatureError, B256};
-use k256::elliptic_curve::sec1::FromEncodedPoint;
-use primitives::data_structure::{ChainSupported, ChainTransactionType, TxStateMachine, ETH_SIG_MSG_PREFIX};
-use sp_core::{
-    blake2_256, ecdsa as EthSignature,
-    keccak_256, ByteArray, H256,
-};
 use base58::FromBase58;
 use base58::ToBase58;
+use k256::elliptic_curve::sec1::FromEncodedPoint;
+use primitives::data_structure::{
+    ChainSupported, ChainTransactionType, TxStateMachine, ETH_SIG_MSG_PREFIX,
+};
+use sp_core::{blake2_256, ecdsa as EthSignature, keccak_256, ByteArray, H256};
 
-use ed25519_compact::{PublicKey as Ed25519PublicKey,Signature as Ed25519Signature};
+use ed25519_compact::{PublicKey as Ed25519PublicKey, Signature as Ed25519Signature};
 use sp_runtime::traits::Verify;
 #[wasm_bindgen]
 extern "C" {
@@ -63,7 +62,7 @@ impl WasmTxProcessingWorker {
         tx: &TxStateMachine,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        let (network, signature,msg, address) = if who == "Receiver" {
+        let (network, signature, msg, address) = if who == "Receiver" {
             info!(target: "WasmTxProcessingWorker", "receiver address verification");
 
             let network = tx.receiver_address_network;
@@ -260,15 +259,17 @@ impl WasmTxProcessingWorker {
         msg: Vec<u8>,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        
-        let public_key = Ed25519PublicKey::from_slice(&address.from_base58().map_err(|_| anyhow!("invalid solana address"))?)?;
+        let public_key = Ed25519PublicKey::from_slice(
+            &address
+                .from_base58()
+                .map_err(|_| anyhow!("invalid solana address"))?,
+        )?;
         let signature = Ed25519Signature::from_slice(&signature)?;
         if let Ok(_) = public_key.verify(msg.as_slice(), &signature) {
             Ok(())
         } else {
             Err(anyhow!("solana signature verification failed"))
         }
-   
     }
 
     /// Verify signature for Bitcoin

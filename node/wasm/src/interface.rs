@@ -26,9 +26,9 @@ use tokio_with_wasm::alias::sync::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HashMap,
     cryptography::{verify_public_bytes, verify_route},
     p2p::{P2pNetworkService, WasmP2pWorker},
+    HashMap,
 };
 
 use primitives::data_structure::{
@@ -53,7 +53,7 @@ pub struct PublicInterfaceWorker {
     pub peer_id: PeerId,
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
-    pub tx_integrity: Rc<RefCell<HashMap<u32, [u8;32]>>>,
+    pub tx_integrity: Rc<RefCell<HashMap<u32, [u8; 32]>>>,
     //// tx pending store
     pub lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
     /// Flag to track if a watcher is already active to prevent multiple concurrent watchers
@@ -85,8 +85,7 @@ impl PublicInterfaceWorker {
             tx_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
     }
-    pub fn compute_tx_integrity_hash(tx: &TxStateMachine) -> [u8;32] {
-        
+    pub fn compute_tx_integrity_hash(tx: &TxStateMachine) -> [u8; 32] {
         let data_to_hash = (
             tx.sender_address.clone(),
             tx.receiver_address.clone(),
@@ -94,8 +93,9 @@ impl PublicInterfaceWorker {
             tx.receiver_address_network.clone(),
             tx.multi_id.clone(),
             tx.token.clone(),
-            tx.amount.clone()
-        ).encode();
+            tx.amount.clone(),
+        )
+            .encode();
 
         let integrity_hash = blake2_256(&data_to_hash);
         integrity_hash
@@ -190,7 +190,9 @@ impl PublicInterfaceWorker {
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
 
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx_state_machine);
-        self.tx_integrity.borrow_mut().insert(tx_state_machine.tx_nonce.into(), tx_integrity_hash);
+        self.tx_integrity
+            .borrow_mut()
+            .insert(tx_state_machine.tx_nonce.into(), tx_integrity_hash);
 
         let sender = sender_channel.clone();
         sender
@@ -210,14 +212,21 @@ impl PublicInterfaceWorker {
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
-        
+
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
-        let recv_tx_integrity = self.tx_integrity.borrow_mut().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Failed get transaction integrity from cache")))?.clone();
+        let recv_tx_integrity = self
+            .tx_integrity
+            .borrow_mut()
+            .get(&tx.tx_nonce)
+            .ok_or(JsError::new(&format!(
+                " Failed get transaction integrity from cache"
+            )))?
+            .clone();
         if tx_integrity_hash != recv_tx_integrity {
             Err(anyhow!("Transaction integrity failed".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         }
-        
+
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
@@ -295,7 +304,9 @@ impl PublicInterfaceWorker {
                         debug!("watch_tx_updates: {:?}", tx_update);
                         // save in tx_integrity
                         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx_update);
-                        tx_integrity_store.borrow_mut().insert(tx_update.tx_nonce.into(), tx_integrity_hash);
+                        tx_integrity_store
+                            .borrow_mut()
+                            .insert(tx_update.tx_nonce.into(), tx_integrity_hash);
                         // Convert transaction to JS value
                         let tx_js_value = serde_wasm_bindgen::to_value(&tx_update)
                             .unwrap_or_else(|_| JsValue::NULL);
@@ -333,7 +344,9 @@ impl PublicInterfaceWorker {
             .iter()
             .map(|(_k, v)| {
                 let tx_integrity_hash = Self::compute_tx_integrity_hash(v);
-                self.tx_integrity.borrow_mut().insert(v.tx_nonce.into(), tx_integrity_hash);
+                self.tx_integrity
+                    .borrow_mut()
+                    .insert(v.tx_nonce.into(), tx_integrity_hash);
                 v.clone()
             })
             .collect::<Vec<TxStateMachine>>();
@@ -358,7 +371,14 @@ impl PublicInterfaceWorker {
         }
 
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
-        let recv_tx_integrity = self.tx_integrity.borrow_mut().get(&tx.tx_nonce).ok_or(JsError::new(&format!(" Failed get transaction integrity from cache")))?.clone();
+        let recv_tx_integrity = self
+            .tx_integrity
+            .borrow_mut()
+            .get(&tx.tx_nonce)
+            .ok_or(JsError::new(&format!(
+                " Failed get transaction integrity from cache"
+            )))?
+            .clone();
         if tx_integrity_hash != recv_tx_integrity {
             Err(anyhow!("Transaction integrity failed".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
@@ -367,21 +387,19 @@ impl PublicInterfaceWorker {
         if tx.recv_signature.is_none() {
             Err(anyhow!("Receiver did not confirm".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
-        } else {
-            // remove from cache
-            self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
-            
-            tx.recv_confirmed();
-            tx.increment_version();
-            let sender = sender_channel.clone();
-            sender
-                .send(tx)
-                .await
-                .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
-                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
-            Ok(())
         }
+        // remove from cache
+        self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
+
+        tx.recv_confirmed();
+        tx.increment_version();
+        sender_channel
+            .send(tx)
+            .await
+            .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
+            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+
+        Ok(())
     }
 
     pub async fn revert_transaction(
@@ -398,6 +416,7 @@ impl PublicInterfaceWorker {
 
         match tx.status {
             TxStatus::Reverted(ref reason) => {
+                info!("revertTransaction: transaction already reverted");
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
                 // Immediately reflect in local cache for UI/state reads
                 self.lru_cache
@@ -413,6 +432,7 @@ impl PublicInterfaceWorker {
                 Ok(())
             }
             _ => {
+                info!("revertTransaction: reverting transaction");
                 tx.status =
                     TxStatus::Reverted(reason.unwrap_or("Intended receiver not met".to_string()));
                 // Immediately reflect in local cache for UI/state reads

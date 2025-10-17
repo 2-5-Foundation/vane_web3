@@ -337,11 +337,11 @@ echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 
 # Start Node 2
-# start_node "WASM Node 2" "$BLUE"
+start_node "WASM Node 2" "$BLUE"
 
-# # Add delay between node starts
-# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-# sleep 1
+# Add delay between node starts
+echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+sleep 1
 
 # # Start Malicious Node 3
 # start_node "WASM Node 3 (Malicious)" "$RED"
