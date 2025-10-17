@@ -4,9 +4,8 @@ pub mod vane_crypto {
     use base58::FromBase58;
     use base58ck::decode_check;
     use curve25519_dalek::edwards::CompressedEdwardsY;
-    use primitives::data_structure::{ChainSupported, Token};
     use ed25519_compact::PublicKey as Ed25519PublicKey;
-
+    use primitives::data_structure::{ChainSupported, Token};
 
     // verify checksum of addresses
     pub fn verify_public_bytes(
@@ -48,7 +47,9 @@ pub mod vane_crypto {
                     return Err(anyhow!("Token network does not match the network"));
                 }
                 log::info!("account: {:?}", &account);
-                let key_bytes_vec = account.from_base58().map_err(|_| anyhow!("invalid solana address"))?;
+                let key_bytes_vec = account
+                    .from_base58()
+                    .map_err(|_| anyhow!("invalid solana address"))?;
                 if key_bytes_vec.len() != 32 {
                     return Err(anyhow!("Invalid key length: expected 32 bytes"));
                 }

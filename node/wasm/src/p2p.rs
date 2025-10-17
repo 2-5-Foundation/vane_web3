@@ -803,7 +803,7 @@ impl P2pNetworkService {
         let txn_state = response.borrow().clone();
 
         // error handler worker for system should handle this
-        let outbound_id = txn_state.outbound_req_id.expect("no outbound req id found");
+        let outbound_id = txn_state.inbound_req_id.expect("no outbound req id found");
 
         let channel = self
             .clone()

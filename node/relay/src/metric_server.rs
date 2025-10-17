@@ -488,8 +488,9 @@ pub async fn metrics_server(service: MetricService, port: u16) -> Result<()> {
     info!("Metrics server listening on (GET): vane-metrics.vaneweb3.com/metrics");
     info!("Client metrics endpoint (POST): vane-metrics.vaneweb3.com/client-metrics");
     info!("Relay events summary endpoint (GET): vane-metrics.vaneweb3.com/relay-events-summary");
-    info!("Client metrics summary endpoint (GET): vane-metrics.vaneweb3.com/client-metrics-summary");
-
+    info!(
+        "Client metrics summary endpoint (GET): vane-metrics.vaneweb3.com/client-metrics-summary"
+    );
 
     axum::serve(tcp_listener, app.into_make_service()).await?;
     Ok(())

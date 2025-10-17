@@ -8,7 +8,7 @@ use primitives::data_structure::{
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-
+use log::info;
 // you must import the traits to call methods on the types
 use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
 
@@ -30,7 +30,8 @@ const SAVED_PEERS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("sav
 // ===================================== DB KEYS ====================================== //
 pub const USER_ACC_KEY: &str = "user_account";
 pub const NONCE_KEY: &str = "nonce_key";
-pub const TXS_KEY: &str = "txs_key";
+pub const SUCCESS_TXS_KEY: &str = "success_txs_key";
+pub const FAILED_TXS_KEY: &str = "failed_txs_key";
 pub const TXS_DATA_KEY: &str = "txs_data_key";
 pub const SAVED_PEERS_KEY: &str = "saved_peers";
 
@@ -239,8 +240,8 @@ impl DbWorkerInterface for OpfsRedbWorker {
             // Update transaction
             let tx_data = tx_state.encode();
             let to_store = if let Some(get_txs) = tx_table
-                .get(TXS_KEY)
-                .map_err(|err| anyhow!("error on txs:{err:?}"))?
+                .get(SUCCESS_TXS_KEY)
+                .map_err(|err| anyhow!("error on success txs:{err:?}"))?
             {
                 let mut saved_txs = get_txs.value();
                 saved_txs.push(tx_data);
@@ -248,7 +249,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
             } else {
                 vec![tx_data]
             };
-            tx_table.insert(TXS_KEY, to_store)?;
+            tx_table.insert(SUCCESS_TXS_KEY, to_store)?;
 
             // Update total success value
             let current_data = data_table
@@ -301,8 +302,8 @@ impl DbWorkerInterface for OpfsRedbWorker {
             // Update transaction
             let tx_data = tx_state.encode();
             let to_store = if let Some(get_txs) = tx_table
-                .get(TXS_KEY)
-                .map_err(|err| anyhow!("error on txs:{err:?}"))?
+                .get(FAILED_TXS_KEY)
+                .map_err(|err| anyhow!("error on failed txs:{err:?}"))?
             {
                 let mut saved_txs = get_txs.value();
                 saved_txs.push(tx_data);
@@ -310,7 +311,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
             } else {
                 vec![tx_data]
             };
-            tx_table.insert(TXS_KEY, to_store)?;
+            tx_table.insert(FAILED_TXS_KEY, to_store)?;
 
             // Update total failed value
             let current_data = data_table
@@ -343,14 +344,13 @@ impl DbWorkerInterface for OpfsRedbWorker {
         let table = read_txn.open_table(TRANSACTION_TABLE)?;
 
         let mut failed_txs = Vec::new();
-        let values = table
-            .get(TXS_KEY)
+        if let Some(values) = table
+            .get(FAILED_TXS_KEY)
             .map_err(|err| anyhow!("failed to get failed_txs: {err:?}"))?
-            .expect("failed to get failed txs");
-        for value in values.value() {
-            let tx: DbTxStateMachine = Decode::decode(&mut &value[..])
-                .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
-            if !tx.success {
+        {
+            for value in values.value() {
+                let tx: DbTxStateMachine = Decode::decode(&mut &value[..])
+                    .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
                 failed_txs.push(tx);
             }
         }
@@ -362,14 +362,13 @@ impl DbWorkerInterface for OpfsRedbWorker {
         let table = read_txn.open_table(TRANSACTION_TABLE)?;
 
         let mut success_txs = Vec::new();
-        let values = table
-            .get(TXS_KEY)
+        if let Some(values) = table
+            .get(SUCCESS_TXS_KEY)
             .map_err(|err| anyhow!("failed to get success_txs: {err:?}"))?
-            .expect("failed to get success txs");
-        for value in values.value() {
-            let tx: DbTxStateMachine = Decode::decode(&mut &value[..])
-                .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
-            if tx.success {
+        {
+            for value in values.value() {
+                let tx: DbTxStateMachine = Decode::decode(&mut &value[..])
+                    .map_err(|err| anyhow!("failed to decode: {err:?}"))?;
                 success_txs.push(tx);
             }
         }
@@ -605,7 +604,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
     async fn update_success_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
         // Add transaction to list
         let tx_data = tx_state.encode();
-        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
+        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(SUCCESS_TXS_KEY) {
             let mut saved_txs = saved_txs.clone();
             saved_txs.push(tx_data);
             saved_txs
@@ -614,7 +613,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
         };
         self.transactions
             .borrow_mut()
-            .insert(TXS_KEY.to_string(), to_store);
+            .insert(SUCCESS_TXS_KEY.to_string(), to_store);
 
         // Update total success value
         let current_data = self
@@ -646,7 +645,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
     async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error> {
         // Add transaction to list
         let tx_data = tx_state.encode();
-        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(TXS_KEY) {
+        let to_store = if let Some(saved_txs) = self.transactions.borrow().get(FAILED_TXS_KEY) {
             let mut saved_txs = saved_txs.clone();
             saved_txs.push(tx_data);
             saved_txs
@@ -655,7 +654,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
         };
         self.transactions
             .borrow_mut()
-            .insert(TXS_KEY.to_string(), to_store);
+            .insert(FAILED_TXS_KEY.to_string(), to_store);
 
         // Update total failed value
         let current_data = self
@@ -689,14 +688,12 @@ impl DbWorkerInterface for InMemoryDbWorker {
         for tx in self
             .transactions
             .borrow()
-            .get(TXS_KEY)
+            .get(FAILED_TXS_KEY)
             .map(|v| v.clone())
             .unwrap_or_default()
         {
             let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
-            if !tx.success {
-                failed_txs.push(tx);
-            }
+            failed_txs.push(tx);
         }
         Ok(failed_txs)
     }
@@ -740,14 +737,12 @@ impl DbWorkerInterface for InMemoryDbWorker {
         for tx in self
             .transactions
             .borrow()
-            .get(TXS_KEY)
+            .get(SUCCESS_TXS_KEY)
             .map(|v| v.clone())
             .unwrap_or_default()
         {
             let tx: DbTxStateMachine = Decode::decode(&mut &tx[..]).expect("failed to decode");
-            if tx.success {
-                success_txs.push(tx);
-            }
+            success_txs.push(tx);
         }
         Ok(success_txs)
     }
