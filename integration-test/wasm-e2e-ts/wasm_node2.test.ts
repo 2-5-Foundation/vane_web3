@@ -121,31 +121,31 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     
   })
 
-  // test("should successfully receive ERC20 token transaction", async () => {
-  //   await new Promise(resolve => setTimeout(resolve, 15000));
-  //   console.log(" \n \n TEST CASE 2: should successfully receive ERC20 token transaction and confirm it (RECEIVER_NODE)");
-  //   await nodeCoordinator.waitForEvent(
-  //     NODE_EVENTS.TRANSACTION_RECEIVED,
-  //     async () => {
-  //      console.log('👂 TRANSACTION_RECEIVED ERC20 TOKEN');
-  //      await watchTxUpdates(async (tx: TxStateMachine) => {
-  //        if(tx.codeWord !== 'ERC20Testing') {return;}else{
-  //        console.log('🔑 WATCHING TX ERC20 TOKEN', tx.codeWord);
-  //        if (!walletClient) throw new Error('walletClient not initialized');
-  //        const account = walletClient.account!;
-  //        // @ts-ignore
-  //        const signature = await account.signMessage({ message: tx.receiverAddress });
-  //        const txManager = new TxStateMachineManager(tx);
-  //        txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-  //        const updatedTx = txManager.getTx();
-  //        await receiverConfirm(updatedTx);
-  //        }
-  //      });
-  //    },
-  //     60000
-  //   );
-  //   await new Promise(resolve => setTimeout(resolve, 30000));
-  // });
+  test("should successfully receive ERC20 token transaction", async () => {
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    console.log(" \n \n TEST CASE 2: should successfully receive ERC20 token transaction and confirm it (RECEIVER_NODE)");
+    await nodeCoordinator.waitForEvent(
+      NODE_EVENTS.TRANSACTION_RECEIVED,
+      async () => {
+       console.log('👂 TRANSACTION_RECEIVED ERC20 TOKEN');
+       await watchTxUpdates(async (tx: TxStateMachine) => {
+         if(tx.codeWord !== 'ERC20Testing') {return;}else{
+         console.log('🔑 WATCHING TX ERC20 TOKEN', tx.codeWord);
+         if (!walletClient) throw new Error('walletClient not initialized');
+         const account = walletClient.account!;
+         // @ts-ignore
+         const signature = await account.signMessage({ message: tx.receiverAddress });
+         const txManager = new TxStateMachineManager(tx);
+         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         const updatedTx = txManager.getTx();
+         await receiverConfirm(updatedTx);
+         }
+       });
+     },
+      60000
+    );
+    await new Promise(resolve => setTimeout(resolve, 30000));
+  });
 
 
   afterAll(() => {

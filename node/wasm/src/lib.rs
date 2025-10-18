@@ -614,6 +614,11 @@ impl WasmMainServiceWorker {
     ) -> Result<(), Error> {
         let mut txn_inner = txn.borrow_mut().clone();
 
+        // verify receiver again
+        self.wasm_tx_processing_worker
+            .borrow()
+            .validate_receiver_and_sender_address(&txn_inner, "Receiver")?;
+
         // verify sender
         self.wasm_tx_processing_worker
             .borrow()
@@ -708,16 +713,20 @@ impl WasmMainServiceWorker {
         &self,
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
-        
         let txn_inner = txn.borrow().clone();
         info!(target:"MainServiceWorker","revert for tx {:?} ({:?})", txn_inner.tx_nonce, txn_inner.status);
-    
+
         // Both ends in this profile?
         let prof = self.db_worker.get_user_account().await?;
-        let both_in_profile =
-            prof.accounts.iter().any(|(a, _)| *a == txn_inner.receiver_address) &&
-            prof.accounts.iter().any(|(a, _)| *a == txn_inner.sender_address);
-    
+        let both_in_profile = prof
+            .accounts
+            .iter()
+            .any(|(a, _)| *a == txn_inner.receiver_address)
+            && prof
+                .accounts
+                .iter()
+                .any(|(a, _)| *a == txn_inner.sender_address);
+
         // If not, best-effort disconnect + cleanup
         if !both_in_profile {
             // 1) Try DB
@@ -727,13 +736,13 @@ impl WasmMainServiceWorker {
                 .await
                 .ok()
                 .and_then(|s| Multiaddr::try_from(s).ok());
-    
+
             // 2) If DB miss, do short DHT lookup (async, with timeout)
             if multi_addr.is_none() {
                 let dht = host_get_dht(txn_inner.receiver_address.clone()).fuse();
                 let timeout = TimeoutFuture::new(3_000).fuse();
                 futures::pin_mut!(dht, timeout);
-    
+
                 let addr_opt: Option<String> = match future::select(dht, timeout).await {
                     future::Either::Left((Ok(r), _)) => r.value,
                     future::Either::Right((_elapsed, _)) => {
@@ -745,15 +754,20 @@ impl WasmMainServiceWorker {
                         None
                     }
                 };
-    
+
                 multi_addr = addr_opt.and_then(|s| Multiaddr::try_from(s).ok());
             }
-    
+
             // 3) Disconnect + delete (best-effort)
             if let Some(mut ma) = multi_addr.clone() {
                 let ma_str = ma.to_string();
                 if let Some(Protocol::P2p(id)) = ma.pop() {
-                    if let Err(e) = self.p2p_network_service.borrow_mut().disconnect_from_peer_id(&id).await {
+                    if let Err(e) = self
+                        .p2p_network_service
+                        .borrow_mut()
+                        .disconnect_from_peer_id(&id)
+                        .await
+                    {
                         warn!(target:"MainServiceWorker","disconnect failed: {e}");
                     }
                 }
@@ -762,27 +776,33 @@ impl WasmMainServiceWorker {
                 }
             }
         }
-    
+
         // Record failed + notify + cache
-        self.db_worker.update_failed_tx(DbTxStateMachine {
-            tx_hash: vec![],
-            amount: txn_inner.amount.clone(),
-            token: txn_inner.token.clone(),
-            sender: txn_inner.sender_address.clone(),
-            receiver: txn_inner.receiver_address.clone(),
-            sender_network: txn_inner.sender_address_network.clone(),
-            receiver_network: txn_inner.receiver_address_network.clone(),
-            success: false,
-        }).await?;
-        
+        self.db_worker
+            .update_failed_tx(DbTxStateMachine {
+                tx_hash: vec![],
+                amount: txn_inner.amount.clone(),
+                token: txn_inner.token.clone(),
+                sender: txn_inner.sender_address.clone(),
+                receiver: txn_inner.receiver_address.clone(),
+                sender_network: txn_inner.sender_address_network.clone(),
+                receiver_network: txn_inner.receiver_address_network.clone(),
+                success: false,
+            })
+            .await?;
+
         info!(target: "MainServiceWorker", "revert: sending txn to rpc layer");
 
-        self.rpc_sender_channel.borrow_mut().send(txn_inner.clone()).await?;
-        self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), txn_inner);
-    
+        self.rpc_sender_channel
+            .borrow_mut()
+            .send(txn_inner.clone())
+            .await?;
+        self.lru_cache
+            .borrow_mut()
+            .push(txn_inner.tx_nonce.into(), txn_inner);
+
         Ok(())
     }
-    
 
     pub async fn handle_public_interface_tx_updates(&mut self) -> Result<(), anyhow::Error> {
         while let Some(txn) = {
