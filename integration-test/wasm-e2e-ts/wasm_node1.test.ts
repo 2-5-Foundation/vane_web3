@@ -144,14 +144,19 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     libp2pKey = bytesToHex(miniSecret);
 
     // Initialize WASM node using vane_lib
+    try {
     await initializeNode({
       relayMultiAddr: relayInfo.multiAddr,
       account: wasm_client_address,
       network: "Ethereum",
       libp2pKey: libp2pKey,
-      live: false,
-      logLevel: LogLevel.Debug
-    });
+        live: false,
+        logLevel: LogLevel.Debug
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize WASM node:', error);
+      throw error;
+    }
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
       console.log('✅ SENDER_NODE READY');
