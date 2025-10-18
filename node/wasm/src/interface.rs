@@ -247,9 +247,7 @@ impl PublicInterfaceWorker {
         } else {
             // remove from cache
             self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
-            // verify the tx-state-machine integrity
-            // TODO
-            // update the TxStatus to TxStatus::SenderConfirmed
+
             tx.sender_confirmation();
             tx.increment_version();
             let sender = sender_channel.clone();
@@ -350,7 +348,7 @@ impl PublicInterfaceWorker {
                 v.clone()
             })
             .collect::<Vec<TxStateMachine>>();
-        debug!("lru: {tx_updates:?}");
+        debug!("lru: {tx_updates:#?}");
 
         serde_wasm_bindgen::to_value(&tx_updates)
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))

@@ -507,6 +507,7 @@ impl WasmP2pWorker {
                 ..
             } => {
                 let req_id_hash = request_id.get_hash_id();
+
                 error!(target:"p2p","outbound error: {error:?} peerId: {peer}  request id: {req_id_hash}")
             }
             Event::InboundFailure {
@@ -792,7 +793,8 @@ impl P2pNetworkService {
             .send(req_command)
             .await
             .map_err(|err| anyhow!("failed to send req command; {err}"))?;
-        trace!(target: "p2p","\nsending request command to the swarm thread ");
+        trace!(target: "p2p","\n sending request command to the swarm thread ");
+
         Ok(())
     }
 

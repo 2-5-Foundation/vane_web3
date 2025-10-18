@@ -68,6 +68,7 @@ pub struct NodeConnectionStatus {
 
 /// tx state
 #[derive(Clone, Debug, PartialEq, Serialize, Encode, Decode)]
+#[serde(tag = "type", content = "data")]
 pub enum TxStatus {
     /// initial state,
     Genesis,

@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Error};
 use codec::{Decode, Encode};
+use log::info;
 use opfs::persistent;
 use opfs::persistent::{app_specific_dir, DirectoryHandle, FileHandle, WritableFileStream};
 use opfs::{CreateWritableOptions, GetFileHandleOptions};
@@ -8,7 +9,6 @@ use primitives::data_structure::{
 };
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use log::info;
 // you must import the traits to call methods on the types
 use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
 
