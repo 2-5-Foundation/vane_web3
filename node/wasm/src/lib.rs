@@ -369,148 +369,150 @@ impl WasmMainServiceWorker {
             return Ok(());
         }
 
-        match db.get_saved_user_peers(target_id.clone()).await {
-            Ok(addr_str) => {
-                let multi_addr = addr_str
-                    .parse::<Multiaddr>()
-                    .map_err(|e| anyhow::anyhow!("failed to parse multiaddr: {e}"))?;
+        info!(target: "MainServiceWorker", "Checking PeerId in DHT");
 
-                let peer_id = match multi_addr.clone().pop() {
-                    Some(Protocol::P2p(id)) => id,
-                    _ => return Err(anyhow::anyhow!("peer id not found")),
-                };
+        let p2p_network_service = p2p_network_service.clone();
+        let rpc_sender_channel = rpc_sender_channel.clone();
+        let lru_cache = lru_cache.clone();
+        let txn = txn.clone();
+        let target_id = target_id.clone();
+        let db_worker = db.clone();
 
-                // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
-                p2p_network_service
-                    .borrow_mut()
-                    .dial_to_peer_id(multi_addr.clone(), &peer_id)
-                    .await?;
+        wasm_bindgen_futures::spawn_local(async move {
+            info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
 
-                p2p_network_service
-                    .borrow_mut()
-                    .wasm_send_request(txn.clone(), peer_id, multi_addr)
-                    .await?;
+            // Exponential backoff retry: 3 attempts (0.5s, 1.5s, 3.0s) between attempts
+            let mut attempt: u8 = 1;
+            let max_attempts: u8 = 3;
+            loop {
+                let dht = host_get_dht(target_id.clone()).fuse();
+                let timeout = TimeoutFuture::new(60_000).fuse();
+                futures::pin_mut!(dht, timeout);
 
-                return Ok(());
-            }
+                match future::select(dht, timeout).await {
+                    // DHT returned
+                    future::Either::Left((Ok(resp), _)) => {
+                        if let Some(err) = resp.error {
+                            warn!(target: "MainServiceWorker", "DHT get returned error (attempt {}/{}): {}", attempt, max_attempts, err);
+                        } else {
+                            let maybe_addr = resp
+                                .value
+                                .and_then(|s| {
+                                    (!s.is_empty()).then(|| Multiaddr::try_from(s).ok())
+                                })
+                                .flatten();
 
-            Err(_) => {
-                // 2) DB miss → spawn DHT fallback and return immediately
-                info!(target: "MainServiceWorker", "DB miss, spawning DHT fallback");
-
-                let p2p_network_service = p2p_network_service.clone();
-                let rpc_sender_channel = rpc_sender_channel.clone();
-                let lru_cache = lru_cache.clone();
-                let txn = txn.clone();
-                let target_id = target_id.clone();
-                let db_worker = db.clone();
-
-                wasm_bindgen_futures::spawn_local(async move {
-                    info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
-
-                    // Exponential backoff retry: 3 attempts (0.5s, 1.5s, 3.0s) between attempts
-                    let mut attempt: u8 = 1;
-                    let max_attempts: u8 = 3;
-                    loop {
-                        let dht = host_get_dht(target_id.clone()).fuse();
-                        let timeout = TimeoutFuture::new(60_000).fuse();
-                        futures::pin_mut!(dht, timeout);
-
-                        match future::select(dht, timeout).await {
-                            // DHT returned
-                            future::Either::Left((Ok(resp), _)) => {
-                                if let Some(err) = resp.error {
-                                    warn!(target: "MainServiceWorker", "DHT get returned error (attempt {}/{}): {}", attempt, max_attempts, err);
-                                } else {
-                                    let maybe_addr = resp
-                                        .value
-                                        .and_then(|s| {
-                                            (!s.is_empty()).then(|| Multiaddr::try_from(s).ok())
-                                        })
-                                        .flatten();
-
-                                    if let Some(multi_addr) = maybe_addr {
-                                        let peer_id = match multi_addr.clone().pop() {
-                                            Some(libp2p::multiaddr::Protocol::P2p(id)) => id,
-                                            _ => {
-                                                error!("peer id missing in multiaddr");
-                                                return;
-                                            }
-                                        };
-
-                                        // record to db
-                                        if let Err(e) = db_worker
-                                            .record_saved_user_peers(
-                                                target_id.clone(),
-                                                multi_addr.to_string(),
-                                            )
-                                            .await
-                                        {
-                                            error!("record_saved_user_peers failed: {target_id}: {e:?}");
-                                            return;
-                                        }
-
-                                        if let Err(e) = p2p_network_service
-                                            .borrow_mut()
-                                            .wasm_send_request(txn.clone(), peer_id, multi_addr)
-                                            .await
-                                        {
-                                            error!("wasm_send_request failed: {e:?}");
-                                            let mut t = txn.borrow_mut().clone();
-                                            t.status = TxStatus::TxError(
-                                                "Failed to reach receiver".to_string(),
-                                            );
-                                            let _ = rpc_sender_channel
-                                                .borrow_mut()
-                                                .send(t.clone())
-                                                .await;
-                                            lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
-                                            return;
-                                        }
-
+                            if let Some(multi_addr) = maybe_addr {
+                                let peer_id = match multi_addr.clone().pop() {
+                                    Some(libp2p::multiaddr::Protocol::P2p(id)) => id,
+                                    _ => {
+                                        error!("peer id missing in multiaddr");
                                         return;
-                                    } else {
-                                        warn!(target: "MainServiceWorker", "DHT returned empty value (attempt {}/{})", attempt, max_attempts);
                                     }
+                                };
+
+                                // record to db
+                                if let Err(e) = db_worker
+                                    .record_saved_user_peers(
+                                        target_id.clone(),
+                                        multi_addr.to_string(),
+                                    )
+                                    .await
+                                {
+                                    error!("record_saved_user_peers failed: {target_id}: {e:?}");
+                                    return;
                                 }
-                            }
 
-                            // here we should have the error worker
-                            // DHT internal error
-                            future::Either::Left((Err(e), _)) => {
-                                warn!(target: "MainServiceWorker", "host_get_dht internal error (attempt {}/{}): {e:?}", attempt, max_attempts);
-                            }
+                                if let Err(e) = p2p_network_service
+                                    .borrow_mut()
+                                    .wasm_send_request(txn.clone(), peer_id, multi_addr)
+                                    .await
+                                {
+                                    error!("wasm_send_request failed: {e:?}");
+                                    let mut t = txn.borrow_mut().clone();
+                                    t.status = TxStatus::TxError(
+                                        "Failed to reach receiver".to_string(),
+                                    );
+                                    let _ = rpc_sender_channel
+                                        .borrow_mut()
+                                        .send(t.clone())
+                                        .await;
+                                    lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
+                                    return;
+                                }
 
-                            // timeout
-                            future::Either::Right((_elapsed, _)) => {
-                                warn!(target: "MainServiceWorker", "⏳ DHT timed out for {} (attempt {}/{})", target_id, attempt, max_attempts);
+                                return;
+                            } else {
+                                warn!(target: "MainServiceWorker", "DHT returned empty value (attempt {}/{})", attempt, max_attempts);
                             }
                         }
-
-                        if attempt >= max_attempts {
-                            // give up and notify not registered
-                            info!(target: "MainServiceWorker", "DHT: receiver did not register");
-                            let mut t = txn.borrow_mut().clone();
-                            t.recv_not_registered();
-                            let _ = rpc_sender_channel.borrow_mut().send(t.clone()).await;
-                            lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
-                            return;
-                        }
-
-                        // backoff before next attempt
-                        let backoff_ms: u32 = match attempt {
-                            1 => 500,
-                            2 => 1500,
-                            _ => 3000,
-                        };
-                        attempt += 1;
-                        TimeoutFuture::new(backoff_ms).await;
                     }
-                });
 
-                return Ok(());
+                    // here we should have the error worker
+                    // DHT internal error
+                    future::Either::Left((Err(e), _)) => {
+                        warn!(target: "MainServiceWorker", "host_get_dht internal error (attempt {}/{}): {e:?}", attempt, max_attempts);
+                    }
+
+                    // timeout
+                    future::Either::Right((_elapsed, _)) => {
+                        warn!(target: "MainServiceWorker", "⏳ DHT timed out for {} (attempt {}/{})", target_id, attempt, max_attempts);
+                    }
+                }
+
+                if attempt >= max_attempts {
+                    // give up and notify not registered
+                    info!(target: "MainServiceWorker", "DHT: receiver did not register");
+                    let mut t = txn.borrow_mut().clone();
+                    t.recv_not_registered();
+                    let _ = rpc_sender_channel.borrow_mut().send(t.clone()).await;
+                    lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
+                    return;
+                }
+
+                // backoff before next attempt
+                let backoff_ms: u32 = match attempt {
+                    1 => 500,
+                    2 => 1500,
+                    _ => 3000,
+                };
+                attempt += 1;
+                TimeoutFuture::new(backoff_ms).await;
             }
-        }
+        });
+
+        return Ok(());
+
+        // match db.get_saved_user_peers(target_id.clone()).await {
+        //     Ok(addr_str) => {
+        //         let multi_addr = addr_str
+        //             .parse::<Multiaddr>()
+        //             .map_err(|e| anyhow::anyhow!("failed to parse multiaddr: {e}"))?;
+
+        //         let peer_id = match multi_addr.clone().pop() {
+        //             Some(Protocol::P2p(id)) => id,
+        //             _ => return Err(anyhow::anyhow!("peer id not found")),
+        //         };
+
+        //         // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
+        //         p2p_network_service
+        //             .borrow_mut()
+        //             .dial_to_peer_id(multi_addr.clone(), &peer_id)
+        //             .await?;
+
+        //         p2p_network_service
+        //             .borrow_mut()
+        //             .wasm_send_request(txn.clone(), peer_id, multi_addr)
+        //             .await?;
+
+        //         return Ok(());
+        //     }
+
+        //     Err(_) => {
+        //         // 2) DB miss → spawn DHT fallback and return immediately
+               
+        //     }
+        // }
     }
 
     pub async fn handle_recv_addr_confirmed_tx_state(
