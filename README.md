@@ -63,6 +63,28 @@ vane_web3/
 └── primitives/                # Shared data structures
 ```
 
+### How to run
+
+ - Install Rust
+ - Install Anvil Ethereum Node & Solana Test validator
+  
+  **Run Tests**
+  ```
+   ./script/start-relay.sh
+  ```
+
+  ```
+   ./script/run_e2e.sh
+  ```
+
+### How to build the wasm package
+
+```
+ ./script/build-wasm-package.sh
+```
+
+
+
 ----
  
 # Roadmap

@@ -209,6 +209,7 @@ impl WasmMainServiceWorker {
     ) -> Result<(), Error> {
         match swarm_msg_result {
             Ok(swarm_msg) => match swarm_msg {
+                // receiver incoming request
                 SwarmMessage::WasmRequest { data, inbound_id } => {
                     let mut decoded_req: TxStateMachine = data;
                     let inbound_req_id = inbound_id.get_hash_id();
@@ -234,6 +235,7 @@ impl WasmMainServiceWorker {
                 }
 
                 SwarmMessage::WasmResponse { data, outbound_id } => {
+                    // sender receives the response from the receiver
                     let mut decoded_resp: TxStateMachine = data;
                     let outbound_req_id = outbound_id.get_hash_id();
                     decoded_resp.outbound_req_id = Some(outbound_req_id);
@@ -341,7 +343,7 @@ impl WasmMainServiceWorker {
         let rpc_sender_channel = self.rpc_sender_channel.clone();
         let lru_cache = self.lru_cache.clone();
 
-        // 1) try local DB first
+      
         // But first check if it is the same user, if it is then just send it to self no p2p
         let target_user_profile = db.get_user_account().await?;
         let (receiver_in_profile, sender_in_profile) = {

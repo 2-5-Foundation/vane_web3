@@ -194,8 +194,7 @@ impl PublicInterfaceWorker {
             .borrow_mut()
             .insert(tx_state_machine.tx_nonce.into(), tx_integrity_hash);
 
-        let sender = sender_channel.clone();
-        sender
+        sender_channel
             .send(tx_state_machine.clone())
             .await
             .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
@@ -357,6 +356,10 @@ impl PublicInterfaceWorker {
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
+        
+        if tx.status != TxStatus::Genesis {
+            return Err(JsError::new("Transaction not in initial state"));
+        }
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
             return Err(JsError::new("Transaction already reverted"));

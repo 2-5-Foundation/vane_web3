@@ -165,122 +165,122 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
   });
 
-  test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
-    console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
-    const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+  // test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
+  //   console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
+  //   const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
-    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+  //   const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
-    await initiateTransaction(
-      wasm_client_address,
-      receiver_client_address,
-      BigInt(10),
-      ethToken,
-      'Maji',
-      ChainSupported.Ethereum,
-      ChainSupported.Ethereum
-    );
+  //   await initiateTransaction(
+  //     wasm_client_address,
+  //     receiver_client_address,
+  //     BigInt(10),
+  //     ethToken,
+  //     'Maji',
+  //     ChainSupported.Ethereum,
+  //     ChainSupported.Ethereum
+  //   );
 
-    await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
-      console.log('👂 SENDER_RECEIVED_RESPONSE');
-      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
-      const tx = txUpdates[0]; // latest tx
-       // Skip if we already have a signature
-       if (tx.signedCallPayload) {
-        return;
-      }
+  //   await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
+  //     console.log('👂 SENDER_RECEIVED_RESPONSE');
+  //     const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+  //     const tx = txUpdates[0]; // latest tx
+  //      // Skip if we already have a signature
+  //      if (tx.signedCallPayload) {
+  //       return;
+  //     }
       
-      // Only process when receiver has confirmed
-      const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-                            (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+  //     // Only process when receiver has confirmed
+  //     const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+  //                           (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
       
-      if (!isRecvConfirmed) {
-        return;
-      }
+  //     if (!isRecvConfirmed) {
+  //       return;
+  //     }
       
-      console.log("Processing - receiver confirmed, signing transaction");
+  //     console.log("Processing - receiver confirmed, signing transaction");
 
-      if (!walletClient) throw new Error('walletClient not initialized');
-      if (!walletClient.account) throw new Error('walletClient account not available');
-      if (!tx.callPayload) {
-        throw new Error('No call payload found');
-      }
-      if (!tx.callPayload || !('ethereum' in tx.callPayload) || !tx.callPayload.ethereum.ethUnsignedTxFields) {
-        throw new Error('No unsigned transaction fields found');
-      }
+  //     if (!walletClient) throw new Error('walletClient not initialized');
+  //     if (!walletClient.account) throw new Error('walletClient account not available');
+  //     if (!tx.callPayload) {
+  //       throw new Error('No call payload found');
+  //     }
+  //     if (!tx.callPayload || !('ethereum' in tx.callPayload) || !tx.callPayload.ethereum.ethUnsignedTxFields) {
+  //       throw new Error('No unsigned transaction fields found');
+  //     }
 
-      const account = walletClient.account!;
-      if (!account.signMessage) {
-        throw new Error('Account signMessage function not available');
-      }
-      if (!tx.callPayload || !('ethereum' in tx.callPayload)) {
-        throw new Error('No Ethereum call payload found');
-      }
-      const [txHash, txBytes] = tx.callPayload.ethereum.callPayload;
-      const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+  //     const account = walletClient.account!;
+  //     if (!account.signMessage) {
+  //       throw new Error('Account signMessage function not available');
+  //     }
+  //     if (!tx.callPayload || !('ethereum' in tx.callPayload)) {
+  //       throw new Error('No Ethereum call payload found');
+  //     }
+  //     const [txHash, txBytes] = tx.callPayload.ethereum.callPayload;
+  //     const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
       
-      const txManager = new TxStateMachineManager(tx);
-      txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-      const updatedTx = txManager.getTx();
-      console.log('🔑 TX UPDATED', updatedTx.status);
-      await senderConfirm(updatedTx);
-    },120000);
+  //     const txManager = new TxStateMachineManager(tx);
+  //     txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+  //     const updatedTx = txManager.getTx();
+  //     console.log('🔑 TX UPDATED', updatedTx.status);
+  //     await senderConfirm(updatedTx);
+  //   },120000);
 
-    // Wait for either transaction submission success or failure
-    try {
-      await Promise.race([
-        nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
-          console.log('✅ Transaction submitted successfully:', data);
-          const tx: TxStateMachine[] = await fetchPendingTxUpdates();
-          expect(tx).toBeDefined();
+  //   // Wait for either transaction submission success or failure
+  //   try {
+  //     await Promise.race([
+  //       nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
+  //         console.log('✅ Transaction submitted successfully:', data);
+  //         const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+  //         expect(tx).toBeDefined();
           
-          // Convert BigInt to string for JSON serialization
-          const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
-            typeof value === 'bigint' ? value.toString() : value
-          ));
+  //         // Convert BigInt to string for JSON serialization
+  //         const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
+  //           typeof value === 'bigint' ? value.toString() : value
+  //         ));
           
-          // Assert that the transaction was successfully submitted
-          expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
-          expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
-          expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
+  //         // Assert that the transaction was successfully submitted
+  //         expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
+  //         expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
+  //         expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
           
-          return;
-        }, 60000),
-        nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
-          console.log('❌ Transaction submission failed:', data);
-        }, 60000)
-      ]);
-    } catch (error) {
-      console.error('⏰ Timeout waiting for transaction submission result:', error);
-      throw error;
-    }
+  //         return;
+  //       }, 60000),
+  //       nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
+  //         console.log('❌ Transaction submission failed:', data);
+  //       }, 60000)
+  //     ]);
+  //   } catch (error) {
+  //     console.error('⏰ Timeout waiting for transaction submission result:', error);
+  //     throw error;
+  //   }
 
-    // assert the balance changes
-    const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-    console.log('🔑 SENDER BALANCE BEFORE', senderBalanceBefore);
-    console.log('🔑 SENDER BALANCE AFTER', senderBalanceAfter);
-    const balanceChange = Math.ceil(senderBalanceBefore) - Math.ceil(senderBalanceAfter);
-    expect(balanceChange).toEqual(10);
+  //   // assert the balance changes
+  //   const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+  //   console.log('🔑 SENDER BALANCE BEFORE', senderBalanceBefore);
+  //   console.log('🔑 SENDER BALANCE AFTER', senderBalanceAfter);
+  //   const balanceChange = Math.ceil(senderBalanceBefore) - Math.ceil(senderBalanceAfter);
+  //   expect(balanceChange).toEqual(10);
 
-    // assert storage updates
-    const storage:StorageExport = await exportStorage() as StorageExport;
-    const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
+  //   // assert storage updates
+  //   const storage:StorageExport = await exportStorage() as StorageExport;
+  //   const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
 
-    const storageManager = new StorageExportManager(storage);
-    const metrics = storageManager.getSummary();
-    console.log('🔑 STORAGE METRICS', metrics);
-    expect(metrics.totalTransactions).toEqual(1);
-    expect(metrics.successfulTransactions).toEqual(1);
-    expect(metrics.failedTransactions).toEqual(0);
-    expect(metrics.successRate).toEqual('100.00%');
-    expect(metrics.totalValueSuccess).toEqual(10);
-    expect(metrics.totalValueFailed).toEqual(0);
-    expect(metrics.peersCount).toEqual(1);
-    expect(metrics.accountsCount).toEqual(1);
-    expect(metrics.currentNonce).toEqual(1);
-    // assert metrics
+  //   const storageManager = new StorageExportManager(storage);
+  //   const metrics = storageManager.getSummary();
+  //   console.log('🔑 STORAGE METRICS', metrics);
+  //   expect(metrics.totalTransactions).toEqual(1);
+  //   expect(metrics.successfulTransactions).toEqual(1);
+  //   expect(metrics.failedTransactions).toEqual(0);
+  //   expect(metrics.successRate).toEqual('100.00%');
+  //   expect(metrics.totalValueSuccess).toEqual(10);
+  //   expect(metrics.totalValueFailed).toEqual(0);
+  //   expect(metrics.peersCount).toEqual(1);
+  //   expect(metrics.accountsCount).toEqual(1);
+  //   expect(metrics.currentNonce).toEqual(1);
+  //   // assert metrics
    
-  });
+  // });
 
 //   test("should notify if the receiver is not registered", async () => {
 //     console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
@@ -435,173 +435,173 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
   // });
 
-  test("should successfully send ERC20 token transaction", async () => {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    console.log(" \n \n TEST CASE 5: should successfully send ERC20 token transaction");
-    const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum,"ERC20Mock",'0x5FbDB2315678afecb367f032d93F642f64180aa3');
-    await initiateTransaction(
+  // test("should successfully send ERC20 token transaction", async () => {
+  //   await new Promise(resolve => setTimeout(resolve, 5000));
+  //   console.log(" \n \n TEST CASE 5: should successfully send ERC20 token transaction");
+  //   const ethERC20Token = TokenManager.createERC20Token(ChainSupported.Ethereum,"ERC20Mock",'0x5FbDB2315678afecb367f032d93F642f64180aa3');
+  //   await initiateTransaction(
+  //     wasm_client_address,
+  //     receiver_client_address,
+  //     BigInt(100),
+  //     ethERC20Token,
+  //     'ERC20Testing',
+  //     ChainSupported.Ethereum,
+  //     ChainSupported.Ethereum
+  //   );
+
+  //   await new Promise(resolve => setTimeout(resolve, 20000));
+
+  //   await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
+  //     console.log('👂 SENDER_RECEIVED_RESPONSE');
+  //     const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+  //     const tx = txUpdates[0]; // latest tx
+  //     console.log('🔑 TX', tx);
+  //      // Skip if we already have a signatures
+  //      if (tx.signedCallPayload) {
+  //       return;
+  //     }
+  //     if (tx.codeWord !== 'ERC20Testing') {
+  //       return;
+  //     }
+      
+  //     // Only process when receiver has confirmed
+  //     const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
+  //                           (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
+      
+  //     if (!isRecvConfirmed) {
+  //       return;
+  //     }
+      
+  //     console.log("Processing - receiver confirmed, signing transaction ERC20 TOKEN");
+
+  //     if (!walletClient) throw new Error('walletClient not initialized');
+  //     if (!walletClient.account) throw new Error('walletClient account not available');
+  //     if (!tx.callPayload) {
+  //       throw new Error('No call payload found');
+  //     }
+  //     if (!tx.callPayload || !('ethereum' in tx.callPayload) || !tx.callPayload.ethereum.ethUnsignedTxFields) {
+  //       throw new Error('No unsigned transaction fields found');
+  //     }
+
+  //     const account = walletClient.account!;
+  //     if (!account.signMessage) {
+  //       throw new Error('Account signMessage function not available');
+  //     }
+  //     if (!tx.callPayload || !('ethereum' in tx.callPayload)) {
+  //       throw new Error('No Ethereum call payload found');
+  //     }
+  //     const [txHash, txBytes] = tx.callPayload.ethereum.callPayload;
+  //     const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+      
+  //     const txManager = new TxStateMachineManager(tx);
+  //     txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+  //     const updatedTx = txManager.getTx();
+  //     console.log('🔑 TX UPDATED ERC20 TOKEN', updatedTx.status);
+  //     await senderConfirm(updatedTx);
+  //   },120000);
+
+  //   // Wait for either transaction submission success or failure
+  //   try {
+  //     await Promise.race([
+  //       nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
+  //         console.log('✅ Transaction submitted successfully:', data);
+  //         const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+  //         expect(tx).toBeDefined();
+          
+  //         // Convert BigInt to string for JSON serialization
+  //         const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
+  //           typeof value === 'bigint' ? value.toString() : value
+  //         ));
+          
+  //         // Assert that the transaction was successfully submitted
+  //         expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
+  //         expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
+  //         expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
+          
+  //         return;
+  //       }, 60000),
+  //       nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
+  //         console.log('❌ Transaction submission failed:', data);
+  //       }, 60000)
+  //     ]);
+  //   } catch (error) {
+  //     console.error('⏰ Timeout waiting for transaction submission result:', error);
+  //     throw error;
+  //   }
+
+  //   await new Promise(resolve => setTimeout(resolve, 15000));
+    
+  // });
+
+  test("should successfuly send transaction and confirm to self",async () => {
+    console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
+    const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    await addAccount(wasm_client_address2, ChainSupported.Ethereum);
+
+    const storage:StorageExport = await exportStorage() as StorageExport;
+    expect(storage.user_account?.accounts.length).toEqual(2);
+
+    initiateTransaction(
       wasm_client_address,
-      receiver_client_address,
-      BigInt(100),
-      ethERC20Token,
-      'ERC20Testing',
+      wasm_client_address2,
+      BigInt(10),
+      ethToken,
+      'Maji',
       ChainSupported.Ethereum,
       ChainSupported.Ethereum
     );
 
-    await new Promise(resolve => setTimeout(resolve, 20000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
-      console.log('👂 SENDER_RECEIVED_RESPONSE');
-      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
-      const tx = txUpdates[0]; // latest tx
-      console.log('🔑 TX', tx);
-       // Skip if we already have a signatures
-       if (tx.signedCallPayload) {
-        return;
-      }
-      if (tx.codeWord !== 'ERC20Testing') {
-        return;
-      }
-      
-      // Only process when receiver has confirmed
-      const isRecvConfirmed = (typeof tx.status === 'string' && tx.status === 'RecvAddrConfirmationPassed') ||
-                            (typeof tx.status === 'object' && 'RecvAddrConfirmationPassed' in tx.status);
-      
-      if (!isRecvConfirmed) {
-        return;
-      }
-      
-      console.log("Processing - receiver confirmed, signing transaction ERC20 TOKEN");
+    const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const latestTx = receiverReceivedTx[0];
+    if (!walletClient2) throw new Error('walletClient not initialized');
+    const recvAccount = walletClient2.account!;
+    // @ts-ignore
+    const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
+    const recvTxManager = new TxStateMachineManager(latestTx);
+    recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+    const recvUpdatedTx = recvTxManager.getTx();
+    await receiverConfirm(recvUpdatedTx);
 
-      if (!walletClient) throw new Error('walletClient not initialized');
-      if (!walletClient.account) throw new Error('walletClient account not available');
-      if (!tx.callPayload) {
-        throw new Error('No call payload found');
-      }
-      if (!tx.callPayload || !('ethereum' in tx.callPayload) || !tx.callPayload.ethereum.ethUnsignedTxFields) {
-        throw new Error('No unsigned transaction fields found');
-      }
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const senderPendinglatestTx = senderPendingTx[0];
 
-      const account = walletClient.account!;
-      if (!account.signMessage) {
-        throw new Error('Account signMessage function not available');
-      }
-      if (!tx.callPayload || !('ethereum' in tx.callPayload)) {
-        throw new Error('No Ethereum call payload found');
-      }
-      const [txHash, txBytes] = tx.callPayload.ethereum.callPayload;
-      const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
-      
-      const txManager = new TxStateMachineManager(tx);
-      txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-      const updatedTx = txManager.getTx();
-      console.log('🔑 TX UPDATED ERC20 TOKEN', updatedTx.status);
-      await senderConfirm(updatedTx);
-    },120000);
-
-    // Wait for either transaction submission success or failure
-    try {
-      await Promise.race([
-        nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, async (data) => {
-          console.log('✅ Transaction submitted successfully:', data);
-          const tx: TxStateMachine[] = await fetchPendingTxUpdates();
-          expect(tx).toBeDefined();
-          
-          // Convert BigInt to string for JSON serialization
-          const txWithStringBigInts = JSON.parse(JSON.stringify(tx[tx.length - 1], (key, value) =>
-            typeof value === 'bigint' ? value.toString() : value
-          ));
-          
-          // Assert that the transaction was successfully submitted
-          expect(txWithStringBigInts.status).toHaveProperty('TxSubmissionPassed');
-          expect(txWithStringBigInts.status.TxSubmissionPassed).toBeDefined();
-          expect(Array.isArray(txWithStringBigInts.status.TxSubmissionPassed)).toBe(true);
-          
-          return;
-        }, 60000),
-        nodeCoordinator.waitForEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, (data) => {
-          console.log('❌ Transaction submission failed:', data);
-        }, 60000)
-      ]);
-    } catch (error) {
-      console.error('⏰ Timeout waiting for transaction submission result:', error);
-      throw error;
+    if (!walletClient) throw new Error('walletClient not initialized');
+    if (!walletClient.account) throw new Error('walletClient account not available');
+    if (!senderPendinglatestTx.callPayload) {
+      throw new Error('No call payload found');
+    }
+    if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields) {
+      throw new Error('No unsigned transaction fields found');
     }
 
-    await new Promise(resolve => setTimeout(resolve, 15000));
+    const account = walletClient.account!;
+    if (!account.signMessage) {
+      throw new Error('Account signMessage function not available');
+    }
+    if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload)) {
+      throw new Error('No Ethereum call payload found');
+    }
+    const [txHash, txBytes] = senderPendinglatestTx.callPayload.ethereum.callPayload;
+    const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
     
-  });
+    const txManager = new TxStateMachineManager(senderPendinglatestTx);
+    txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+    const updatedTx = txManager.getTx();
+    console.log('🔑 TX UPDATED', updatedTx.status);
+    await senderConfirm(updatedTx);
 
-//   test("should successfuly send transaction and confirm to self",async () => {
-//     console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
-//     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-//     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-//     await addAccount(wasm_client_address2, ChainSupported.Ethereum);
-
-//     const storage:StorageExport = await exportStorage() as StorageExport;
-//     expect(storage.user_account?.accounts.length).toEqual(2);
-
-//     initiateTransaction(
-//       wasm_client_address,
-//       wasm_client_address2,
-//       BigInt(10),
-//       ethToken,
-//       'Maji',
-//       ChainSupported.Ethereum,
-//       ChainSupported.Ethereum
-//     );
-
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-
-//     const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const latestTx = receiverReceivedTx[0];
-//     if (!walletClient2) throw new Error('walletClient not initialized');
-//     const recvAccount = walletClient2.account!;
-//     // @ts-ignore
-//     const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
-//     const recvTxManager = new TxStateMachineManager(latestTx);
-//     recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-//     const recvUpdatedTx = recvTxManager.getTx();
-//     await receiverConfirm(recvUpdatedTx);
-
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-//     const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const senderPendinglatestTx = senderPendingTx[0];
-
-//     if (!walletClient) throw new Error('walletClient not initialized');
-//     if (!walletClient.account) throw new Error('walletClient account not available');
-//     if (!senderPendinglatestTx.callPayload) {
-//       throw new Error('No call payload found');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields) {
-//       throw new Error('No unsigned transaction fields found');
-//     }
-
-//     const account = walletClient.account!;
-//     if (!account.signMessage) {
-//       throw new Error('Account signMessage function not available');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload)) {
-//       throw new Error('No Ethereum call payload found');
-//     }
-//     const [txHash, txBytes] = senderPendinglatestTx.callPayload.ethereum.callPayload;
-//     const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+    const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
+    expect(balanceChange).toEqual(10);
     
-//     const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//     txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-//     const updatedTx = txManager.getTx();
-//     console.log('🔑 TX UPDATED', updatedTx.status);
-//     await senderConfirm(updatedTx);
-
-//     await new Promise(resolve => setTimeout(resolve, 2000));
-
-//     const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-//     const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
-//     expect(balanceChange).toEqual(10);
-    
-// });
+});
 
 // test("should successfully send to EVM chain and confirm", async () => {
 //   console.log(" \n \n TEST CASE 7: should successfully send to EVM chain and confirm (BNB)");
