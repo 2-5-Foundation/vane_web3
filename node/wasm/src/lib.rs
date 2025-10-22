@@ -92,7 +92,7 @@ impl WasmMainServiceWorker {
         let db_worker = Rc::new(db);
 
         // Use bounded cache to prevent memory overflow in WASM environment
-        // 10,000 entries should be sufficient for most use cases while preventing unbounded growth
+        // 10 entries should be sufficient for most use cases while preventing unbounded growth
         let lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>> = Rc::new(RefCell::new(
             LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
         ));
@@ -209,6 +209,7 @@ impl WasmMainServiceWorker {
     ) -> Result<(), Error> {
         match swarm_msg_result {
             Ok(swarm_msg) => match swarm_msg {
+                // receiver incoming request
                 SwarmMessage::WasmRequest { data, inbound_id } => {
                     let mut decoded_req: TxStateMachine = data;
                     let inbound_req_id = inbound_id.get_hash_id();
@@ -234,6 +235,7 @@ impl WasmMainServiceWorker {
                 }
 
                 SwarmMessage::WasmResponse { data, outbound_id } => {
+                    // sender receives the response from the receiver
                     let mut decoded_resp: TxStateMachine = data;
                     let outbound_req_id = outbound_id.get_hash_id();
                     decoded_resp.outbound_req_id = Some(outbound_req_id);
@@ -341,7 +343,6 @@ impl WasmMainServiceWorker {
         let rpc_sender_channel = self.rpc_sender_channel.clone();
         let lru_cache = self.lru_cache.clone();
 
-        // 1) try local DB first
         // But first check if it is the same user, if it is then just send it to self no p2p
         let target_user_profile = db.get_user_account().await?;
         let (receiver_in_profile, sender_in_profile) = {
@@ -397,9 +398,7 @@ impl WasmMainServiceWorker {
                         } else {
                             let maybe_addr = resp
                                 .value
-                                .and_then(|s| {
-                                    (!s.is_empty()).then(|| Multiaddr::try_from(s).ok())
-                                })
+                                .and_then(|s| (!s.is_empty()).then(|| Multiaddr::try_from(s).ok()))
                                 .flatten();
 
                             if let Some(multi_addr) = maybe_addr {
@@ -430,13 +429,9 @@ impl WasmMainServiceWorker {
                                 {
                                     error!("wasm_send_request failed: {e:?}");
                                     let mut t = txn.borrow_mut().clone();
-                                    t.status = TxStatus::TxError(
-                                        "Failed to reach receiver".to_string(),
-                                    );
-                                    let _ = rpc_sender_channel
-                                        .borrow_mut()
-                                        .send(t.clone())
-                                        .await;
+                                    t.status =
+                                        TxStatus::TxError("Failed to reach receiver".to_string());
+                                    let _ = rpc_sender_channel.borrow_mut().send(t.clone()).await;
                                     lru_cache.borrow_mut().push(t.tx_nonce.into(), t);
                                     return;
                                 }
@@ -510,7 +505,7 @@ impl WasmMainServiceWorker {
 
         //     Err(_) => {
         //         // 2) DB miss → spawn DHT fallback and return immediately
-               
+
         //     }
         // }
     }
