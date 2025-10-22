@@ -101,6 +101,7 @@ impl WasmMainServiceWorker {
         // ===================================================================================== //
 
         let p2p_worker = WasmP2pWorker::new(
+            live,
             db_worker.clone(),
             relay_node_multi_addr,
             account.clone(),
