@@ -43,6 +43,7 @@ use primitives::data_structure::{
 };
 #[derive(Clone)]
 pub struct WasmP2pWorker {
+    pub live: bool,
     pub node_id: PeerId,
     pub user_circuit_multi_addr: Multiaddr,
     pub relay_multi_addr: Multiaddr,
@@ -85,6 +86,7 @@ impl WasmRelayBehaviour {
 
 impl WasmP2pWorker {
     pub async fn new(
+        live: bool,
         db_worker: Rc<DbWorker>,
         relay_node_multi_addr: String,
         user_account_id: String,
@@ -164,6 +166,7 @@ impl WasmP2pWorker {
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
         Ok(Self {
+            live,
             node_id: peer_id,
             user_circuit_multi_addr,
             relay_multi_addr,
@@ -256,7 +259,10 @@ impl WasmP2pWorker {
                 info!(target:"p2p","🎧 Listening on: {}", &address);
 
                 let account_key = self.user_account_id.clone();
-                let value = address.to_string();
+                let mut value = address.to_string();
+                if self.live {
+                    value = value.replace("/tcp/30333", "/tcp/443");
+                }
 
                 // Use Once to ensure DHT announcement happens only once
                 self.dht_announce_once.call_once(|| {
