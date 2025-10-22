@@ -1,0 +1,10 @@
+{
+  "name": "wasm-e2e-ts",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^0.21.0"
+  }
+}

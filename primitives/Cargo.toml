@@ -21,6 +21,7 @@ hex                                             = "0.4.3"
 # Native dependencies
 libp2p                                          = { workspace = true, features = ["tcp", "tls", "dns","request-response", "noise", "yamux", "websocket", "macros","tokio","ecdsa","ed25519","serde"] }
 dotenv                                          = "0.15"
+yamux                                           = "=0.13.3"
 
 
 # WASM-specific dependencies

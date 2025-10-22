@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "vitest": "^0.21.0"
+  }
+}
+
+export default {
+  test: {
+    globals: true,
+    environment: 'node',
+    reporters: 'verbose'
+  }
+};

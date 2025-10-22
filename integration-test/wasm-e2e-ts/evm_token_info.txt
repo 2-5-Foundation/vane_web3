@@ -1,0 +1,17 @@
+Token Name: ERC20Mock
+Token Symbol: TTK
+Decimals: 18
+Initial Supply: 1000000
+
+=== BNB CHAIN (BSC) ===
+RPC: http://127.0.0.1:8555
+Token Address: 0x959922be3caee4b8cd9a407cc3ac1c251c2007b1
+Balance of 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266: 1001500.00 TTK
+
+=== ETHEREUM ===
+RPC: http://127.0.0.1:8545
+Token Address: 0x959922be3caee4b8cd9a407cc3ac1c251c2007b1
+Balance of 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266: 1001500.00 TTK
+
+=== FUNDED ACCOUNT ===
+Address: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266

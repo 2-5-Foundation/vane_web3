@@ -89,7 +89,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     }
 
     // Solana Client & wallets
-    solanaClient = new SolanaConnection("http://localhost:8899", "confirmed");
+    /* solanaClient = new SolanaConnection("http://localhost:8899", "confirmed");
     solWasmWallet = Keypair.fromSeed(hexToBytes("0xf9aebb1cad8f89ede2475ad9977ff3960e4eb1bb0c9ceb793d1e61d85cf6a502"));
     solWasmWallet2 = Keypair.fromSeed(hexToBytes("0x52e6cab5a778bc471b8d6fde1107ec0837a0bf19a783615490b7c469fc7c1800"));
     solWasmWalletAddress = solWasmWallet.publicKey.toBase58();
@@ -110,7 +110,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     const { blockhash: blockHash2, lastValidBlockHeight: lastValidBlockHeight2 } = await solanaClient.getLatestBlockhash('confirmed');
 
-    const signature2 = await solanaClient.requestAirdrop(solWasmWallet2.publicKey, 1000 * LAMPORTS_PER_SOL);
+    const signature2 = await solanaClient.requestAirdrop(solWasmWallet2.publicKey, 1000 * LAMPORTS_PER_SOL); */
 
     // await solanaClient.confirmTransaction(
     //   { signature: signature2, blockhash: blockHash2, lastValidBlockHeight: lastValidBlockHeight2 },

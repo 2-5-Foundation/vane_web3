@@ -9,7 +9,7 @@ echo "🚀 EVM Token Setup Script (BEP20 & ERC20)"
 echo "=========================================="
 
 # Configuration
-TOKEN_NAME="TestToken"
+TOKEN_NAME="ERC20Mock"
 TOKEN_SYMBOL="TTK"
 DECIMALS=18
 INITIAL_SUPPLY="1000000"  # 1 million tokens
@@ -102,24 +102,36 @@ echo "========================================"
 
 # Deploy to BNB Chain
 echo "Deploying BEP20 token..."
-BNB_DEPLOY_OUTPUT=$(forge create src/Token.sol:Token \
-    --rpc-url $BNB_RPC \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-    --constructor-args "$TOKEN_NAME" "$TOKEN_SYMBOL" $DECIMALS $INITIAL_SUPPLY)
 
-BNB_TOKEN=$(echo "$BNB_DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $3}')
+# Use cast to deploy (which actually broadcasts by default)
+BYTECODE=$(forge inspect src/Token.sol:Token bytecode)
+BNB_DEPLOY_TX=$(cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+    --rpc-url "$BNB_RPC" \
+    --create "$BYTECODE" \
+    --json \
+    "constructor(string,string,uint8,uint256)" "$TOKEN_NAME" "$TOKEN_SYMBOL" $DECIMALS $INITIAL_SUPPLY)
+
+BNB_TOKEN=$(echo "$BNB_DEPLOY_TX" | grep -o '"contractAddress":"0x[^"]*"' | sed 's/"contractAddress":"//' | sed 's/"//')
 echo "✅ BEP20 Token deployed at: $BNB_TOKEN"
+
+# Calculate mint amount in wei
+MINT_AMOUNT_WEI=$(echo "$MINT_AMOUNT * 10^$DECIMALS" | bc)
 
 # Mint tokens to account on BNB Chain
 echo "Minting $MINT_AMOUNT tokens to $TO_FUND on BNB Chain..."
-MINT_AMOUNT_WEI=$(echo "$MINT_AMOUNT * 10^$DECIMALS" | bc)
 cast send $BNB_TOKEN \
     "mint(address,uint256)" $TO_FUND $MINT_AMOUNT_WEI \
     --rpc-url $BNB_RPC \
     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 # Check balance on BNB Chain
-BNB_BALANCE=$(cast call $BNB_TOKEN "balanceOf(address)(uint256)" $TO_FUND --rpc-url $BNB_RPC)
+BNB_BALANCE_RAW=$(cast call $BNB_TOKEN "balanceOf(address)(uint256)" $TO_FUND --rpc-url $BNB_RPC)
+# Extract just the number (first field, in case there's scientific notation)
+BNB_BALANCE=$(echo "$BNB_BALANCE_RAW" | awk '{print $1}')
+# Convert hex to decimal if needed
+if [[ $BNB_BALANCE == 0x* ]]; then
+    BNB_BALANCE=$(cast --to-dec $BNB_BALANCE)
+fi
 BNB_BALANCE_FORMATTED=$(echo "scale=2; $BNB_BALANCE / 10^$DECIMALS" | bc)
 echo "✅ BNB Chain balance: $BNB_BALANCE_FORMATTED $TOKEN_SYMBOL"
 
@@ -130,13 +142,20 @@ echo "========================================"
 
 # Deploy to Ethereum
 echo "Deploying ERC20 token..."
-ETH_DEPLOY_OUTPUT=$(forge create src/Token.sol:Token \
-    --rpc-url $ETH_RPC \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-    --constructor-args "$TOKEN_NAME" "$TOKEN_SYMBOL" $DECIMALS $INITIAL_SUPPLY)
 
-ETH_TOKEN=$(echo "$ETH_DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $3}')
+# Use cast to deploy (which actually broadcasts by default)
+BYTECODE=$(forge inspect src/Token.sol:Token bytecode)
+DEPLOY_TX=$(cast send --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+    --rpc-url "$ETH_RPC" \
+    --create "$BYTECODE" \
+    --json \
+    "constructor(string,string,uint8,uint256)" "$TOKEN_NAME" "$TOKEN_SYMBOL" $DECIMALS $INITIAL_SUPPLY)
+
+ETH_TOKEN=$(echo "$DEPLOY_TX" | grep -o '"contractAddress":"0x[^"]*"' | sed 's/"contractAddress":"//' | sed 's/"//')
 echo "✅ ERC20 Token deployed at: $ETH_TOKEN"
+
+# Calculate mint amount in wei
+MINT_AMOUNT_WEI=$(echo "$MINT_AMOUNT * 10^$DECIMALS" | bc)
 
 # Mint tokens to account on Ethereum
 echo "Minting $MINT_AMOUNT tokens to $TO_FUND on Ethereum..."
@@ -146,7 +165,13 @@ cast send $ETH_TOKEN \
     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 # Check balance on Ethereum
-ETH_BALANCE=$(cast call $ETH_TOKEN "balanceOf(address)(uint256)" $TO_FUND --rpc-url $ETH_RPC)
+ETH_BALANCE_RAW=$(cast call $ETH_TOKEN "balanceOf(address)(uint256)" $TO_FUND --rpc-url $ETH_RPC)
+# Extract just the number (first field, in case there's scientific notation)
+ETH_BALANCE=$(echo "$ETH_BALANCE_RAW" | awk '{print $1}')
+# Convert hex to decimal if needed
+if [[ $ETH_BALANCE == 0x* ]]; then
+    ETH_BALANCE=$(cast --to-dec $ETH_BALANCE)
+fi
 ETH_BALANCE_FORMATTED=$(echo "scale=2; $ETH_BALANCE / 10^$DECIMALS" | bc)
 echo "✅ Ethereum balance: $ETH_BALANCE_FORMATTED $TOKEN_SYMBOL"
 
