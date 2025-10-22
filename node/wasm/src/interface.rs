@@ -211,7 +211,7 @@ impl PublicInterfaceWorker {
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
-
+        info!("sender_confirming transaction: {:?}", tx.tx_nonce);
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
         let recv_tx_integrity = self
             .tx_integrity
@@ -244,19 +244,18 @@ impl PublicInterfaceWorker {
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            // remove from cache
-            self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
-
             tx.sender_confirmation();
             tx.increment_version();
             let sender = sender_channel.clone();
             sender
-                .send(tx)
+                .send(tx.clone())
                 .await
                 .map_err(|_| {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+
+            self.lru_cache.borrow_mut().push(tx.tx_nonce.into(), tx);
         }
         Ok(())
     }
@@ -356,7 +355,7 @@ impl PublicInterfaceWorker {
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
-        
+
         if tx.status != TxStatus::Genesis {
             return Err(JsError::new("Transaction not in initial state"));
         }

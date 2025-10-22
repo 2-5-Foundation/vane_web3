@@ -17,7 +17,7 @@ libp2p-websocket-websys                     = { version = "0.5.0"}
 serde                                       = { workspace = true}
 async-stream                                = { version = "0.3.6"}
 futures                                     = { version = "0.3.31", features = ["alloc","async-await"]}
-lru                                         = "0.12.5"
+lru                                         = "0.16.2"
 alloy                                       = { version = "0.3", default-features = false, features = ["wasm-bindgen","k256", "reqwest"]}
 web3                                        = { version = "0.19.0", default-features = false, features = ["wasm","eip-1193","http"]}
 wasm-bindgen-futures                        = "0.4.49"
