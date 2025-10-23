@@ -163,6 +163,7 @@ impl WasmP2pWorker {
         );
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
+        
         Ok(Self {
             live,
             node_id: peer_id,
@@ -263,6 +264,7 @@ impl WasmP2pWorker {
                 info!(target:"p2p","🌐 External address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
+
                 info!(target:"p2p","⚡ External address confirmed: {}", address);
                 let account_key = self.user_account_id.clone();
                 let mut value = address.to_string();

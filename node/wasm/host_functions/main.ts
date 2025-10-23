@@ -14,23 +14,7 @@ export const hostDHT = {
     value: string
   ): Promise<{ success: boolean; message?: string; error?: string; random?: number }> {
     try {
-      // First check if the key already exists
-      const getRes = await fetch(`${DHT_URL}/get?key=${encodeURIComponent(key)}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      
-      if (getRes.ok) {
-        const existingData = await getRes.json();
-        if (existingData.success && existingData.value) {
-          // Key already exists, no-op
-          const randArr = new Uint32Array(1);
-          crypto.getRandomValues(randArr);
-          const random = randArr[0];
-          return { success: true, message: "Key already exists, no-op", random };
-        }
-      }
-      
+      // it should overwrite the existing value
       const res = await fetch(`${DHT_URL}/set`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
