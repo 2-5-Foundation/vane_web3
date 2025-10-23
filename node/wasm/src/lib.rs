@@ -229,6 +229,7 @@ impl WasmMainServiceWorker {
 
                     // receiver gets 5 mins to respond
                     let now = (js_sys::Date::now() / 1000.0) as u32;
+
                     self.lru_cache
                         .borrow_mut()
                         .push(decoded_req.tx_nonce.into(), TtlWrapper::new(decoded_req, now));
@@ -281,9 +282,6 @@ impl WasmMainServiceWorker {
                                 // sender gets 5 mins to sign and submit tx
                                 if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&decoded_resp.tx_nonce.into()){
                                     ttl_wrapper.update_value(decoded_resp.clone());
-                                    self.lru_cache
-                                    .borrow_mut()
-                                    .push(decoded_resp.tx_nonce.into(), ttl_wrapper.clone());
 
                                     self.rpc_sender_channel
                                     .borrow_mut()
@@ -340,17 +338,9 @@ impl WasmMainServiceWorker {
                     }
 
                     {
-                        let mut cache = self.lru_cache.borrow_mut();
-                        if let Some(ttl_wrapper) = cache.get_mut(&decoded_resp.tx_nonce.into()) {
+
+                        if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&decoded_resp.tx_nonce.into()) {
                             ttl_wrapper.update_value(decoded_resp.clone());
-                            // Clone the wrapper before dropping the mutable reference
-                            let updated_wrapper = ttl_wrapper.clone();
-                            drop(cache); // Drop the cache borrow
-                            
-                            // Now we can safely push to the cache
-                            self.lru_cache
-                                .borrow_mut()
-                                .push(decoded_resp.tx_nonce.into(), updated_wrapper);
                         } else {
                             decoded_resp.status = TxStatus::TxError("Transaction expired".to_string());
                             
@@ -663,10 +653,8 @@ impl WasmMainServiceWorker {
 
             if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
                 ttl_wrapper.update_value(txn_inner.clone());
-                self.lru_cache
-                    .borrow_mut()
-                    .push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
-            }else{
+                
+            } else {
                 error!("Failed to get transaction from cache; expired");
                 return Err(anyhow::anyhow!("Failed to get transaction from cache; expired").into());
             }
@@ -734,14 +722,9 @@ impl WasmMainServiceWorker {
                     self.db_worker.update_success_tx(db_tx).await?;
                     info!(target: "MainServiceWorker","Db recorded success tx");
 
-                    let mut cache = self.lru_cache.borrow_mut();
-                    if let Some(ttl_wrapper) = cache.get_mut(&txn_inner.tx_nonce.into()) {
+                    if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
                         ttl_wrapper.update_value(txn_inner.clone());
-                        let updated_wrapper = ttl_wrapper.clone();
-                        drop(cache);
-                        self.lru_cache
-                            .borrow_mut()
-                            .push(txn_inner.tx_nonce.into(), updated_wrapper);
+
                         self.rpc_sender_channel
                             .borrow_mut()
                             .send(txn_inner.clone())
@@ -759,9 +742,7 @@ impl WasmMainServiceWorker {
 
                     if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
                         ttl_wrapper.update_value(txn_inner.clone());
-                        self.lru_cache
-                            .borrow_mut()
-                            .push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
+
                         self.rpc_sender_channel
                             .borrow_mut()
                             .send(txn_inner.clone())
@@ -780,9 +761,7 @@ impl WasmMainServiceWorker {
 
             if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
                 ttl_wrapper.update_value(txn_inner.clone());
-                self.lru_cache
-                    .borrow_mut()
-                    .push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
+                
                 self.rpc_sender_channel
                     .borrow_mut()
                     .send(txn_inner.clone())
@@ -896,9 +875,7 @@ impl WasmMainServiceWorker {
 
         if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
             ttl_wrapper.update_value(txn_inner.clone());
-            self.lru_cache
-                .borrow_mut()
-                .push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
+            
             self.rpc_sender_channel
                 .borrow_mut()
                 .send(txn_inner.clone())

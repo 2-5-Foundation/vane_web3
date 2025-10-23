@@ -29,6 +29,7 @@ export enum NODE_EVENTS {
   TRANSACTION_SUCCESS = 'tx submission passed',
   TRANSACTION_FAILED = 'tx submission failed',
   ERROR = 'error',
+  MALICIOUS_NODE_RESPONSE = 'code_word: "Wrong"',
 }
 
 export interface LogEntry {
@@ -198,6 +199,8 @@ export class NodeCoordinator {
       this.emitEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, { log });
     } else if (log.message.includes('error')) {
       this.emitEvent(NODE_EVENTS.ERROR, { log });
+    } else if (log.message.includes('code_word: "Wrong"')) {
+      this.emitEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, { log });
     }
   }
 
