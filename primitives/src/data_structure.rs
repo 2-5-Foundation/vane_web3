@@ -506,6 +506,27 @@ pub trait HashId: Hash {
 impl HashId for OutboundRequestId {}
 impl HashId for InboundRequestId {}
 
+// Wrapper for ttl
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Encode, Decode)]
+pub struct TtlWrapper<T: Encode + Decode + Clone> {
+    pub value: T,
+    pub ttl: u32,
+}
+
+impl<T: Encode + Decode + Clone> TtlWrapper<T> {
+    pub fn new(value: T, ttl: u32) -> Self {
+        Self { value, ttl }
+    }
+    pub fn is_expired(&self, now: u32, time_to_live: u32) -> bool {
+        self.ttl + time_to_live < now
+    }
+    pub fn update_value(&mut self, value: T) {
+        self.value = value;
+    }
+    pub fn get_value(&self) -> &T {
+        &self.value
+    }
+}
 // ================================================================================= //
 
 #[derive(Debug)]

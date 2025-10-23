@@ -190,6 +190,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         console.log('🔑 TX ALREADY SIGNED', tx.status);
         return;
       }
+
+      if(tx.receiverAddress !== receiver_client_address) {
+        return;
+      }
       
       // Only process when receiver has confirmed
       const isRecvConfirmed = tx.status.type === 'RecvAddrConfirmationPassed';
@@ -257,7 +261,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     // assert storage updates
     const storage:StorageExport = await exportStorage() as StorageExport;
-    const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
 
     const storageManager = new StorageExportManager(storage);
     const metrics = storageManager.getSummary();
@@ -271,114 +274,116 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     expect(metrics.peersCount).toEqual(1);
     expect(metrics.accountsCount).toEqual(1);
     expect(metrics.currentNonce).toEqual(1);
-    // assert metrics
+    
    
   });
 
-//   test("should notify if the receiver is not registered", async () => {
-//     console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
-//     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-    
-//     await initiateTransaction(
-//       wasm_client_address,
-//       '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
-//       BigInt(10),
-//       ethToken,
-//       'Maji',
-//       ChainSupported.Ethereum,
-//       ChainSupported.Ethereum
-//     );
 
-//     await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
-//       console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
-//       const tx: TxStateMachine[] = await fetchPendingTxUpdates();
-//       expect(tx).toBeDefined();
-//       expect(tx[0].status).toBe('ReceiverNotRegistered');
-//       console.log('🔑 asserted receiver not registered', tx[0].status);
-//     },70000);
+  test("should notify if the receiver is not registered", async () => {
+    console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
+    await initiateTransaction(
+      wasm_client_address,
+      '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
+      BigInt(10),
+      ethToken,
+      'Maji',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
+
+    await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
+      console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
+      const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+      expect(tx).toBeDefined();
+      expect(tx[0].status.type).toBe('ReceiverNotRegistered');
+      console.log('🔑 asserted receiver not registered', tx[0].status);
+    },70000);
       
-//   });
+  });
 
-//   test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
-//     console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
-//     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-//     const _intendedReceiverAddress = receiver_client_address;
-//     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+  test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
+    console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
+    const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const _intendedReceiverAddress = receiver_client_address;
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     
-//      await initiateTransaction(
-//       wasm_client_address,
-//       wrong_receiver_client_address,
-//       BigInt(10),
-//       ethToken,
-//       'Wrong',
-//       ChainSupported.Ethereum,
-//       ChainSupported.Ethereum
-//     );
+     await initiateTransaction(
+      wasm_client_address,
+      wrong_receiver_client_address,
+      BigInt(10),
+      ethToken,
+      'Wrong',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
-//     await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
-//       console.log('👂 SENDER_RECEIVED_RESPONSE');
-//       const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
-//       const latestTx = txUpdates[0]; 
-//       if (latestTx.codeWord !== 'Wrong') {
-//         return;
-//       }
-//       console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
-//       console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
-//       // check if the transaction is reverted
-//       if (latestTx.status.type === 'Reverted') {
-//           await revertTransaction(latestTx);
-//       }else{
-//         // revert the transaction with a reason
-//         await revertTransaction(latestTx, "Intended receiver not met");
-//       }
+    await nodeCoordinator.waitForEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, async () => {
+      console.log('👂 SENDER_RECEIVED_RESPONSE');
+      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+      const latestTx = txUpdates[0]; 
+      console.log('🔑 MALICIOUS TX CODEWORD', latestTx.codeWord);
+      if (latestTx.codeWord !== 'Wrong') {
+        return;
+      }
+      console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
+      console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
+      // check if the transaction is reverted
+      if (latestTx.status.type === 'Reverted') {
+          await revertTransaction(latestTx);
+      }else{
+        // revert the transaction with a reason
+        await revertTransaction(latestTx, "Intended receiver not met");
+      }
       
-//     },60000);
+    },180000);
 
     
-//     await new Promise(resolve => setTimeout(resolve, 12000));
+    // await new Promise(resolve => setTimeout(resolve, 12000));
 
-//     const tx:TxStateMachine[] = await fetchPendingTxUpdates();
-//     expect(tx).toBeDefined();
-//     const latestTx = tx[0];
-//     if(latestTx.codeWord === 'Wrong'){
-//       if (latestTx.status.type === 'Reverted') {
-//         await revertTransaction(latestTx);
-//       }else{
-//         let txManager = new TxStateMachineManager(latestTx);
-//         txManager.setRevertedReason("Intended receiver not met");
-//         const updatedTx = txManager.getTx();
-//         await revertTransaction(updatedTx);
-//       }
-//     }
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-//     const tx2:TxStateMachine[] = await fetchPendingTxUpdates();
-//     expect(tx2).toBeDefined();
-//     const latestTx2 = tx2[0];
-//     const s = latestTx2.status as any;
-//     const isReverted =
-//       (typeof s === 'string' && s === 'Reverted') ||
-//       (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
-//     expect(isReverted).toBe(true);
-//     const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-//     const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
-//     expect(balanceChange).toEqual(0);
-//     // assert storage updates
-//     const storage:StorageExport = await exportStorage() as StorageExport;
-//     const storageManager = new StorageExportManager(storage);
-//     const metrics = storageManager.getSummary();
-//     console.log('🔑 STORAGE METRICS', metrics);
-//     expect(metrics.totalTransactions).toEqual(2);
-//     expect(metrics.successfulTransactions).toEqual(1);
-//     expect(metrics.failedTransactions).toEqual(1);
-//     expect(metrics.successRate).toEqual('50.00%');
-//     expect(metrics.totalValueSuccess).toEqual(10);
-//     expect(metrics.totalValueFailed).toEqual(10);
-//     expect(metrics.peersCount).toEqual(1);
-//     expect(metrics.accountsCount).toEqual(1);
-//     expect(metrics.currentNonce).toEqual(3);
-//     // assert metrics
+    // const tx:TxStateMachine[] = await fetchPendingTxUpdates();
+    // expect(tx).toBeDefined();
+    // const latestTx = tx[0];
+    // if(latestTx.codeWord === 'Wrong'){
+    //   if (latestTx.status.type === 'Reverted') {
+    //     await revertTransaction(latestTx);
+    //   }else{
+    //     let txManager = new TxStateMachineManager(latestTx);
+    //     txManager.setRevertedReason("Intended receiver not met");
+    //     const updatedTx = txManager.getTx();
+    //     await revertTransaction(updatedTx);
+    //   }
+    // }
+    // await new Promise(resolve => setTimeout(resolve, 5000));
+    // const tx2:TxStateMachine[] = await fetchPendingTxUpdates();
+    // expect(tx2).toBeDefined();
+    // const latestTx2 = tx2[0];
+    // const s = latestTx2.status as any;
+    // const isReverted =
+    //   (typeof s === 'string' && s === 'Reverted') ||
+    //   (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
+    // expect(isReverted).toBe(true);
+    // const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    // const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
+    // expect(balanceChange).toEqual(0);
+    // // assert storage updates
+    // const storage:StorageExport = await exportStorage() as StorageExport;
+    // const storageManager = new StorageExportManager(storage);
+    // const metrics = storageManager.getSummary();
+    // console.log('🔑 STORAGE METRICS', metrics);
+    // expect(metrics.totalTransactions).toEqual(2);
+    // expect(metrics.successfulTransactions).toEqual(1);
+    // expect(metrics.failedTransactions).toEqual(1);
+    // expect(metrics.successRate).toEqual('50.00%');
+    // expect(metrics.totalValueSuccess).toEqual(10);
+    // expect(metrics.totalValueFailed).toEqual(10);
+    // expect(metrics.peersCount).toEqual(1);
+    // expect(metrics.accountsCount).toEqual(1);
+    // expect(metrics.currentNonce).toEqual(3);
+    // assert metrics
   
-//   });
+  });
 
   // test("should be able to successfully revert even when wrong address is selected by sender", async () => {
   //   console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
@@ -526,75 +531,84 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     
   // });
 
-//   test("should successfuly send transaction and confirm to self",async () => {
-//     console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
-//     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+  test("should successfuly send transaction and confirm to self",async () => {
+    console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
+    const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
 
-//     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-//     await addAccount(wasm_client_address2, ChainSupported.Ethereum);
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    await addAccount(wasm_client_address2, ChainSupported.Ethereum);
 
-//     const storage:StorageExport = await exportStorage() as StorageExport;
-//     expect(storage.user_account?.accounts.length).toEqual(2);
+    const storage:StorageExport = await exportStorage() as StorageExport;
+    expect(storage.user_account?.accounts.length).toEqual(2);
 
-//     initiateTransaction(
-//       wasm_client_address,
-//       wasm_client_address2,
-//       BigInt(10),
-//       ethToken,
-//       'Maji',
-//       ChainSupported.Ethereum,
-//       ChainSupported.Ethereum
-//     );
+    initiateTransaction(
+      wasm_client_address,
+      wasm_client_address2,
+      BigInt(10),
+      ethToken,
+      'Maji',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
 
-//     await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-//     const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const latestTx = receiverReceivedTx[0];
-//     if (!walletClient2) throw new Error('walletClient not initialized');
-//     const recvAccount = walletClient2.account!;
-//     // @ts-ignore
-//     const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
-//     const recvTxManager = new TxStateMachineManager(latestTx);
-//     recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-//     const recvUpdatedTx = recvTxManager.getTx();
-//     await receiverConfirm(recvUpdatedTx);
+    const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const latestTx = receiverReceivedTx[0];
 
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-//     const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const senderPendinglatestTx = senderPendingTx[0];
+    if(latestTx.receiverAddress !== wasm_client_address2) {
+      return;
+    }
 
-//     if (!walletClient) throw new Error('walletClient not initialized');
-//     if (!walletClient.account) throw new Error('walletClient account not available');
-//     if (!senderPendinglatestTx.callPayload) {
-//       throw new Error('No call payload found');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields) {
-//       throw new Error('No unsigned transaction fields found');
-//     }
+    if (!walletClient2) throw new Error('walletClient not initialized');
+    const recvAccount = walletClient2.account!;
+    // @ts-ignore
+    const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
+    const recvTxManager = new TxStateMachineManager(latestTx);
+    recvTxManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+    const recvUpdatedTx = recvTxManager.getTx();
+    await receiverConfirm(recvUpdatedTx);
 
-//     const account = walletClient.account!;
-//     if (!account.signMessage) {
-//       throw new Error('Account signMessage function not available');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload)) {
-//       throw new Error('No Ethereum call payload found');
-//     }
-//     const [txHash, txBytes] = senderPendinglatestTx.callPayload.ethereum.callPayload;
-//     const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const senderPendinglatestTx = senderPendingTx[0];
+
+    if(senderPendinglatestTx.receiverAddress !== wasm_client_address2) {
+      return;
+    }
+
+    if (!walletClient) throw new Error('walletClient not initialized');
+    if (!walletClient.account) throw new Error('walletClient account not available');
+    if (!senderPendinglatestTx.callPayload) {
+      throw new Error('No call payload found');
+    }
+    if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields) {
+      throw new Error('No unsigned transaction fields found');
+    }
+
+    const account = walletClient.account!;
+    if (!account.signMessage) {
+      throw new Error('Account signMessage function not available');
+    }
+    if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload)) {
+      throw new Error('No Ethereum call payload found');
+    }
+    const [txHash, txBytes] = senderPendinglatestTx.callPayload.ethereum.callPayload;
+    const txSignature =  await sign({ hash: bytesToHex(txHash), privateKey: privkey as `0x${string}` });
     
-//     const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//     txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
-//     const updatedTx = txManager.getTx();
-//     console.log('🔑 TX UPDATED', updatedTx.status);
-//     await senderConfirm(updatedTx);
+    const txManager = new TxStateMachineManager(senderPendinglatestTx);
+    txManager.setSignedCallPayload(hexToBytes(serializeSignature(txSignature)));
+    const updatedTx = txManager.getTx();
+    console.log('🔑 TX UPDATED', updatedTx.status);
+    await senderConfirm(updatedTx);
 
-//     await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-//     const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-//     const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
-//     expect(balanceChange).toEqual(10);
+    const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
+    expect(balanceChange).toEqual(10);
     
-// });
+});
 
 // test("should successfully send to EVM chain and confirm", async () => {
 //   console.log(" \n \n TEST CASE 7: should successfully send to EVM chain and confirm (BNB)");

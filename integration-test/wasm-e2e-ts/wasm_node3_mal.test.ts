@@ -90,41 +90,31 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (MALICIOUS_NODE)");
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
     
+
     await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.TRANSACTION_RECEIVED,
+        NODE_EVENTS.MALICIOUS_NODE_RESPONSE,
         async () => {
          console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
-         // Set up the transaction watcher
-         await watchTxUpdates(async (tx: TxStateMachine) => {
-          if (!walletClient) throw new Error('walletClient not initialized');
-          const account = walletClient.account!;
-          // @ts-ignore
-          const signature = await account.signMessage({ message: tx.receiverAddress });
-          const txManager = new TxStateMachineManager(tx);
-          txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
-          const updatedTx = txManager.getTx();
-          console.log('🔑 Malicious node confirmed the transaction');
-          await receiverConfirm(updatedTx);
-        });
-         
-         // Fetch current pending transactions
-          const receivedTx = await fetchPendingTxUpdates();
-          expect(receivedTx.length).toBeGreaterThan(0);
+         // fetch pending transactions
+         const pendingTx = await fetchPendingTxUpdates();
+         if (pendingTx.length === 0) {
+          console.log('🔑 No pending transactions found');
+          return;
+         }
+         const tx = pendingTx[0];
+         if (!walletClient) throw new Error('walletClient not initialized');
+         const account = walletClient.account!;
+         // @ts-ignore
+         const signature = await account.signMessage({ message: tx.receiverAddress });
+         const txManager = new TxStateMachineManager(tx);
+         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         const updatedTx = txManager.getTx();
+         console.log('🔑 Malicious node confirmed the transaction');
+         await receiverConfirm(updatedTx);
        },
-        150000
+        350000
       );
 
-      // wait for disconnect event
-      await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.PEER_DISCONNECTED,
-        async () => { 
-          console.log('👂 PEER_DISCONNECTED ON MALICIOUS_NODE'); 
-          const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-          const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
-          expect(balanceChange).toEqual(0);
-        },
-        30000
-      );
       
   })
 

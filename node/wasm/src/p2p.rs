@@ -15,20 +15,18 @@ use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
 
 use libp2p::{
-    core::transport::{global_only::Transport, upgrade, OrTransport, Transport as TransportTrait},
-    futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Stream},
+    core::transport::{ upgrade, OrTransport, Transport as TransportTrait},
     kad::{
         store::{MemoryStore, MemoryStoreConfig},
         Behaviour as DhtBehaviour, Config as KademliaConfig, Event as DhtEvent, GetProvidersOk,
-        GetProvidersResult, GetRecordOk, GetRecordResult, InboundRequest, PeerRecord, QueryId,
-        QueryResult, Record, RoutingUpdate,
+        GetProvidersResult, GetRecordOk, GetRecordResult, InboundRequest, PeerRecord,
+        QueryResult
     },
     multiaddr::Protocol,
-    noise,
     relay::client::{Behaviour as RelayClientBehaviour, Event as RelayClientEvent},
     request_response::{
-        json::Behaviour as JsonBehaviour, Behaviour, Codec, Event, InboundRequestId, Message,
-        OutboundRequestId, ProtocolSupport, ResponseChannel,
+        json::Behaviour as JsonBehaviour, Behaviour, Codec, Event, Message,
+        ProtocolSupport, ResponseChannel,
     },
     swarm::{derive_prelude, NetworkBehaviour, SwarmEvent},
     Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder,
