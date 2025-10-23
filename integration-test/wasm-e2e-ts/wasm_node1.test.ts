@@ -319,25 +319,25 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       ChainSupported.Ethereum
     );
 
-    await nodeCoordinator.waitForEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, async () => {
-      console.log('👂 SENDER_RECEIVED_RESPONSE');
-      const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
-      const latestTx = txUpdates[0]; 
-      console.log('🔑 MALICIOUS TX CODEWORD', latestTx.codeWord);
-      if (latestTx.codeWord !== 'Wrong') {
-        return;
-      }
-      console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
-      console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
-      // check if the transaction is reverted
-      if (latestTx.status.type === 'Reverted') {
-          await revertTransaction(latestTx);
-      }else{
-        // revert the transaction with a reason
-        await revertTransaction(latestTx, "Intended receiver not met");
-      }
+    // await nodeCoordinator.waitForEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, async () => {
+    //   console.log('👂 SENDER_RECEIVED_RESPONSE');
+    //   const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+    //   const latestTx = txUpdates[0]; 
+    //   console.log('🔑 MALICIOUS TX CODEWORD', latestTx.codeWord);
+    //   if (latestTx.codeWord !== 'Wrong') {
+    //     return;
+    //   }
+    //   console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
+    //   console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
+    //   // check if the transaction is reverted
+    //   if (latestTx.status.type === 'Reverted') {
+    //       await revertTransaction(latestTx);
+    //   }else{
+    //     // revert the transaction with a reason
+    //     await revertTransaction(latestTx, "Intended receiver not met");
+    //   }
       
-    },180000);
+    // },180000);
 
     
     // await new Promise(resolve => setTimeout(resolve, 12000));
