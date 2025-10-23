@@ -33,8 +33,8 @@ use crate::{
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, SavedPeerInfo, StorageExport, Token, TxStateMachine, TxStatus,
-    UserAccount, UserMetrics,
+    NodeConnectionStatus, SavedPeerInfo, StorageExport, TtlWrapper, Token, TxStateMachine, TxStatus,
+    UserAccount, UserMetrics, 
 };
 
 #[derive(Clone)]
@@ -55,7 +55,7 @@ pub struct PublicInterfaceWorker {
     // HashMap<txn_counter,Integrity hash>
     pub tx_integrity: Rc<RefCell<HashMap<u32, [u8; 32]>>>,
     //// tx pending store
-    pub lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>, // initial fees, after dry running tx initialy without optimization
+    pub lru_cache: Rc<RefCell<LruCache<u32, TtlWrapper<TxStateMachine>>>>, // initial fees, after dry running tx initialy without optimization
     /// Flag to track if a watcher is already active to prevent multiple concurrent watchers
     pub watcher_active: Rc<RefCell<bool>>,
     /// List of registered callbacks for transaction updates
@@ -70,7 +70,7 @@ impl PublicInterfaceWorker {
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
         peer_id: PeerId,
-        lru_cache: Rc<RefCell<LruCache<u32, TxStateMachine>>>,
+        lru_cache: Rc<RefCell<LruCache<u32, TtlWrapper<TxStateMachine>>>>,
     ) -> Result<Self, JsValue> {
         Ok(Self {
             db_worker,
@@ -132,10 +132,10 @@ impl PublicInterfaceWorker {
         info!("initiated sending transaction: receiver: {}, amount: {}, token: {:?}, sender_network: {:?}, receiver_network: {:?}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
 
         {
-            let sender_network_verified =
+            let _sender_network_verified =
                 verify_public_bytes(sender.as_str(), &token, sender_network)
                     .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-            let receiver_network_verified =
+            let _receiver_network_verified =
                 verify_public_bytes(receiver.as_str(), &token, receiver_network)
                     .map_err(|e| JsError::new(&format!("{:?}", e)))?;
             // add if the route is supported
@@ -200,9 +200,11 @@ impl PublicInterfaceWorker {
             .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
+        let now = (js_sys::Date::now() / 1000.0) as u32;
         self.lru_cache
             .borrow_mut()
-            .push(tx_state_machine.tx_nonce.into(), tx_state_machine.clone());
+            .push(tx_state_machine.tx_nonce.into(), TtlWrapper::new(tx_state_machine.clone(), now));
+
         info!("propagated initiated transaction to tx handling layer");
         // Return the constructed tx to JS so callers can keep a handle
         return serde_wasm_bindgen::to_value(&tx_state_machine)
@@ -254,8 +256,12 @@ impl PublicInterfaceWorker {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
-            self.lru_cache.borrow_mut().push(tx.tx_nonce.into(), tx);
+            
+            let mut ttl_wrapper = self.lru_cache.borrow_mut().get(&tx.tx_nonce.into()).ok_or(JsError::new(&format!(
+                " Failed get transaction from cache, transaction expired"
+            )))?.clone();
+            ttl_wrapper.update_value(tx.clone());
+            let _= self.lru_cache.borrow_mut().push(tx.tx_nonce.into(), ttl_wrapper);
         }
         Ok(())
     }
@@ -334,16 +340,43 @@ impl PublicInterfaceWorker {
     }
 
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
+        // flush out valyues that have been expired
+        let now = (js_sys::Date::now() / 1000.0) as u32;
+        info!("🔑 NOW: {:?}", now);
+        let time_to_live = 30;
+        let expired_keys = self
+            .lru_cache
+            .borrow()
+            .iter()
+            .filter_map(|(k, v)| {
+                info!("🔑 TTL: {:?}", v.ttl);
+                if v.is_expired(now, time_to_live) {
+                    Some(*k)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<u32>>();
+
+        info!("🔑 EXPIRED KEYS: {:?}", expired_keys);
+
+        for key in expired_keys {
+            self.lru_cache.borrow_mut().pop(&key);
+        }
+        
         let tx_updates = self
             .lru_cache
             .borrow()
             .iter()
             .map(|(_k, v)| {
-                let tx_integrity_hash = Self::compute_tx_integrity_hash(v);
+
+                let tx_integrity_hash = Self::compute_tx_integrity_hash(v.get_value());
                 self.tx_integrity
                     .borrow_mut()
-                    .insert(v.tx_nonce.into(), tx_integrity_hash);
-                v.clone()
+                    .insert(v.get_value().tx_nonce.into(), tx_integrity_hash);
+
+                v.get_value().clone()
+
             })
             .collect::<Vec<TxStateMachine>>();
         debug!("lru: {tx_updates:#?}");
@@ -421,7 +454,7 @@ impl PublicInterfaceWorker {
                 // Immediately reflect in local cache for UI/state reads
                 self.lru_cache
                     .borrow_mut()
-                    .push(tx.tx_nonce.into(), tx.clone());
+                    .push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), 600));
                 sender
                     .send(tx)
                     .await
@@ -438,7 +471,8 @@ impl PublicInterfaceWorker {
                 // Immediately reflect in local cache for UI/state reads
                 self.lru_cache
                     .borrow_mut()
-                    .push(tx.tx_nonce.into(), tx.clone());
+                    .push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), 600));
+
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
                 sender
                     .send(tx)
@@ -528,7 +562,7 @@ impl PublicInterfaceWorker {
             .lru_cache
             .borrow()
             .iter()
-            .filter_map(|(k, v)| match v.status {
+            .filter_map(|(k, v)| match v.get_value().status {
                 TxStatus::Reverted(_) => Some(*k),
                 _ => None,
             })
@@ -546,7 +580,7 @@ impl PublicInterfaceWorker {
             .lru_cache
             .borrow()
             .iter()
-            .filter_map(|(k, v)| match v.status {
+            .filter_map(|(k, v)| match v.get_value().status {
                 TxStatus::Reverted(_) | TxStatus::TxSubmissionPassed(_) => Some(*k),
                 _ => None,
             })

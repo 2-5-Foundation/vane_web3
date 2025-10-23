@@ -257,7 +257,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     // assert storage updates
     const storage:StorageExport = await exportStorage() as StorageExport;
-    const _totalTxAndBalanceChange = (10000 - senderBalanceAfter)/10;
 
     const storageManager = new StorageExportManager(storage);
     const metrics = storageManager.getSummary();
@@ -271,7 +270,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     expect(metrics.peersCount).toEqual(1);
     expect(metrics.accountsCount).toEqual(1);
     expect(metrics.currentNonce).toEqual(1);
-    // assert metrics
+    
+    // check if the tx will be expired after 5 mins
+    await new Promise(resolve => setTimeout(resolve, 30000));
+    const tx: TxStateMachine[] = await fetchPendingTxUpdates();
+    console.log('🔑 TX AFTER 5 MINS', tx);
    
   });
 
