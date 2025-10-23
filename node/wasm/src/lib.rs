@@ -83,11 +83,7 @@ impl WasmMainServiceWorker {
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
-        let db = if live {
-            DbWorker::initialize_opfs_db_client("vane.db").await?
-        } else {
-            DbWorker::initialize_inmemory_db_client("vane.db").await?
-        };
+        let db = DbWorker::initialize_inmemory_db_client("vane.db").await?;
 
         let db_worker = Rc::new(db);
 

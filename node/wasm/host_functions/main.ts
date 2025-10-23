@@ -6,7 +6,7 @@ import { hostLogging as _hostLogging } from "./logging";
 // (optional, not required for the fix)
 // export type { LogEntry } from "./logging";
 
-const DHT_URL = "http://[::1]:8787";
+const DHT_URL = process.env.NEXT_PUBLIC_DHT_URL || "http://[::1]:8787";
 
 export const hostDHT = {
   async set(
