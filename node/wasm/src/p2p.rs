@@ -255,11 +255,19 @@ impl WasmP2pWorker {
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!(target:"p2p","🎧 Listening on: {}", &address);
-
+            }
+            SwarmEvent::ExpiredListenAddr { address, .. } => {
+                info!(target:"p2p","⏰ Listener address expired: {}", address)
+            }
+            SwarmEvent::NewExternalAddrCandidate { address, .. } => {
+                info!(target:"p2p","🌐 External address candidate: {}", address)
+            }
+            SwarmEvent::ExternalAddrConfirmed { address } => {
+                info!(target:"p2p","⚡ External address confirmed: {}", address);
                 let account_key = self.user_account_id.clone();
                 let mut value = address.to_string();
-                if self.live {
-                    value = value.replace("/tcp/30333", "/tcp/443");
+                if !self.live {
+                    value = value.replace("/tcp/443", "/tcp/30333");
                 }
 
                 // Use Once to ensure DHT announcement happens only once
@@ -289,15 +297,6 @@ impl WasmP2pWorker {
                         panic!("fatal: DHT announce failed after 3 attempts");
                     });
                 });
-            }
-            SwarmEvent::ExpiredListenAddr { address, .. } => {
-                info!(target:"p2p","⏰ Listener address expired: {}", address)
-            }
-            SwarmEvent::NewExternalAddrCandidate { address, .. } => {
-                info!(target:"p2p","🌐 External address candidate: {}", address)
-            }
-            SwarmEvent::ExternalAddrConfirmed { address } => {
-                info!(target:"p2p","⚡ External address confirmed: {}", address);
             }
             SwarmEvent::ExternalAddrExpired { address } => {
                 info!(target:"p2p","⚡ External address expired: {}", address);

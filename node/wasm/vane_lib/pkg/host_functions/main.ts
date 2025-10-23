@@ -8,7 +8,6 @@ import { hostLogging as _hostLogging } from "./logging";
 
 const DHT_URL = process.env.NEXT_PUBLIC_DHT_URL || "http://[::1]:8787";
 
-console.log("DHT URL:",DHT_URL)
 export const hostDHT = {
   async set(
     key: string,
