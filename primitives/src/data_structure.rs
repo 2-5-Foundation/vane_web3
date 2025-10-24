@@ -156,6 +156,13 @@ impl<'de> Deserialize<'de> for TxStatus {
                         Err(E::custom("missing TxSubmissionPassed value"))
                     }
                 }
+                "TxError" => {
+                    let reason = val
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Transaction error")
+                        .to_string();
+                    Ok(TxStatus::TxError(reason))
+                }
                 "Reverted" => {
                     let reason = val
                         .and_then(|v| v.as_str())
