@@ -535,7 +535,7 @@ export interface TxStateMachine {
     /** Code word */
     codeWord: string;
     /** Amount to be sent */
-    amount: bigint; // u128 in Rust -> bigint in TS
+    amount: number; // u32 in Rust -> number in TS
     /** Fees amount */
     feesAmount: number; // u8 in Rust -> number in TS
     /** Signed call payload (signed hash of the transaction) */
@@ -608,7 +608,7 @@ export class TxStateMachineManager {
       senderNetwork: ChainSupported,
       receiverNetwork: ChainSupported,
       token: Token,
-      amount: bigint,
+      amount: number,
       codeWord: string,
       senderPublicKey: string | null,
       receiverPublicKey: string | null,
@@ -655,7 +655,7 @@ export interface DbTxStateMachine {
     /** Transaction hash based on the chain's hashing algorithm */
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
-    amount: bigint; // u128 in Rust -> bigint in TS
+    amount: number; // u32 in Rust -> number in TS
     /** Sender address */
     sender: string;
     /** Receiver address */

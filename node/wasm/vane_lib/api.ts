@@ -105,7 +105,7 @@ export async function initiateTransaction(
   sender_network: ChainSupported,
   receiver_network: ChainSupported,
 ): Promise<TxStateMachine> {
-  const amt = typeof amount === "bigint" ? amount : BigInt(amount);
+  const amt = typeof amount === "number" ? amount : Number(amount);
   const res = await requireWorker().initiateTransaction(
     sender,
     receiver,
