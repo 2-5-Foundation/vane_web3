@@ -343,7 +343,7 @@ impl PublicInterfaceWorker {
         // flush out valyues that have been expired
         let now = (js_sys::Date::now() / 1000.0) as u32;
         info!("🔑 NOW: {:?}", now);
-        let time_to_live = 300;
+        let time_to_live = 180;
         let expired_keys = self
             .lru_cache
             .borrow()
