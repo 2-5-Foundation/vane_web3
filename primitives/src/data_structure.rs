@@ -363,7 +363,7 @@ pub struct TxStateMachine {
     #[serde(rename = "codeWord")]
     pub code_word: String,
     /// amount to be sent
-    pub amount: u32,
+    pub amount: f32,
     /// fees amount
     #[serde(rename = "feesAmount")]
     pub fees_amount: f32,
@@ -608,7 +608,7 @@ pub struct DbTxStateMachine {
     // Tx hash based on the chain hashing algorithm
     pub tx_hash: Vec<u8>,
     // amount to be sent
-    pub amount: u32,
+    pub amount: f32,
     // token
     pub token: Token,
     // sender

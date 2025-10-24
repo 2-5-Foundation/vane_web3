@@ -535,7 +535,7 @@ export interface TxStateMachine {
     /** Code word */
     codeWord: string;
     /** Amount to be sent */
-    amount: number; // u32 in Rust -> number in TS
+    amount: number; // f32 in Rust -> number in TS
     /** Fees amount */
     feesAmount: number; // u8 in Rust -> number in TS
     /** Signed call payload (signed hash of the transaction) */
@@ -655,7 +655,7 @@ export interface DbTxStateMachine {
     /** Transaction hash based on the chain's hashing algorithm */
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
-    amount: number; // u32 in Rust -> number in TS
+    amount: number; // f32 in Rust -> number in TS
     /** Sender address */
     sender: string;
     /** Receiver address */
