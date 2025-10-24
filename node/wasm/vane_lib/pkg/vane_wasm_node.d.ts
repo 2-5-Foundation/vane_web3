@@ -5,7 +5,7 @@ export class PublicInterfaceWorkerJs {
   private constructor();
   free(): void;
   addAccount(account_id: string, network: string): Promise<void>;
-  initiateTransaction(sender: string, receiver: string, amount: bigint, token: any, code_word: string, sender_network: any, receiver_network: any): Promise<any>;
+  initiateTransaction(sender: string, receiver: string, amount: number, token: any, code_word: string, sender_network: any, receiver_network: any): Promise<any>;
   senderConfirm(tx: any): Promise<void>;
   watchTxUpdates(callback: Function): Promise<void>;
   unsubscribeWatchTxUpdates(): void;
@@ -32,7 +32,7 @@ export interface InitOutput {
   readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any) => any;
   readonly __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
   readonly publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
-  readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
+  readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: number, j: any, k: any) => any;
   readonly publicinterfaceworkerjs_senderConfirm: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_watchTxUpdates: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_unsubscribeWatchTxUpdates: (a: number) => void;
@@ -56,10 +56,10 @@ export interface InitOutput {
   readonly __wbindgen_export_6: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-  readonly closure1208_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1565_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1205_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1562_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-  readonly closure1963_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure1960_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

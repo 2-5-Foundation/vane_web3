@@ -648,7 +648,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
     
     ixs.push(
       createTransferCheckedInstruction(
-        fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount * (10n ** BigInt(decimals)), decimals, [], programId
+        fromAta, mint, toAta, new PublicKey(tx.senderAddress), BigInt(tx.amount) * (10n ** BigInt(decimals)), decimals, [], programId
       )
     );
    
