@@ -375,7 +375,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Ok(success_txs)
     }
 
-    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_success(&self) -> Result<u128, anyhow::Error> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(TRANSACTIONS_DATA_TABLE)?;
 
@@ -391,10 +391,10 @@ impl DbWorkerInterface for OpfsRedbWorker {
                 failed_value: 0,
             });
 
-        Ok(data.success_value as u64)
+        Ok(data.success_value as u128)
     }
 
-    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_failed(&self) -> Result<u128, anyhow::Error> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(TRANSACTIONS_DATA_TABLE)?;
 
@@ -410,7 +410,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
                 failed_value: 0,
             });
 
-        Ok(data.failed_value as u64)
+        Ok(data.failed_value as u128)
     }
 
     async fn record_saved_user_peers(
@@ -698,7 +698,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
         Ok(failed_txs)
     }
 
-    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_success(&self) -> Result<u128, anyhow::Error> {
         let data = self
             .transactions_data
             .borrow()
@@ -712,10 +712,10 @@ impl DbWorkerInterface for InMemoryDbWorker {
                 success_value: 0,
                 failed_value: 0,
             });
-        Ok(data.success_value as u64)
+        Ok(data.success_value as u128)
     }
 
-    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_failed(&self) -> Result<u128, anyhow::Error> {
         let data = self
             .transactions_data
             .borrow()
@@ -729,7 +729,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
                 success_value: 0,
                 failed_value: 0,
             });
-        Ok(data.failed_value as u64)
+        Ok(data.failed_value as u128)
     }
 
     async fn get_success_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error> {
@@ -893,14 +893,14 @@ impl DbWorkerInterface for DbWorker {
         }
     }
 
-    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_success(&self) -> Result<u128, anyhow::Error> {
         match self {
             DbWorker::Opfs(worker) => worker.get_total_value_success().await,
             DbWorker::InMemory(worker) => worker.get_total_value_success().await,
         }
     }
 
-    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error> {
+    async fn get_total_value_failed(&self) -> Result<u128, anyhow::Error> {
         match self {
             DbWorker::Opfs(worker) => worker.get_total_value_failed().await,
             DbWorker::InMemory(worker) => worker.get_total_value_failed().await,

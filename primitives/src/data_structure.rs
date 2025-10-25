@@ -363,7 +363,7 @@ pub struct TxStateMachine {
     #[serde(rename = "codeWord")]
     pub code_word: String,
     /// amount to be sent
-    pub amount: f32,
+    pub amount: u128,
     /// fees amount
     #[serde(rename = "feesAmount")]
     pub fees_amount: f32,
@@ -608,7 +608,7 @@ pub struct DbTxStateMachine {
     // Tx hash based on the chain hashing algorithm
     pub tx_hash: Vec<u8>,
     // amount to be sent
-    pub amount: f32,
+    pub amount: u128,
     // token
     pub token: Token,
     // sender
@@ -911,8 +911,8 @@ pub trait DbWorkerInterface: Sized {
     async fn update_failed_tx(&self, tx_state: DbTxStateMachine) -> Result<(), anyhow::Error>;
     async fn get_failed_txs(&self) -> Result<Vec<DbTxStateMachine>, anyhow::Error>;
 
-    async fn get_total_value_success(&self) -> Result<u64, anyhow::Error>;
-    async fn get_total_value_failed(&self) -> Result<u64, anyhow::Error>;
+    async fn get_total_value_success(&self) -> Result<u128, anyhow::Error>;
+    async fn get_total_value_failed(&self) -> Result<u128, anyhow::Error>;
 
     // record the user of this app
 
@@ -972,10 +972,10 @@ pub struct StorageExport {
     pub failed_transactions: Vec<DbTxStateMachine>,
 
     /// Total value of all successful transactions (in wei/smallest unit)
-    pub total_value_success: u64,
+    pub total_value_success: u128,
 
     /// Total value of all failed transactions (in wei/smallest unit)
-    pub total_value_failed: u64,
+    pub total_value_failed: u128,
 
     /// Multiple saved peers, each with their own account IDs
     /// Example with 2 separate peers, each having 2 addresses:

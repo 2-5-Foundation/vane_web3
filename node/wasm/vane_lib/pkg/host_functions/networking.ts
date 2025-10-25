@@ -363,10 +363,9 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
 
   if (isNativeToken) {
     // Native token transfer (ETH)
-    const value = parseEther(tx.amount.toString());
     transactionData = {
       to: receiver,
-      value,
+      value: tx.amount,
       data: '0x'
     };
   } else {
@@ -376,18 +375,11 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
       throw new Error(`Invalid ERC20 token address for ${JSON.stringify(tx.token)}`);
     }
 
-    const decimals = await publicClient.readContract({
-      address: tokenAddress as `0x${string}`,
-      abi: erc20Abi,
-      functionName: 'decimals',
-    });
-  
-    const value = parseUnits(String(tx.amount), decimals);
-
+   
     const data = encodeFunctionData({
       abi: erc20Abi,
       functionName: 'transfer',
-      args: [receiver, value]
+      args: [receiver, tx.amount]
     });
 
     transactionData = {
@@ -481,10 +473,9 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
 
   if (isNativeToken) {
     // Native token transfer (BNB)
-    const value = parseEther(tx.amount.toString());
     transactionData = {
       to: receiver,
-      value,
+      value: tx.amount,
       data: '0x'
     };
   } else {
@@ -494,18 +485,11 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
       throw new Error(`Invalid BEP20 token address for ${JSON.stringify(tx.token)}`);
     }
 
-    const decimals = await publicClient.readContract({
-      address: tokenAddress as `0x${string}`,
-      abi: erc20Abi,
-      functionName: 'decimals',
-    });
-  
-    const value = parseUnits(String(tx.amount), decimals);
    
     const data = encodeFunctionData({
       abi: erc20Abi,
       functionName: 'transfer',
-      args: [receiver, value]
+      args: [receiver, tx.amount]
     });
 
     transactionData = {
@@ -577,10 +561,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
     const to   = new PublicKey(tx.receiverAddress);
   
     // Build the transfer instruction
-    const lamports =
-      typeof tx.amount === 'bigint'
-        ? tx.amount * BigInt(LAMPORTS_PER_SOL)
-        : Math.round(Number(tx.amount) * LAMPORTS_PER_SOL);
+    const lamports = tx.amount;
   
     const transferIx = SystemProgram.transfer({
       fromPubkey: from,
@@ -621,7 +602,6 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       throw new Error(`Invalid SPL token address for ${JSON.stringify(tx.token)}`);
     }
     const mint = new PublicKey(tokenAddress);
-    const connection = new SolanaConnection("http://localhost:8899", 'confirmed');
     const info = await connection.getAccountInfo(mint);
     if (!info) throw new Error('Mint not found');
     const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -648,7 +628,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
     
     ixs.push(
       createTransferCheckedInstruction(
-        fromAta, mint, toAta, new PublicKey(tx.senderAddress), BigInt(tx.amount) * (10n ** BigInt(decimals)), decimals, [], programId
+        fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount, decimals, [], programId
       )
     );
    
