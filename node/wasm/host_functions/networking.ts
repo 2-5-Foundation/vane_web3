@@ -286,9 +286,7 @@ export const hostNetworking = {
         })
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        const prepared = data?.prepared as PreparedEthParams | undefined;
-        if (!prepared) throw new Error('Invalid prepared params from API');
-        return await createTxEthereumWithParams(tx, prepared);
+        return data?.prepared as TxStateMachine
       }
 
       if (family === 'bsc') {
@@ -307,9 +305,7 @@ export const hostNetworking = {
         })
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        const prepared = data?.prepared as PreparedBSCParams | undefined;
-        if (!prepared) throw new Error('Invalid prepared params from API');
-        return await createTxBSCWithParams(tx, prepared);
+        return data?.prepared as TxStateMachine
       }
 
       if (family === 'solana') {
@@ -659,170 +655,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   }
 }
 
-// ===== Helper for live mode: construct tx using server-prepared chain data =====
-export type PreparedEthParams = {
-  nonce: number;
-  gas: bigint;
-  maxFeePerGas: bigint;
-  maxPriorityFeePerGas: bigint;
-  tokenAddress?: string | null; // required if ERC20
-  tokenDecimals?: number | null
-};
 
-export type PreparedBSCParams = {
-  nonce: number;
-  gas: bigint;
-  gasPrice: bigint;
-  tokenAddress?: string | null; // required if BEP20
-  tokenDecimals?: number | null; // required if BEP20
-};
-
-export type PreparedSolanaParams = {
-  blockhash: string;
-  lastValidBlockHeight: number;
-  feesAmount: number;
-
-};
-
-async function createTxEthereumWithParams(tx: TxStateMachine, params: PreparedEthParams): Promise<TxStateMachine> {
-  const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-
-  const sender = tx.senderAddress as Address;
-  const receiver = tx.receiverAddress as Address;
-
-  // Determine if this is a native token or ERC20 token
-  const isNativeToken = isNativeEthereumToken(tx.token);
-
-  let transactionData: {
-    to: Address;
-    value: bigint;
-    data: Hex;
-  };
-
-  if (isNativeToken) {
-    const value = parseEther(tx.amount.toString());
-    transactionData = { to: receiver, value, data: '0x' };
-  } else {
-    const tokenAddress = params.tokenAddress;
-    if (!tokenAddress) throw new Error('Missing tokenAddress for ERC20 transfer');
-    
-    // Use decimals provided by server
-    const decimals = params.tokenDecimals!
-    const tokenAmount = parseUnits(tx.amount.toString(), decimals);
-    
-    const data = encodeFunctionData({
-      abi: erc20Abi,
-      functionName: 'transfer',
-      args: [receiver, tokenAmount]
-    });
-    transactionData = { to: tokenAddress as Address, value: 0n, data };
-  }
-
-  const fields: UnsignedEip1559 = {
-    to: transactionData.to,
-    value: transactionData.value,
-    chainId: chainConfig.chainId,
-    nonce: params.nonce,
-    gas: params.gas,
-    maxFeePerGas: params.maxFeePerGas,
-    maxPriorityFeePerGas: params.maxPriorityFeePerGas,
-    data: transactionData.data,
-    accessList: [],
-    type: 'eip1559',
-  };
-
-  const feesInEth = formatEther(params.gas * params.maxFeePerGas);
-
-  const signingPayload = serializeTransaction(fields) as Hex;
-  if (!signingPayload.startsWith('0x02')) throw new Error('Expected 0x02 typed payload');
-  const digest = keccak256(signingPayload) as Hex;
-
-  const updated: TxStateMachine = {
-    ...tx,
-    feesAmount: Number(feesInEth),
-    callPayload: {
-      ethereum: {
-        ethUnsignedTxFields: fields,
-        callPayload: [
-          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-        ]
-      }
-    }
-  };
-
-  return updated;
-}
-
-
-async function createTxBSCWithParams(tx: TxStateMachine, params: PreparedBSCParams): Promise<TxStateMachine> {
-  const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-
-  const receiver = tx.receiverAddress as Address;
-
-  // Determine if this is a native token or BEP20 token
-  const isNativeToken = isNativeBSCToken(tx.token);
-
-  let transactionData: {
-    to: Address;
-    value: bigint;
-    data: Hex;
-  };
-
-  if (isNativeToken) {
-    const value = parseEther(tx.amount.toString());
-    transactionData = { to: receiver, value, data: '0x' };
-  } else {
-    const tokenAddress = params.tokenAddress;
-    if (!tokenAddress) throw new Error('Missing tokenAddress for BEP20 transfer');
-    
-    // Use decimals provided by server
-    const decimals = params.tokenDecimals!;
-    const tokenAmount = parseUnits(tx.amount.toString(), decimals);
-    
-    const data = encodeFunctionData({
-      abi: erc20Abi,
-      functionName: 'transfer',
-      args: [receiver, tokenAmount]
-    });
-    transactionData = { to: tokenAddress as Address, value: 0n, data };
-  }
-
-  const fields: UnsignedLegacy = {
-    to: transactionData.to,
-    value: transactionData.value,
-    chainId: chainConfig.chainId,
-    nonce: params.nonce,
-    gas: params.gas,
-    gasPrice: params.gasPrice,
-    data: transactionData.data,
-    type: 'legacy',
-  };
-
-  const feesInBNB = formatEther(params.gas * params.gasPrice);
-
-  const signingPayload = serializeTransaction(fields) as Hex;
-  if (!signingPayload.startsWith('0x')) throw new Error('Expected 0x legacy payload');
-  const digest = keccak256(signingPayload) as Hex;
-
-  
-
-  const updated: TxStateMachine = {
-    ...tx,
-    feesAmount: Number(feesInBNB),
-    callPayload: {
-      bnb: {
-        bnbLegacyTxFields: fields,
-        callPayload: [
-          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
-        ]
-      }
-    }
-  };
-
-  return updated;
-}
 
 // Helper function to determine if a token is a native Ethereum token
 function isNativeEthereumToken(token: Token): boolean {
