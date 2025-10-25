@@ -535,7 +535,7 @@ export interface TxStateMachine {
     /** Code word */
     codeWord: string;
     /** Amount to be sent */
-    amount: number; // f32 in Rust -> number in TS
+    amount: bigint; // u128 in Rust -> bigint in TS
     /** Fees amount */
     feesAmount: number; // u8 in Rust -> number in TS
     /** Signed call payload (signed hash of the transaction) */
@@ -608,7 +608,7 @@ export class TxStateMachineManager {
       senderNetwork: ChainSupported,
       receiverNetwork: ChainSupported,
       token: Token,
-      amount: number,
+      amount: bigint,
       codeWord: string,
       senderPublicKey: string | null,
       receiverPublicKey: string | null,
@@ -655,7 +655,7 @@ export interface DbTxStateMachine {
     /** Transaction hash based on the chain's hashing algorithm */
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
-    amount: number; // f32 in Rust -> number in TS
+    amount: bigint; // u128 in Rust -> bigint in TS
     /** Sender address */
     sender: string;
     /** Receiver address */
@@ -694,10 +694,10 @@ export interface StorageExport {
     failed_transactions: DbTxStateMachine[];
     
     /** Total value of all successful transactions (in wei/smallest unit) */
-    total_value_success: number; // u64 in Rust -> number in TS
+    total_value_success: bigint; // u128 in Rust -> bigint in TS
     
     /** Total value of all failed transactions (in wei/smallest unit) */
-    total_value_failed: number; // u64 in Rust -> number in TS
+    total_value_failed: bigint; // u128 in Rust -> bigint in TS
     
     /** 
      * Multiple saved peers, each with their own account IDs
@@ -854,8 +854,8 @@ export class StorageExportManager {
         failedTransactions: number;
         largestFailedTransactionAmount: number;
         successRate: string;
-        totalValueSuccess: number;
-        totalValueFailed: number;
+        totalValueSuccess: bigint;
+        totalValueFailed: bigint;
         networksUsed: ChainSupported[];
         peersCount: number;
         accountsCount: number;
