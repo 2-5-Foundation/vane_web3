@@ -20,6 +20,7 @@
     "@solana/kit": "^4.0.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
     "viem": "^2.33.3"
   }
 }
