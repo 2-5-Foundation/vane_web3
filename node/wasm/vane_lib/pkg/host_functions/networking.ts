@@ -4,7 +4,6 @@ import {
   parseEther, 
   parseUnits,
   keccak256,
-  serializeTransaction as serializeEthTransaction,
   recoverPublicKey,
   type Address,
   type TransactionRequest,
@@ -21,7 +20,8 @@ import {
   getContract,
   erc20Abi,
   bytesToHex,
-  formatEther
+  formatEther,
+  hexToBytes
 } from 'viem';
 
 import type { TransactionSerializedEIP1559 } from 'viem';
@@ -31,25 +31,26 @@ import {
 } from 'viem/chains';
 import {
   Connection as SolanaConnection,
-  Transaction as SolanaTransaction,
   SystemProgram,
   LAMPORTS_PER_SOL,
-  Message,
   PublicKey,
   VersionedTransaction,
   TransactionMessage,
   VersionedMessage,
 } from "@solana/web3.js";
 import {
-  getAssociatedTokenAddress, createTransferCheckedInstruction, transfer,
+  getAssociatedTokenAddress, createTransferCheckedInstruction,
   createAssociatedTokenAccountInstruction,getMint,
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 } from '@solana/spl-token';
 
+
+import bs58 from 'bs58';
+
 import { ChainSupported, type TxStateMachine, type Token } from '../../primitives';
 
 
-type UnsignedEip1559 = {
+export type UnsignedEip1559 = {
   to: Address;
   value: bigint;
   chainId: number;
@@ -62,7 +63,7 @@ type UnsignedEip1559 = {
   type: 'eip1559';
 };
 
-type UnsignedLegacy = {
+export type UnsignedLegacy = {
   to: Address;
   value: bigint;
   chainId: number;
@@ -155,23 +156,23 @@ export const hostNetworking = {
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
           // Ensure it's mined before returning (Anvil auto-mines, but wait for safety)
           await publicClient.waitForTransactionReceipt({ hash });
-          const hashBytes = new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+          const hashBytes = hexToBytes(hash);
           return hashBytes;
         }
 
         // Live mode: send txStateMachine to next API route handler
-        const resp = await fetch('/api/tx/submit-evm', {
+        const resp = await fetch('/api/submit-evm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+          body: JSON.stringify({ tx: toWire(tx) }),
         })
 
         if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}`);
         const data = await resp.json();
         const hashHex: string = data?.hash;
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
-        return new Uint8Array(hashHex.slice(2).match(/.{1,2}/g)!.map((b: string) => parseInt(b, 16)));
+        return hexToBytes(hashHex as Hex);
       }
 
       if (family === 'bsc') {
@@ -186,23 +187,23 @@ export const hostNetworking = {
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
           // Wait for receipt to ensure balance updates are visible
           await publicClient.waitForTransactionReceipt({ hash });
-          const hashBytes = new Uint8Array(hash.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+          const hashBytes = hexToBytes(hash);
           return hashBytes;
         }
 
         // Live mode: send txStateMachine to next API route handler
-        const resp = await fetch('/api/tx/submit-bsc', {
+        const resp = await fetch('/api/submit-bsc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+          body: JSON.stringify({ tx: toWire(tx) }),
         })
 
         if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}`);
         const data = await resp.json();
         const hashHex: string = data?.hash;
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
-        return new Uint8Array(hashHex.slice(2).match(/.{1,2}/g)!.map((b: string) => parseInt(b, 16)));
+        return hexToBytes(hashHex as Hex);
       }
   
       if (family === 'polkadot') {
@@ -237,10 +238,10 @@ export const hostNetworking = {
             throw new Error('Transaction failed in confirmation');
           }
 
-          return new Uint8Array(sig.slice(2).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)));
+          return bs58.decode(sig);
         }
 
-        const resp = await fetch("api/tx/submit-solana", {
+        const resp = await fetch("/api/submit-solana", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -251,7 +252,7 @@ export const hostNetworking = {
         const data = await resp.json();
         const hashHex: string = data?.hash;
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
-        return new Uint8Array(hashHex.slice(2).match(/.{1,2}/g)!.map((b: string) => parseInt(b, 16)));
+        return hexToBytes(hashHex as Hex);
       }
   
       throw new Error(`Unhandled chain family: ${family}`);
@@ -282,11 +283,11 @@ export const hostNetworking = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+          body: JSON.stringify({ tx: toWire(tx) }),
         })
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        return data?.prepared as TxStateMachine
+        return fromWire(data?.prepared)
       }
 
       if (family === 'bsc') {
@@ -301,11 +302,11 @@ export const hostNetworking = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } }),
+          body: JSON.stringify({ tx: toWire(tx) }),
         })
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        return data?.prepared as TxStateMachine
+        return fromWire(data?.prepared)
       }
 
       if (family === 'solana') {
@@ -314,16 +315,16 @@ export const hostNetworking = {
         }
         // Live mode: get prepared chain data from server, then construct tx locally
         // Get latest blockhash
-        const resp = await fetch("api/tx/prepare-solana", {
+        const resp = await fetch("/api/prepare-solana", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } })
+          body: JSON.stringify({ tx: toWire(tx) })
         });
 
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
-        return data?.prepared as TxStateMachine
+        return fromWire(data?.prepared)
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -339,7 +340,7 @@ export const hostNetworking = {
 export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateMachine> {
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
   const publicClient = createPublicClient({ 
-    chain: mainnet, 
+    chain: chainConfig.chain, 
     transport: http(chainConfig.rpcUrl)
   });
 
@@ -434,9 +435,9 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
         ethUnsignedTxFields: fields,
         callPayload: [
           // digest as bytes (32)
-          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          hexToBytes(digest),
           // unsigned payload bytes (what you hashed)
-          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          hexToBytes(signingPayload),
         ]
       }
     }
@@ -534,9 +535,9 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
         bnbLegacyTxFields: fields,
         callPayload: [
           // digest as bytes (32)
-          new Uint8Array(digest.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          hexToBytes(digest),
           // unsigned payload bytes (what you hashed)
-          new Uint8Array(signingPayload.slice(2).match(/.{1,2}/g)!.map((b) => parseInt(b, 16))),
+          hexToBytes(signingPayload),
         ]
       }
     }
@@ -558,6 +559,11 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   
     // Build the transfer instruction
     const lamports = tx.amount;
+    
+    // Safety check for lamports precision
+    if (lamports > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('lamports exceed JS safe integer range');
+    }
   
     const transferIx = SystemProgram.transfer({
       fromPubkey: from,
@@ -709,4 +715,122 @@ function isNativeSolToken(token: Token): boolean {
     return token.Solana === 'SOL';
   }
   return false;
+}
+
+
+// helper function to ensure TxStateMachine array types are converted back to correct types
+export function toWire(tx: TxStateMachine): any {
+  return {
+    ...tx,
+    amount: tx.amount.toString(),
+    // Convert Uint8Array fields to regular arrays
+    multiId: tx.multiId ? Array.from(tx.multiId) : null,
+    recvSignature: tx.recvSignature ? Array.from(tx.recvSignature) : null,
+    signedCallPayload: tx.signedCallPayload ? Array.from(tx.signedCallPayload) : null,
+    // Convert callPayload arrays with type safety
+    callPayload: tx.callPayload ? (() => {
+      if ('ethereum' in tx.callPayload) {
+        const f = tx.callPayload.ethereum.ethUnsignedTxFields;
+        return {
+          ethereum: {
+            ethUnsignedTxFields: {
+              ...f,
+              // Convert all bigints to strings for JSON serialization
+              value: f.value.toString(),
+              gas: f.gas.toString(),
+              maxFeePerGas: f.maxFeePerGas.toString(),
+              maxPriorityFeePerGas: f.maxPriorityFeePerGas.toString(),
+            },
+            callPayload: tx.callPayload.ethereum.callPayload ? [
+              Array.from(tx.callPayload.ethereum.callPayload[0]),
+              Array.from(tx.callPayload.ethereum.callPayload[1])
+            ] : null
+          }
+        };
+      } else if ('bnb' in tx.callPayload) {
+        const f = tx.callPayload.bnb.bnbLegacyTxFields;
+        return {
+          bnb: {
+            bnbLegacyTxFields: {
+              ...f,
+              // Convert all bigints to strings for JSON serialization
+              value: f.value.toString(),
+              gas: f.gas.toString(),
+              gasPrice: f.gasPrice.toString(),
+            },
+            callPayload: tx.callPayload.bnb.callPayload ? [
+              Array.from(tx.callPayload.bnb.callPayload[0]),
+              Array.from(tx.callPayload.bnb.callPayload[1])
+            ] : null
+          }
+        };
+      } else if ('solana' in tx.callPayload) {
+        return {
+          solana: {
+            ...tx.callPayload.solana,
+            callPayload: tx.callPayload.solana.callPayload ? Array.from(tx.callPayload.solana.callPayload) : null
+          }
+        };
+      }
+      return tx.callPayload;
+    })() : null
+  };
+}
+
+export function fromWire(wireTx: any): TxStateMachine {
+  return {
+    ...wireTx,
+    amount: BigInt(wireTx.amount),
+    // Convert arrays back to Uint8Array fields
+    multiId: wireTx.multiId ? new Uint8Array(wireTx.multiId) : null,
+    recvSignature: wireTx.recvSignature ? new Uint8Array(wireTx.recvSignature) : null,
+    signedCallPayload: wireTx.signedCallPayload ? new Uint8Array(wireTx.signedCallPayload) : null,
+    // Convert callPayload arrays back with type safety
+    callPayload: wireTx.callPayload ? (() => {
+      if ('ethereum' in wireTx.callPayload) {
+        const f = wireTx.callPayload.ethereum.ethUnsignedTxFields;
+        return {
+          ethereum: {
+            ethUnsignedTxFields: {
+              ...f,
+              // Convert strings back to bigints
+              value: BigInt(f.value),
+              gas: BigInt(f.gas),
+              maxFeePerGas: BigInt(f.maxFeePerGas),
+              maxPriorityFeePerGas: BigInt(f.maxPriorityFeePerGas),
+            },
+            callPayload: wireTx.callPayload.ethereum.callPayload ? [
+              new Uint8Array(wireTx.callPayload.ethereum.callPayload[0]),
+              new Uint8Array(wireTx.callPayload.ethereum.callPayload[1])
+            ] : null
+          }
+        };
+      } else if ('bnb' in wireTx.callPayload) {
+        const f = wireTx.callPayload.bnb.bnbLegacyTxFields;
+        return {
+          bnb: {
+            bnbLegacyTxFields: {
+              ...f,
+              // Convert strings back to bigints
+              value: BigInt(f.value),
+              gas: BigInt(f.gas),
+              gasPrice: BigInt(f.gasPrice),
+            },
+            callPayload: wireTx.callPayload.bnb.callPayload ? [
+              new Uint8Array(wireTx.callPayload.bnb.callPayload[0]),
+              new Uint8Array(wireTx.callPayload.bnb.callPayload[1])
+            ] : null
+          }
+        };
+      } else if ('solana' in wireTx.callPayload) {
+        return {
+          solana: {
+            ...wireTx.callPayload.solana,
+            callPayload: wireTx.callPayload.solana.callPayload ? new Uint8Array(wireTx.callPayload.solana.callPayload) : null
+          }
+        };
+      }
+      return wireTx.callPayload;
+    })() : null
+  } as TxStateMachine;
 }
