@@ -17,10 +17,11 @@ export enum EthereumToken {
     ERC20 = "ERC20"
 }
 
-/** ERC20 token with name and contract address */
+/** ERC20 token with name, contract address, and decimals */
 export interface ERC20Token {
     name: string;
     address: string;
+    decimals: number;
 }
 
 /** BNB Smart Chain ecosystem tokens */
@@ -29,10 +30,11 @@ export enum BnbToken {
     BEP20 = "BEP20"
 }
 
-/** BEP20 token with name and contract address */
+/** BEP20 token with name, contract address, and decimals */
 export interface BEP20Token {
     name: string;
     address: string;
+    decimals: number;
 }
 
 /** Polkadot ecosystem tokens */
@@ -53,10 +55,11 @@ export enum SolanaToken {
     SPL = "SPL"
 }
 
-/** SPL token with name and mint address */
+/** SPL token with name, mint address, and decimals */
 export interface SPLToken {
     name: string;
     address: string;
+    decimals: number;
 }
 
 /** TRON ecosystem tokens */
@@ -65,10 +68,11 @@ export enum TronToken {
     TRC20 = "TRC20"
 }
 
-/** TRC20 token with name and contract address */
+/** TRC20 token with name, contract address, and decimals */
 export interface TRC20Token {
     name: string;
     address: string;
+    decimals: number;
 }
 
 /** Optimism ecosystem tokens */
@@ -150,8 +154,8 @@ export class TokenManager {
   /**
    * Create an ERC-20 token for Ethereum-compatible chains
    */
-  static createERC20Token(chain: ChainSupported, name: string, address: string): Token {
-    const erc20Token: ERC20Token = { name, address };
+  static createERC20Token(chain: ChainSupported, name: string, address: string, decimals: number): Token {
+    const erc20Token: ERC20Token = { name, address, decimals };
     switch (chain) {
       case ChainSupported.Ethereum:
         return { Ethereum: { ERC20: erc20Token } };
@@ -171,24 +175,24 @@ export class TokenManager {
   /**
    * Create a BEP-20 token for BNB Smart Chain
    */
-  static createBEP20Token(name: string, address: string): Token {
-    const bep20Token: BEP20Token = { name, address };
+  static createBEP20Token(name: string, address: string, decimals: number): Token {
+    const bep20Token: BEP20Token = { name, address, decimals };
     return { Bnb: { BEP20: bep20Token } };
   }
 
   /**
    * Create an SPL token for Solana
    */
-  static createSPLToken(name: string, address: string): Token {
-    const splToken: SPLToken = { name, address };
+  static createSPLToken(name: string, address: string, decimals: number): Token {
+    const splToken: SPLToken = { name, address, decimals };
     return { Solana: { SPL: splToken } };
   }
 
   /**
    * Create a TRC-20 token for TRON
    */
-  static createTRC20Token(name: string, address: string): Token {
-    const trc20Token: TRC20Token = { name, address };
+  static createTRC20Token(name: string, address: string, decimals: number): Token {
+    const trc20Token: TRC20Token = { name, address, decimals };
     return { Tron: { TRC20: trc20Token } };
   }
 
@@ -301,10 +305,10 @@ export class TokenManager {
         const erc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (erc20Match) {
           const [, name, address] = erc20Match;
-          return { Ethereum: { ERC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse ERC20 token "${name}" without decimals. Use TokenManager.createERC20Token() instead.`);
         }
         // Fallback: treat as name only, address will need to be resolved elsewhere
-        return { Ethereum: { ERC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse ERC20 token "${symbol}" without decimals. Use TokenManager.createERC20Token() instead.`);
       
       case "BNB":
         if (symbol === "BNB") {
@@ -314,9 +318,9 @@ export class TokenManager {
         const bep20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (bep20Match) {
           const [, name, address] = bep20Match;
-          return { Bnb: { BEP20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse BEP20 token "${name}" without decimals. Use TokenManager.createBEP20Token() instead.`);
         }
-        return { Bnb: { BEP20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse BEP20 token "${symbol}" without decimals. Use TokenManager.createBEP20Token() instead.`);
       
       case "Polkadot":
         if (symbol === "DOT") {
@@ -338,9 +342,9 @@ export class TokenManager {
         const splMatch = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (splMatch) {
           const [, name, address] = splMatch;
-          return { Solana: { SPL: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse SPL token "${name}" without decimals. Use TokenManager.createSPLToken() instead.`);
         }
-        return { Solana: { SPL: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse SPL token "${symbol}" without decimals. Use TokenManager.createSPLToken() instead.`);
       
       case "TRON":
         if (symbol === "TRX") {
@@ -350,9 +354,9 @@ export class TokenManager {
         const trc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (trc20Match) {
           const [, name, address] = trc20Match;
-          return { Tron: { TRC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse TRC20 token "${name}" without decimals. Use TokenManager.createTRC20Token() instead.`);
         }
-        return { Tron: { TRC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse TRC20 token "${symbol}" without decimals. Use TokenManager.createTRC20Token() instead.`);
       
       case "Optimism":
         if (symbol === "ETH") {
@@ -362,9 +366,9 @@ export class TokenManager {
         const optimismErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (optimismErc20Match) {
           const [, name, address] = optimismErc20Match;
-          return { Optimism: { ERC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse ERC20 token "${name}" without decimals. Use TokenManager.createERC20Token() instead.`);
         }
-        return { Optimism: { ERC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse ERC20 token "${symbol}" without decimals. Use TokenManager.createERC20Token() instead.`);
       
       case "Arbitrum":
         if (symbol === "ETH") {
@@ -374,9 +378,9 @@ export class TokenManager {
         const arbitrumErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (arbitrumErc20Match) {
           const [, name, address] = arbitrumErc20Match;
-          return { Arbitrum: { ERC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse ERC20 token "${name}" without decimals. Use TokenManager.createERC20Token() instead.`);
         }
-        return { Arbitrum: { ERC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse ERC20 token "${symbol}" without decimals. Use TokenManager.createERC20Token() instead.`);
       
       case "Polygon":
         if (symbol === "POL") {
@@ -386,9 +390,9 @@ export class TokenManager {
         const polygonErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (polygonErc20Match) {
           const [, name, address] = polygonErc20Match;
-          return { Polygon: { ERC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse ERC20 token "${name}" without decimals. Use TokenManager.createERC20Token() instead.`);
         }
-        return { Polygon: { ERC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse ERC20 token "${symbol}" without decimals. Use TokenManager.createERC20Token() instead.`);
       
       case "Base":
         if (symbol === "ETH") {
@@ -398,9 +402,9 @@ export class TokenManager {
         const baseErc20Match = symbol.match(/^(.+?)\s*\((.+)\)$/);
         if (baseErc20Match) {
           const [, name, address] = baseErc20Match;
-          return { Base: { ERC20: { name: name.trim(), address: address.trim() } } };
+          throw new Error(`Cannot parse ERC20 token "${name}" without decimals. Use TokenManager.createERC20Token() instead.`);
         }
-        return { Base: { ERC20: { name: symbol, address: "" } } };
+        throw new Error(`Cannot parse ERC20 token "${symbol}" without decimals. Use TokenManager.createERC20Token() instead.`);
       
       case "Bitcoin":
         if (symbol === "BTC") {

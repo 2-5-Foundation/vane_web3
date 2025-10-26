@@ -245,15 +245,16 @@ export const hostNetworking = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ tx: { ...tx, amount: tx.amount.toString() } })
+          body: JSON.stringify({ tx: toWire(tx) })
         });
         
         if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}`);
         const data = await resp.json();
         const hashHex: string = data?.hash;
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
-        return hexToBytes(hashHex as Hex);
+        return bs58.decode(hashHex);
       }
+  
   
       throw new Error(`Unhandled chain family: ${family}`);
       
@@ -338,6 +339,8 @@ export const hostNetworking = {
 
 // ===== Family-specific createTx implementations =====
 export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateMachine> {
+
+  // construct an unsigned ethereum transaction
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
   const publicClient = createPublicClient({ 
     chain: chainConfig.chain, 
@@ -367,10 +370,11 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
     };
   } else {
     // ERC20 token transfer
-    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork);
-    if (!tokenAddress) {
+    const tokenInfo = await getTokenAddress(tx.token, tx.senderAddressNetwork);
+    if (!tokenInfo) {
       throw new Error(`Invalid ERC20 token address for ${JSON.stringify(tx.token)}`);
     }
+    const {address: tokenAddress, decimal} = tokenInfo;
 
    
     const data = encodeFunctionData({
@@ -477,11 +481,11 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
     };
   } else {
     // BEP20 token transfer (reuse Ethereum helper)
-    const tokenAddress = await getTokenAddress(tx.token, tx.senderAddressNetwork);
-    if (!tokenAddress) {
+    const tokenInfo = await getTokenAddress(tx.token, tx.senderAddressNetwork);
+    if (!tokenInfo) {
       throw new Error(`Invalid BEP20 token address for ${JSON.stringify(tx.token)}`);
     }
-
+    const {address: tokenAddress, decimal} = tokenInfo;
    
     const data = encodeFunctionData({
       abi: erc20Abi,
@@ -599,11 +603,13 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
 
   } else {
     // SPL token transfer
-    const tokenAddress  = await getSPLTokenAddress(tx.token, tx.senderAddressNetwork);
-    if (!tokenAddress) {
+    const tokenInfo = await getTokenAddress(tx.token, tx.senderAddressNetwork);
+    if (!tokenInfo) {
       throw new Error(`Invalid SPL token address for ${JSON.stringify(tx.token)}`);
     }
-    const mint = new PublicKey(tokenAddress);
+    const {address: tokenAddress, decimal} = tokenInfo;
+
+    const mint = new PublicKey(tokenAddress as string);
     const info = await connection.getAccountInfo(mint);
     if (!info) throw new Error('Mint not found');
     const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -625,12 +631,10 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       );
     }
 
-    const minInfo = await getMint(connection, mint, 'confirmed',programId);
-    const decimals = minInfo.decimals;
-    
+
     ixs.push(
       createTransferCheckedInstruction(
-        fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount, decimals, [], programId
+        fromAta, new PublicKey(tokenAddress), toAta, new PublicKey(tx.senderAddress), tx.amount, decimal, [], programId
       )
     );
    
@@ -679,34 +683,35 @@ function isNativeBSCToken(token: Token): boolean {
 }
 
 // Helper function to get token contract address and validate it's a valid ERC20 contract
-async function getTokenAddress(token: Token, network: ChainSupported): Promise<string | null> {
+async function getTokenAddress(token: Token, network: ChainSupported): Promise<{address:string, decimal:number} | null> {
   // Support EVM-compatible networks: Ethereum & BSC (no on-chain validation)
   const isEthereum = network === ChainSupported.Ethereum;
   const isBsc = network === ChainSupported.Bnb;
   if (!isEthereum && !isBsc) return null;
-
   if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
-    return token.Ethereum.ERC20.address || null;
+    return {
+      address: token.Ethereum.ERC20.address,
+      decimal: token.Ethereum.ERC20.decimals
+    };
   }
 
   if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
-    return token.Bnb.BEP20.address || null;
+    return {
+      address:token.Bnb.BEP20.address,
+      decimal:token.Bnb.BEP20.decimals
+    };
   }
-
-  return null;
-}
-
-async function getSPLTokenAddress(token: Token, network: ChainSupported): Promise<string | null> {
-  // Support Solana network only
-  const isSolana = network === ChainSupported.Solana;
-  if (!isSolana) return null;
 
   if ('Solana' in token && typeof token.Solana === 'object' && 'SPL' in token.Solana) {
-    return token.Solana.SPL.address || null;
+    return {
+      address: token.Solana.SPL.address,
+      decimal: token.Solana.SPL.decimals
+    };
   }
 
   return null;
 }
+
 
 
 // Helper function to determine if a token is native SOL

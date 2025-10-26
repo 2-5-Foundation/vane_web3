@@ -20,6 +20,8 @@ pub mod vane_crypto {
             | Token::Arbitrum(_)
             | Token::Polygon(_)
             | Token::Base(_) => {
+                // ECDSA
+                // encoding format
                 let token_network: ChainSupported = token.clone().into();
                 if token_network != network {
                     return Err(anyhow!("Token network does not match the network"));
@@ -31,6 +33,7 @@ pub mod vane_crypto {
                 let eip55 = address.to_checksum(None);
                 let returned_address = alloy_primitives::Address::parse_checksummed(&eip55, None)
                     .map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
+                
                 if **returned_address == **address {
                     Ok(token_network)
                 } else {
@@ -39,9 +42,11 @@ pub mod vane_crypto {
             }
             Token::Tron(_) => {
                 // TRON address verification
+                // check tron which cryptographic signature scheme they use
                 todo!("TRON address verification not implemented yet")
             }
             Token::Solana(_) => {
+                // ED25519
                 let token_network: ChainSupported = token.clone().into();
                 if token_network != network {
                     return Err(anyhow!("Token network does not match the network"));
@@ -78,6 +83,7 @@ pub mod vane_crypto {
         if sender_network == receiver_network {
             Ok(())
         } else {
+            // hook hyperbridge
             Err(anyhow!("currently complex cross chain route not supported"))
         }
     }
