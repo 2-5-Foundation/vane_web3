@@ -653,8 +653,8 @@ pub enum Token {
 pub enum EthereumToken {
     /// Native ETH
     ETH,
-    /// ERC-20 tokens with name and contract address
-    ERC20 { name: String, address: String },
+    /// ERC-20 tokens with name, contract address, and decimals
+    ERC20 { name: String, address: String, decimals: u8 },
 }
 
 /// BNB Smart Chain ecosystem tokens
@@ -662,8 +662,8 @@ pub enum EthereumToken {
 pub enum BnbToken {
     /// Native BNB
     BNB,
-    /// BEP-20 tokens with name and contract address
-    BEP20 { name: String, address: String },
+    /// BEP-20 tokens with name, contract address, and decimals
+    BEP20 { name: String, address: String, decimals: u8 },
 }
 
 /// Polkadot ecosystem tokens
@@ -680,8 +680,8 @@ pub enum PolkadotToken {
 pub enum SolanaToken {
     /// Native SOL
     SOL,
-    /// SPL tokens with name and mint address
-    SPL { name: String, address: String },
+    /// SPL tokens with name, mint address, and decimals
+    SPL { name: String, address: String, decimals: u8 },
 }
 
 /// TRON ecosystem tokens
@@ -689,8 +689,8 @@ pub enum SolanaToken {
 pub enum TronToken {
     /// Native TRX
     TRX,
-    /// TRC-20 tokens with name and contract address
-    TRC20 { name: String, address: String },
+    /// TRC-20 tokens with name, contract address, and decimals
+    TRC20 { name: String, address: String, decimals: u8 },
 }
 
 /// Optimism ecosystem tokens
@@ -698,8 +698,8 @@ pub enum TronToken {
 pub enum OptimismToken {
     /// Native ETH (on Optimism)
     ETH,
-    /// ERC-20 tokens with name and contract address
-    ERC20 { name: String, address: String },
+    /// ERC-20 tokens with name, contract address, and decimals
+    ERC20 { name: String, address: String, decimals: u8 },
 }
 
 /// Arbitrum ecosystem tokens
@@ -707,8 +707,8 @@ pub enum OptimismToken {
 pub enum ArbitrumToken {
     /// Native ETH (on Arbitrum)
     ETH,
-    /// ERC-20 tokens with name and contract address
-    ERC20 { name: String, address: String },
+    /// ERC-20 tokens with name, contract address, and decimals
+    ERC20 { name: String, address: String, decimals: u8 },
 }
 
 /// Polygon ecosystem tokens
@@ -716,8 +716,8 @@ pub enum ArbitrumToken {
 pub enum PolygonToken {
     /// Native POL
     POL,
-    /// ERC-20 tokens with name and contract address
-    ERC20 { name: String, address: String },
+    /// ERC-20 tokens with name, contract address, and decimals
+    ERC20 { name: String, address: String, decimals: u8 },
 }
 
 /// Base ecosystem tokens
@@ -725,8 +725,8 @@ pub enum PolygonToken {
 pub enum BaseToken {
     /// Native ETH (on Base)
     ETH,
-    /// ERC-20 tokens with name and contract address
-    ERC20 { name: String, address: String },
+    /// ERC-20 tokens with name, contract address, and decimals
+    ERC20 { name: String, address: String, decimals: u8 },
 }
 
 /// Bitcoin ecosystem tokens
@@ -746,37 +746,37 @@ impl From<Token> for String {
     fn from(value: Token) -> Self {
         match value {
             Token::Ethereum(EthereumToken::ETH) => "Ethereum:ETH".to_string(),
-            Token::Ethereum(EthereumToken::ERC20 { name, address }) => {
+            Token::Ethereum(EthereumToken::ERC20 { name, address, decimals: _ }) => {
                 format!("Ethereum:{} ({})", name, address)
             }
             Token::Bnb(BnbToken::BNB) => "BNB:BNB".to_string(),
-            Token::Bnb(BnbToken::BEP20 { name, address }) => format!("BNB:{} ({})", name, address),
+            Token::Bnb(BnbToken::BEP20 { name, address, decimals: _ }) => format!("BNB:{} ({})", name, address),
             Token::Polkadot(PolkadotToken::DOT) => "Polkadot:DOT".to_string(),
             Token::Polkadot(PolkadotToken::Asset { name, id }) => {
                 format!("Polkadot:{} ({})", name, id)
             }
             Token::Solana(SolanaToken::SOL) => "Solana:SOL".to_string(),
-            Token::Solana(SolanaToken::SPL { name, address }) => {
+            Token::Solana(SolanaToken::SPL { name, address, decimals: _ }) => {
                 format!("Solana:{} ({})", name, address)
             }
             Token::Tron(TronToken::TRX) => "TRON:TRX".to_string(),
-            Token::Tron(TronToken::TRC20 { name, address }) => {
+            Token::Tron(TronToken::TRC20 { name, address, decimals: _ }) => {
                 format!("TRON:{} ({})", name, address)
             }
             Token::Optimism(OptimismToken::ETH) => "Optimism:ETH".to_string(),
-            Token::Optimism(OptimismToken::ERC20 { name, address }) => {
+            Token::Optimism(OptimismToken::ERC20 { name, address, decimals: _ }) => {
                 format!("Optimism:{} ({})", name, address)
             }
             Token::Arbitrum(ArbitrumToken::ETH) => "Arbitrum:ETH".to_string(),
-            Token::Arbitrum(ArbitrumToken::ERC20 { name, address }) => {
+            Token::Arbitrum(ArbitrumToken::ERC20 { name, address, decimals: _ }) => {
                 format!("Arbitrum:{} ({})", name, address)
             }
             Token::Polygon(PolygonToken::POL) => "Polygon:POL".to_string(),
-            Token::Polygon(PolygonToken::ERC20 { name, address }) => {
+            Token::Polygon(PolygonToken::ERC20 { name, address, decimals: _ }) => {
                 format!("Polygon:{} ({})", name, address)
             }
             Token::Base(BaseToken::ETH) => "Base:ETH".to_string(),
-            Token::Base(BaseToken::ERC20 { name, address }) => {
+            Token::Base(BaseToken::ERC20 { name, address, decimals: _ }) => {
                 format!("Base:{} ({})", name, address)
             }
             Token::Bitcoin(BitcoinToken::BTC) => "Bitcoin:BTC".to_string(),
