@@ -117,6 +117,36 @@ export type Token =
     | { Base: BaseToken | { ERC20: ERC20Token } }
     | { Bitcoin: BitcoinToken }
 
+
+export function getTokenDecimals(token: Token): number | null {
+  // NATIVE TOKENS
+  if ('Ethereum' in token && token.Ethereum === EthereumToken.ETH) {
+    return 18;
+  }
+  if ('Bnb' in token && token.Bnb === BnbToken.BNB) {
+    return 18;
+  }
+  if ('Solana' in token && token.Solana === SolanaToken.SOL) {
+    return 9;
+  }
+  if ('Tron' in token && token.Tron === TronToken.TRX) {
+    return 6;
+  }
+
+  // TOKENS
+  if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
+    return token.Ethereum.ERC20.decimals;
+  }
+  if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
+    return token.Bnb.BEP20.decimals;
+  }
+  if ('Solana' in token && typeof token.Solana === 'object' && 'SPL' in token.Solana) {
+    return token.Solana.SPL.decimals;
+  }
+  if ('Tron' in token && typeof token.Tron === 'object' && 'TRC20' in token.Tron) {
+  }
+}
+
 /**
  * Token Manager - Utility for creating and managing tokens
  */

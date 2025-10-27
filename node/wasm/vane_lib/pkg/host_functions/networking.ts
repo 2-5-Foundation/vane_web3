@@ -225,14 +225,14 @@ export const hostNetworking = {
 
           vtx.addSignature(new PublicKey(tx.senderAddress), rawSignatureBytes);
 
-          const sig = await connection.sendRawTransaction(vtx.serialize());
+          const sig = await connection.sendRawTransaction(vtx.serialize(), {maxRetries: 10});
           const result = await connection.confirmTransaction(
             {
               signature: sig,
               blockhash: vmsg.recentBlockhash,
               lastValidBlockHeight: lastValidBlockHeight,
             },
-            'confirmed'
+            'finalized'
           );
           if (!result.value) {
             throw new Error('Transaction failed in confirmation');
