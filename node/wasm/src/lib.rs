@@ -674,6 +674,91 @@ impl WasmMainServiceWorker {
     ) -> Result<(), Error> {
         let mut txn_inner = txn.borrow_mut().clone();
 
+        // here there should be 2 paths (mitigating the case where we cant just sign the raw tx on client side)
+        // 1. When the tx is already been sent
+        // 2. when the tx will be submitted on vane wasm app
+
+        //-------------------------------------------------------------------------------------
+
+        //------------------ A CASE WHERE THE TX IS ALREADY BEEN SENT -------------------------
+
+        //-------------------------------------------------------------------------------------
+
+        if let TxStatus::FailedToSubmitTxn(ref reason) = txn_inner.status {
+            error!(target: "MainServiceWorker","tx submission failed: {reason}");
+              // update local db on success tx
+              let db_tx = DbTxStateMachine {
+                tx_hash: vec![],
+                amount: txn_inner.amount.clone(),
+                token: txn_inner.token.clone(),
+                sender: txn_inner.sender_address.clone(),
+                receiver: txn_inner.receiver_address.clone(),
+                sender_network: txn_inner.sender_address_network.clone(),
+                receiver_network: txn_inner.receiver_address_network.clone(),
+                success: false,
+            };
+
+            self.db_worker.update_failed_tx(db_tx).await?;
+            info!(target: "MainServiceWorker","Db recorded failed tx");
+
+            if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
+                ttl_wrapper.update_value(txn_inner.clone());
+
+                self.rpc_sender_channel
+                    .borrow_mut()
+                    .send(txn_inner.clone())
+                    .await?;
+            }else{
+                let now = (js_sys::Date::now() / 1000.0) as u32;
+                self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), TtlWrapper::new(txn_inner.clone(), now));
+                self.rpc_sender_channel
+                    .borrow_mut()
+                    .send(txn_inner.clone())
+                    .await?;
+            }
+            return Ok(());
+        }
+
+        if let TxStatus::TxSubmissionPassed(tx_hash) = txn_inner.status {
+            info!(target: "MainServiceWorker","tx already submitted: {tx_hash:?}");
+              // update local db on success tx
+              let db_tx = DbTxStateMachine {
+                tx_hash: tx_hash.to_vec(),
+                amount: txn_inner.amount.clone(),
+                token: txn_inner.token.clone(),
+                sender: txn_inner.sender_address.clone(),
+                receiver: txn_inner.receiver_address.clone(),
+                sender_network: txn_inner.sender_address_network.clone(),
+                receiver_network: txn_inner.receiver_address_network.clone(),
+                success: true,
+            };
+            self.db_worker.update_success_tx(db_tx).await?;
+            info!(target: "MainServiceWorker","Db recorded success tx");
+
+            if let Some(ttl_wrapper) = self.lru_cache.borrow_mut().get_mut(&txn_inner.tx_nonce.into()) {
+                ttl_wrapper.update_value(txn_inner.clone());
+
+                self.rpc_sender_channel
+                    .borrow_mut()
+                    .send(txn_inner.clone())
+                    .await?;
+            }else{
+                let now = (js_sys::Date::now() / 1000.0) as u32;
+                self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), TtlWrapper::new(txn_inner.clone(), now));
+                self.rpc_sender_channel
+                    .borrow_mut()
+                    .send(txn_inner.clone())
+                    .await?;
+            }
+            return Ok(());
+        }
+
+        //-------------------------------------------------------------------------------------
+
+        //----------------------------- A NORMAL SITUATION HERE -------------------------------
+
+        //-------------------------------------------------------------------------------------
+
         // verify receiver again
         self.wasm_tx_processing_worker
             .borrow()
