@@ -233,19 +233,24 @@ impl PublicInterfaceWorker {
         if let TxStatus::Reverted(_) = tx.status {
             return Err(JsError::new("Transaction already reverted"));
         }
+
         if let TxStatus::ReceiverNotRegistered = tx.status {
             return Err(JsError::new("Receiver not registered"));
         }
+
         if let TxStatus::RecvAddrFailed = tx.status {
             return Err(JsError::new("Receiver address failed"));
         }
+
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+
         } else {
+
             tx.sender_confirmation();
             tx.increment_version();
             let sender = sender_channel.clone();
@@ -260,6 +265,7 @@ impl PublicInterfaceWorker {
             let mut ttl_wrapper = self.lru_cache.borrow_mut().get(&tx.tx_nonce.into()).ok_or(JsError::new(&format!(
                 " Failed get transaction from cache, transaction expired"
             )))?.clone();
+            
             ttl_wrapper.update_value(tx.clone());
             let _= self.lru_cache.borrow_mut().push(tx.tx_nonce.into(), ttl_wrapper);
         }

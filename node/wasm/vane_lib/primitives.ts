@@ -1,3 +1,5 @@
+import { hexToBytes } from "viem/utils";
+
 export enum ChainSupported {
     Ethereum = "Ethereum",
     Polkadot = "Polkadot",
@@ -612,6 +614,18 @@ export class TxStateMachineManager {
       this.tx.status = {type: "Reverted", data: reason};
     }
    
+    setTxSubmissionPassed(hash: string): void {
+      this.tx.status = {type: "TxSubmissionPassed", data: {hash: hexToBytes(hash as `0x${string}`)}};
+    }
+
+    setFeesAmount(amount: number): void {
+      this.tx.feesAmount = amount;
+    }
+
+    setTxSubmissionFailed(reason: string): void {
+      this.tx.status = {type: "FailedToSubmitTxn", data: reason};
+    }
+    
     updateStatus(status: TxStatus): void {
       this.tx.status = status;
     }
