@@ -33,7 +33,7 @@ pub mod vane_crypto {
                 let eip55 = address.to_checksum(None);
                 let returned_address = alloy_primitives::Address::parse_checksummed(&eip55, None)
                     .map_err(|e| anyhow!("Invalid EVM address format: {}", e))?;
-                
+
                 if **returned_address == **address {
                     Ok(token_network)
                 } else {

@@ -33,8 +33,8 @@ use crate::{
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, SavedPeerInfo, StorageExport, TtlWrapper, Token, TxStateMachine, TxStatus,
-    UserAccount, UserMetrics, 
+    NodeConnectionStatus, SavedPeerInfo, StorageExport, Token, TtlWrapper, TxStateMachine,
+    TxStatus, UserAccount, UserMetrics,
 };
 
 #[derive(Clone)]
@@ -201,9 +201,10 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
 
         let now = (js_sys::Date::now() / 1000.0) as u32;
-        self.lru_cache
-            .borrow_mut()
-            .push(tx_state_machine.tx_nonce.into(), TtlWrapper::new(tx_state_machine.clone(), now));
+        self.lru_cache.borrow_mut().push(
+            tx_state_machine.tx_nonce.into(),
+            TtlWrapper::new(tx_state_machine.clone(), now),
+        );
 
         info!("propagated initiated transaction to tx handling layer");
         // Return the constructed tx to JS so callers can keep a handle
@@ -248,9 +249,7 @@ impl PublicInterfaceWorker {
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
         } else {
-
             tx.sender_confirmation();
             tx.increment_version();
             let sender = sender_channel.clone();
@@ -261,13 +260,21 @@ impl PublicInterfaceWorker {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-            
-            let mut ttl_wrapper = self.lru_cache.borrow_mut().get(&tx.tx_nonce.into()).ok_or(JsError::new(&format!(
-                " Failed get transaction from cache, transaction expired"
-            )))?.clone();
-            
+
+            let mut ttl_wrapper = self
+                .lru_cache
+                .borrow_mut()
+                .get(&tx.tx_nonce.into())
+                .ok_or(JsError::new(&format!(
+                    " Failed get transaction from cache, transaction expired"
+                )))?
+                .clone();
+
             ttl_wrapper.update_value(tx.clone());
-            let _= self.lru_cache.borrow_mut().push(tx.tx_nonce.into(), ttl_wrapper);
+            let _ = self
+                .lru_cache
+                .borrow_mut()
+                .push(tx.tx_nonce.into(), ttl_wrapper);
         }
         Ok(())
     }
@@ -369,20 +376,18 @@ impl PublicInterfaceWorker {
         for key in expired_keys {
             self.lru_cache.borrow_mut().pop(&key);
         }
-        
+
         let tx_updates = self
             .lru_cache
             .borrow()
             .iter()
             .map(|(_k, v)| {
-
                 let tx_integrity_hash = Self::compute_tx_integrity_hash(v.get_value());
                 self.tx_integrity
                     .borrow_mut()
                     .insert(v.get_value().tx_nonce.into(), tx_integrity_hash);
 
                 v.get_value().clone()
-
             })
             .collect::<Vec<TxStateMachine>>();
         debug!("lru: {tx_updates:#?}");
@@ -587,7 +592,7 @@ impl PublicInterfaceWorker {
             .borrow()
             .iter()
             .filter_map(|(k, v)| match v.get_value().status {
-                TxStatus::Reverted(_) | TxStatus::TxSubmissionPassed(_) => Some(*k),
+                TxStatus::Reverted(_) | TxStatus::TxSubmissionPassed { hash: _ } => Some(*k),
                 _ => None,
             })
             .collect();

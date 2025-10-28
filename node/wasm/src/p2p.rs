@@ -15,18 +15,17 @@ use wasm_bindgen_futures::wasm_bindgen::closure::Closure;
 use web_sys::wasm_bindgen::JsCast;
 
 use libp2p::{
-    core::transport::{ upgrade, OrTransport, Transport as TransportTrait},
+    core::transport::{upgrade, OrTransport, Transport as TransportTrait},
     kad::{
         store::{MemoryStore, MemoryStoreConfig},
         Behaviour as DhtBehaviour, Config as KademliaConfig, Event as DhtEvent, GetProvidersOk,
-        GetProvidersResult, GetRecordOk, GetRecordResult, InboundRequest, PeerRecord,
-        QueryResult
+        GetProvidersResult, GetRecordOk, GetRecordResult, InboundRequest, PeerRecord, QueryResult,
     },
     multiaddr::Protocol,
     relay::client::{Behaviour as RelayClientBehaviour, Event as RelayClientEvent},
     request_response::{
-        json::Behaviour as JsonBehaviour, Behaviour, Codec, Event, Message,
-        ProtocolSupport, ResponseChannel,
+        json::Behaviour as JsonBehaviour, Behaviour, Codec, Event, Message, ProtocolSupport,
+        ResponseChannel,
     },
     swarm::{derive_prelude, NetworkBehaviour, SwarmEvent},
     Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder,
@@ -163,7 +162,7 @@ impl WasmP2pWorker {
         );
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
-        
+
         Ok(Self {
             live,
             node_id: peer_id,
@@ -264,7 +263,6 @@ impl WasmP2pWorker {
                 info!(target:"p2p","🌐 External address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
-
                 info!(target:"p2p","⚡ External address confirmed: {}", address);
                 let account_key = self.user_account_id.clone();
                 let mut value = address.to_string();
