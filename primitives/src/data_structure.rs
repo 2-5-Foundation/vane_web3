@@ -89,7 +89,7 @@ pub enum TxStatus {
     /// any errors related to the tx
     TxError(String),
     /// if submission passed (tx-hash)
-    TxSubmissionPassed([u8; 32]),
+    TxSubmissionPassed { hash: Vec<u8> },
     /// if the receiver has not registered to vane yet
     ReceiverNotRegistered,
     /// if the transaction is reverted
@@ -131,55 +131,17 @@ impl<'de> Deserialize<'de> for TxStatus {
                     Ok(TxStatus::FailedToSubmitTxn(reason))
                 }
                 "TxSubmissionPassed" => {
-                    // Accept hex string, byte array, or nested {hash: [...]}
-                    if let Some(v) = val {
-                        // Handle nested {hash: [...]} structure from TypeScript
-                        if let Some(obj) = v.as_object() {
-                            if let Some(hash_val) = obj.get("hash") {
-                                if let Some(s) = hash_val.as_str() {
-                                    // hex string
-                                    let s = s.strip_prefix("0x").unwrap_or(s);
-                                    let bytes = hex::decode(s)
-                                        .map_err(|e| E::custom(format!("invalid hex: {e}")))?;
-                                    let mut arr = [0u8; 32];
-                                    let copy_len = core::cmp::min(32, bytes.len());
-                                    arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
-                                    Ok(TxStatus::TxSubmissionPassed(arr))
-                                } else if let Some(arrv) = hash_val.as_array() {
-                                    // numeric array
-                                    let mut arr = [0u8; 32];
-                                    for (i, byte) in arrv.iter().take(32).enumerate() {
-                                        arr[i] = byte.as_u64().unwrap_or(0) as u8;
-                                    }
-                                    Ok(TxStatus::TxSubmissionPassed(arr))
-                                } else {
-                                    Err(E::custom("invalid TxSubmissionPassed hash value"))
-                                }
-                            } else {
-                                Err(E::custom("missing hash field in TxSubmissionPassed"))
-                            }
-                        } else if let Some(s) = v.as_str() {
-                            // hex string (direct)
-                            let s = s.strip_prefix("0x").unwrap_or(s);
-                            let bytes = hex::decode(s)
-                                .map_err(|e| E::custom(format!("invalid hex: {e}")))?;
-                            let mut arr = [0u8; 32];
-                            let copy_len = core::cmp::min(32, bytes.len());
-                            arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
-                            Ok(TxStatus::TxSubmissionPassed(arr))
-                        } else if let Some(arrv) = v.as_array() {
-                            // numeric array (direct)
-                            let mut arr = [0u8; 32];
-                            for (i, byte) in arrv.iter().take(32).enumerate() {
-                                arr[i] = byte.as_u64().unwrap_or(0) as u8;
-                            }
-                            Ok(TxStatus::TxSubmissionPassed(arr))
-                        } else {
-                            Err(E::custom("invalid TxSubmissionPassed value"))
-                        }
-                    } else {
-                        Err(E::custom("missing TxSubmissionPassed value"))
-                    }
+                    let hash = val
+                        .and_then(|v| v.get("hash"))
+                        .and_then(|h| h.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|b| b.as_u64().map(|n| n as u8))
+                                .collect::<Vec<u8>>()
+                        })
+                        .unwrap_or_default();
+
+                    Ok(TxStatus::TxSubmissionPassed { hash })
                 }
                 "TxError" => {
                     let reason = val
@@ -506,8 +468,8 @@ impl TxStateMachine {
     pub fn tx_submission_failed(&mut self, reason: String) {
         self.status = TxStatus::FailedToSubmitTxn(reason)
     }
-    pub fn tx_submission_passed(&mut self, tx_hash: [u8; 32]) {
-        self.status = TxStatus::TxSubmissionPassed(tx_hash)
+    pub fn tx_submission_passed(&mut self, tx_hash: Vec<u8>) {
+        self.status = TxStatus::TxSubmissionPassed { hash: tx_hash }
     }
     pub fn net_confirmed(&mut self) {
         self.status = TxStatus::NetConfirmed
@@ -679,7 +641,11 @@ pub enum EthereumToken {
     /// Native ETH
     ETH,
     /// ERC-20 tokens with name, contract address, and decimals
-    ERC20 { name: String, address: String, decimals: u8 },
+    ERC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// BNB Smart Chain ecosystem tokens
@@ -688,7 +654,11 @@ pub enum BnbToken {
     /// Native BNB
     BNB,
     /// BEP-20 tokens with name, contract address, and decimals
-    BEP20 { name: String, address: String, decimals: u8 },
+    BEP20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Polkadot ecosystem tokens
@@ -706,7 +676,11 @@ pub enum SolanaToken {
     /// Native SOL
     SOL,
     /// SPL tokens with name, mint address, and decimals
-    SPL { name: String, address: String, decimals: u8 },
+    SPL {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// TRON ecosystem tokens
@@ -715,7 +689,11 @@ pub enum TronToken {
     /// Native TRX
     TRX,
     /// TRC-20 tokens with name, contract address, and decimals
-    TRC20 { name: String, address: String, decimals: u8 },
+    TRC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Optimism ecosystem tokens
@@ -724,7 +702,11 @@ pub enum OptimismToken {
     /// Native ETH (on Optimism)
     ETH,
     /// ERC-20 tokens with name, contract address, and decimals
-    ERC20 { name: String, address: String, decimals: u8 },
+    ERC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Arbitrum ecosystem tokens
@@ -733,7 +715,11 @@ pub enum ArbitrumToken {
     /// Native ETH (on Arbitrum)
     ETH,
     /// ERC-20 tokens with name, contract address, and decimals
-    ERC20 { name: String, address: String, decimals: u8 },
+    ERC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Polygon ecosystem tokens
@@ -742,7 +728,11 @@ pub enum PolygonToken {
     /// Native POL
     POL,
     /// ERC-20 tokens with name, contract address, and decimals
-    ERC20 { name: String, address: String, decimals: u8 },
+    ERC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Base ecosystem tokens
@@ -751,7 +741,11 @@ pub enum BaseToken {
     /// Native ETH (on Base)
     ETH,
     /// ERC-20 tokens with name, contract address, and decimals
-    ERC20 { name: String, address: String, decimals: u8 },
+    ERC20 {
+        name: String,
+        address: String,
+        decimals: u8,
+    },
 }
 
 /// Bitcoin ecosystem tokens
@@ -771,37 +765,69 @@ impl From<Token> for String {
     fn from(value: Token) -> Self {
         match value {
             Token::Ethereum(EthereumToken::ETH) => "Ethereum:ETH".to_string(),
-            Token::Ethereum(EthereumToken::ERC20 { name, address, decimals: _ }) => {
+            Token::Ethereum(EthereumToken::ERC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Ethereum:{} ({})", name, address)
             }
             Token::Bnb(BnbToken::BNB) => "BNB:BNB".to_string(),
-            Token::Bnb(BnbToken::BEP20 { name, address, decimals: _ }) => format!("BNB:{} ({})", name, address),
+            Token::Bnb(BnbToken::BEP20 {
+                name,
+                address,
+                decimals: _,
+            }) => format!("BNB:{} ({})", name, address),
             Token::Polkadot(PolkadotToken::DOT) => "Polkadot:DOT".to_string(),
             Token::Polkadot(PolkadotToken::Asset { name, id }) => {
                 format!("Polkadot:{} ({})", name, id)
             }
             Token::Solana(SolanaToken::SOL) => "Solana:SOL".to_string(),
-            Token::Solana(SolanaToken::SPL { name, address, decimals: _ }) => {
+            Token::Solana(SolanaToken::SPL {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Solana:{} ({})", name, address)
             }
             Token::Tron(TronToken::TRX) => "TRON:TRX".to_string(),
-            Token::Tron(TronToken::TRC20 { name, address, decimals: _ }) => {
+            Token::Tron(TronToken::TRC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("TRON:{} ({})", name, address)
             }
             Token::Optimism(OptimismToken::ETH) => "Optimism:ETH".to_string(),
-            Token::Optimism(OptimismToken::ERC20 { name, address, decimals: _ }) => {
+            Token::Optimism(OptimismToken::ERC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Optimism:{} ({})", name, address)
             }
             Token::Arbitrum(ArbitrumToken::ETH) => "Arbitrum:ETH".to_string(),
-            Token::Arbitrum(ArbitrumToken::ERC20 { name, address, decimals: _ }) => {
+            Token::Arbitrum(ArbitrumToken::ERC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Arbitrum:{} ({})", name, address)
             }
             Token::Polygon(PolygonToken::POL) => "Polygon:POL".to_string(),
-            Token::Polygon(PolygonToken::ERC20 { name, address, decimals: _ }) => {
+            Token::Polygon(PolygonToken::ERC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Polygon:{} ({})", name, address)
             }
             Token::Base(BaseToken::ETH) => "Base:ETH".to_string(),
-            Token::Base(BaseToken::ERC20 { name, address, decimals: _ }) => {
+            Token::Base(BaseToken::ERC20 {
+                name,
+                address,
+                decimals: _,
+            }) => {
                 format!("Base:{} ({})", name, address)
             }
             Token::Bitcoin(BitcoinToken::BTC) => "Bitcoin:BTC".to_string(),

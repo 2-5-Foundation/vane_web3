@@ -137,7 +137,7 @@ impl WasmTxProcessingWorker {
         post_multi_id == txn.multi_id
     }
 
-    pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<[u8; 32], anyhow::Error> {
+    pub async fn submit_tx(&mut self, tx: TxStateMachine) -> Result<Vec<u8>, anyhow::Error> {
         let tx_hash_result = unsafe {
             let tx_value =
                 to_value(&tx).map_err(|e| anyhow!("failed to convert tx to js value: {:?}", e))?;
@@ -146,7 +146,7 @@ impl WasmTxProcessingWorker {
 
         match tx_hash_result {
             Ok(res) => {
-                let tx_hash = from_value::<[u8; 32]>(res)
+                let tx_hash = from_value::<Vec<u8>>(res)
                     .map_err(|e| anyhow!("failed to convert tx hash to bytes: {:?}", e))?;
                 Ok(tx_hash)
             }
