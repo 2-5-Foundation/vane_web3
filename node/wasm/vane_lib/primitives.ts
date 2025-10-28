@@ -490,7 +490,7 @@ export class TokenManager {
 interface TxStatusData {
     FailedToSubmitTxn: string;
     TxError: string;
-    TxSubmissionPassed: { hash: Uint8Array };
+    TxSubmissionPassed: { hash: number[] };
     Reverted: string;
 }
    
@@ -538,18 +538,18 @@ export type ChainTransactionType =
     | {
         ethereum: {
             ethUnsignedTxFields: UnsignedEip1559;
-            callPayload: [Uint8Array, Uint8Array];
+            callPayload: [number[], number[]];
         };
     }
     | {
         solana: {
-            callPayload: Uint8Array;
+            callPayload: number[];
             latestBlockHeight: number;
         };
     }
     | {
         bnb: {
-            callPayload: [Uint8Array, Uint8Array];
+            callPayload: [number[], number[]];
             bnbLegacyTxFields: UnsignedBnbLegacy;
         };
     };
@@ -563,7 +563,7 @@ export interface TxStateMachine {
     /** Hashed sender and receiver address to bind the addresses while sending */
     multiId: number[]; // [u8; 32] in Rust -> number[] in TS
     /** Signature of the receiver id */
-    recvSignature?: Uint8Array;
+    recvSignature?: number[];
     /** Token type */
     token: Token;
     /** State Machine status */
@@ -575,7 +575,7 @@ export interface TxStateMachine {
     /** Fees amount */
     feesAmount: number; // u8 in Rust -> number in TS
     /** Signed call payload (signed hash of the transaction) */
-    signedCallPayload?: Uint8Array;
+    signedCallPayload?: number[];
     /** Call payload (hash of transaction and raw transaction bytes) */
     callPayload?: ChainTransactionType | null;
     /** Inbound Request id for p2p */
@@ -599,7 +599,7 @@ export class TxStateMachineManager {
       this.tx = tx;
     }
    
-    setReceiverSignature(signature: Uint8Array): void {
+    setReceiverSignature(signature: number[]): void {
       this.tx.recvSignature = signature;
     }
    
@@ -607,15 +607,15 @@ export class TxStateMachineManager {
       this.tx.callPayload = payload;
     }
    
-    setSignedCallPayload(payload: Uint8Array): void {
+    setSignedCallPayload(payload: number[]): void {
       this.tx.signedCallPayload = payload;
     }
     setRevertedReason(reason: string): void {
       this.tx.status = {type: "Reverted", data: reason};
     }
    
-    setTxSubmissionPassed(hash: string): void {
-      this.tx.status = {type: "TxSubmissionPassed", data: {hash: hexToBytes(hash as `0x${string}`)}};
+    setTxSubmissionPassed(hash: number[]): void {
+      this.tx.status = {type: "TxSubmissionPassed", data: {hash: hash}};
     }
 
     setFeesAmount(amount: number): void {
