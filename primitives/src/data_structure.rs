@@ -131,10 +131,35 @@ impl<'de> Deserialize<'de> for TxStatus {
                     Ok(TxStatus::FailedToSubmitTxn(reason))
                 }
                 "TxSubmissionPassed" => {
-                    // Accept hex string or byte array
+                    // Accept hex string, byte array, or nested {hash: [...]}
                     if let Some(v) = val {
-                        if let Some(s) = v.as_str() {
-                            // hex string
+                        // Handle nested {hash: [...]} structure from TypeScript
+                        if let Some(obj) = v.as_object() {
+                            if let Some(hash_val) = obj.get("hash") {
+                                if let Some(s) = hash_val.as_str() {
+                                    // hex string
+                                    let s = s.strip_prefix("0x").unwrap_or(s);
+                                    let bytes = hex::decode(s)
+                                        .map_err(|e| E::custom(format!("invalid hex: {e}")))?;
+                                    let mut arr = [0u8; 32];
+                                    let copy_len = core::cmp::min(32, bytes.len());
+                                    arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
+                                    Ok(TxStatus::TxSubmissionPassed(arr))
+                                } else if let Some(arrv) = hash_val.as_array() {
+                                    // numeric array
+                                    let mut arr = [0u8; 32];
+                                    for (i, byte) in arrv.iter().take(32).enumerate() {
+                                        arr[i] = byte.as_u64().unwrap_or(0) as u8;
+                                    }
+                                    Ok(TxStatus::TxSubmissionPassed(arr))
+                                } else {
+                                    Err(E::custom("invalid TxSubmissionPassed hash value"))
+                                }
+                            } else {
+                                Err(E::custom("missing hash field in TxSubmissionPassed"))
+                            }
+                        } else if let Some(s) = v.as_str() {
+                            // hex string (direct)
                             let s = s.strip_prefix("0x").unwrap_or(s);
                             let bytes = hex::decode(s)
                                 .map_err(|e| E::custom(format!("invalid hex: {e}")))?;
@@ -143,7 +168,7 @@ impl<'de> Deserialize<'de> for TxStatus {
                             arr[..copy_len].copy_from_slice(&bytes[..copy_len]);
                             Ok(TxStatus::TxSubmissionPassed(arr))
                         } else if let Some(arrv) = v.as_array() {
-                            // numeric array
+                            // numeric array (direct)
                             let mut arr = [0u8; 32];
                             for (i, byte) in arrv.iter().take(32).enumerate() {
                                 arr[i] = byte.as_u64().unwrap_or(0) as u8;
@@ -178,10 +203,10 @@ impl<'de> Deserialize<'de> for TxStatus {
             // Simple string variant name
             serde_json::Value::String(s) => from_tag::<D::Error>(&s, None),
 
-            // Object forms: { Variant: value } or { type: Variant, value: X }
+            // Object forms: { Variant: value } or { type: Variant, data: X }
             serde_json::Value::Object(map) => {
                 if let Some(t) = map.get("type").and_then(|v| v.as_str()) {
-                    let val = map.get("value");
+                    let val = map.get("data");
                     return from_tag::<D::Error>(t, val);
                 }
 
