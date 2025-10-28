@@ -250,7 +250,10 @@ impl PublicInterfaceWorker {
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            tx.sender_confirmation();
+            
+            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) {
+                tx.sender_confirmation();
+            }
             tx.increment_version();
             let sender = sender_channel.clone();
             sender
