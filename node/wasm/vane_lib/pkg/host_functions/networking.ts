@@ -152,7 +152,7 @@ export const hostNetworking = {
           const serializedTxBytes = 'ethereum' in tx.callPayload! ? tx.callPayload.ethereum.callPayload[1] : null;
           if (!serializedTxBytes) throw new Error('Invalid call payload for Ethereum transaction');
           const signatureBytes = tx.signedCallPayload;
-          const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
+          const signedTransactionHex = reconstructSignedTransaction(new Uint8Array(serializedTxBytes), new Uint8Array(signatureBytes));
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
           // Ensure it's mined before returning (Anvil auto-mines, but wait for safety)
           await publicClient.waitForTransactionReceipt({ hash });
@@ -183,7 +183,7 @@ export const hostNetworking = {
           const serializedTxBytes = 'bnb' in tx.callPayload! ? tx.callPayload.bnb.callPayload[1] : null;
           if (!serializedTxBytes) throw new Error('Invalid call payload for BSC transaction');
           const signatureBytes = tx.signedCallPayload;
-          const signedTransactionHex = reconstructSignedTransaction(serializedTxBytes, signatureBytes);
+          const signedTransactionHex = reconstructSignedTransaction(new Uint8Array(serializedTxBytes), new Uint8Array(signatureBytes));
           const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTransactionHex });
           // Wait for receipt to ensure balance updates are visible
           await publicClient.waitForTransactionReceipt({ hash });
@@ -216,7 +216,7 @@ export const hostNetworking = {
           const rawSignatureBytes = new Uint8Array(tx.signedCallPayload!);
 
           if (!('solana' in tx.callPayload!)) throw new Error('Invalid call payload for Solana transaction');
-          const vmsg = VersionedMessage.deserialize(tx.callPayload.solana.callPayload);
+          const vmsg = VersionedMessage.deserialize(new Uint8Array(tx.callPayload.solana.callPayload));
           const lastValidBlockHeight = tx.callPayload.solana.latestBlockHeight;
           let vtx  = new VersionedTransaction(vmsg);
           if (rawSignatureBytes.length != 64) {
@@ -439,9 +439,9 @@ export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateM
         ethUnsignedTxFields: fields,
         callPayload: [
           // digest as bytes (32)
-          hexToBytes(digest),
+          Array.from(hexToBytes(digest)),
           // unsigned payload bytes (what you hashed)
-          hexToBytes(signingPayload),
+          Array.from(hexToBytes(signingPayload)),
         ]
       }
     }
@@ -539,9 +539,9 @@ export async function createTestTxBSC(tx: TxStateMachine): Promise<TxStateMachin
         bnbLegacyTxFields: fields,
         callPayload: [
           // digest as bytes (32)
-          hexToBytes(digest),
+          Array.from(hexToBytes(digest)),
           // unsigned payload bytes (what you hashed)
-          hexToBytes(signingPayload),
+          Array.from(hexToBytes(signingPayload)),
         ]
       }
     }
@@ -593,7 +593,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       feesAmount: Number(feesInSol),
       callPayload: {
         solana: {
-          callPayload: messageBytes as Uint8Array,
+          callPayload: Array.from(messageBytes),
           latestBlockHeight: lastValidBlockHeight,
         }
       },
@@ -656,7 +656,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       feesAmount: Number(feesInSol),
       callPayload: {
         solana: {
-          callPayload: new Uint8Array(messageBytes),
+          callPayload: Array.from(messageBytes),
           latestBlockHeight: lastValidBlockHeight,
         }
       },

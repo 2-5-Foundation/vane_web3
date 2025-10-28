@@ -107,7 +107,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
          // @ts-ignore
          const signature = await account.signMessage({ message: tx.receiverAddress });
          const txManager = new TxStateMachineManager(tx);
-         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         txManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
          const updatedTx = txManager.getTx();
          console.log('🔑 Malicious node confirmed the transaction');
          await receiverConfirm(updatedTx);

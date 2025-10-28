@@ -789,7 +789,7 @@ test("should successfully send to Solana chain and confirm self", async () => {
     }
     
     const txManager = new TxStateMachineManager(senderPendinglatestTx);
-    txManager.setSignedCallPayload(txSignature);
+    txManager.setSignedCallPayload(Array.from(txSignature));
     const updatedTx = txManager.getTx();
     await senderConfirm(updatedTx);
   

@@ -174,7 +174,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
           const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
 
           const recvTxManager = new TxStateMachineManager(latestTx);
-          recvTxManager.setReceiverSignature(signature);
+          recvTxManager.setReceiverSignature(Array.from(signature));
           const recvUpdatedTx = recvTxManager.getTx();
           await receiverConfirm(recvUpdatedTx);
       }
