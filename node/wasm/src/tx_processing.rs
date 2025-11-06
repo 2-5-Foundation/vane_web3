@@ -270,31 +270,47 @@ impl WasmTxProcessingWorker {
 
         match signature.recover_from_prehash(<&B256>::from(&hashed_msg)) {
             Ok(recovered_addr) => {
+                // Get uncompressed public key (65 bytes: 0x04 + 64 bytes coordinates)
                 let encoded_point = recovered_addr.to_encoded_point(false).to_bytes().to_vec();
-                
+
+                // Verify the recovered point is on the secp256k1 curve
                 if !Self::is_on_curve_sec1(&encoded_point) {
-                    return Err(anyhow!("addresses verification failed: point not on curve: who: {who}"));
-                }
-                
-                // TRON: keccak256 hash, take last 20 bytes, prepend 0x41
-                let pub_key_hash = keccak_256(&encoded_point[1..]);
-                // TODO
-                // after getting the hash, prefix with 0x41 , then base58 encode  
-                let mut tron_addr = vec![0x41];
-                tron_addr.extend_from_slice(&pub_key_hash[12..]);
-                
-                // Encode to base58check
-                let recovered_tron = bs58::encode(&tron_addr).with_check().into_string();
-                
-                info!("recovered TRON addr: {:?}: who: {who}", recovered_tron);
-                info!("expected TRON addr: {:?}: who: {who}", address);
-                
-                if recovered_tron == address {
-                    Ok(())
-                } else {
-                    Err(anyhow!("TRON address recovery failed"))
-                }
+                return Err(anyhow!(
+                    "TRON signature verification failed: point not on curve: who: {who}"
+                ));
             }
+            
+            // TRON address generation:
+            // 1. Hash the public key (without 0x04 prefix) using keccak256
+            let pub_key_hash = keccak_256(&encoded_point[1..]); // 32 bytes hash
+            
+            // 2. Take last 20 bytes of the hash
+            let addr_bytes = &pub_key_hash[12..]; // pub_key_hash[12..32] = 20 bytes
+            
+            // 3. Prepend TRON mainnet prefix 0x41
+            let mut tron_addr = vec![0x41];
+            tron_addr.extend_from_slice(addr_bytes);
+            
+            // 4. Encode to base58check (adds checksum and converts to base58)
+            let recovered_tron = bs58::encode(&tron_addr)
+                .with_check()
+                .into_string();
+            
+            info!("recovered TRON addr: {}: who: {}", recovered_tron, who);
+            info!("expected TRON addr: {}: who: {}", address, who);
+            
+            // Verify recovered address matches expected address
+            if recovered_tron == address {
+                Ok(())
+            } else {
+                Err(anyhow!(
+                    "TRON address verification failed: recovered '{}' != expected '{}' for {}", 
+                    recovered_tron, 
+                    address, 
+                    who
+                ))
+            }
+        }
             Err(err) => Err(anyhow!("TRON signature verification failed: {err}"))
         }
     }
