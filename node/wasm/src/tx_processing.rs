@@ -278,6 +278,8 @@ impl WasmTxProcessingWorker {
                 
                 // TRON: keccak256 hash, take last 20 bytes, prepend 0x41
                 let pub_key_hash = keccak_256(&encoded_point[1..]);
+                // TODO
+                // after getting the hash, prefix with 0x41 , then base58 encode  
                 let mut tron_addr = vec![0x41];
                 tron_addr.extend_from_slice(&pub_key_hash[12..]);
                 

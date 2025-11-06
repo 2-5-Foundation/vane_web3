@@ -627,6 +627,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   if (isNativeSol) {
     const from = new PublicKey(tx.senderAddress);
     const to   = new PublicKey(tx.receiverAddress);
+    // modify add multiple receiver
   
     // Build the transfer instruction
     const lamports = tx.amount;
@@ -641,6 +642,8 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       toPubkey: to,
       lamports: Number(lamports),
     });
+
+    // modify add multiple receiver
   
     // Compile to a v0 message
     const msgV0 = new TransactionMessage({
@@ -734,45 +737,13 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
 
 // ===== TRON-specific createTx implementation =====
 export async function createTestTxTron(tx: TxStateMachine): Promise<TxStateMachine> {
-  const rpcUrl = pickRpc('/api/prepare-tron', ChainSupported.Tron);
-  
-  // For local test server
-  const resp = await fetch(`${rpcUrl}/wallet/createtransaction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      owner_address: tx.senderAddress,
-      to_address: tx.receiverAddress,
-      amount: Number(tx.amount)
-    })
-  });
-  
-  if (!resp.ok) {
-    throw new Error(`TRON createtransaction failed: ${resp.status}`);
-  }
-  
-  const data = await resp.json();
-  const rawDataHex = data.raw_data_hex;
-  const txID = data.txID;
-  
-  if (!rawDataHex || !txID) {
-    throw new Error('Invalid TRON transaction response');
-  }
-  
-  const updated: TxStateMachine = {
-    ...tx,
-    feesAmount: 0, // TRON basic transfers often free (bandwidth points)
-    callPayload: {
-      tron: {
-        callPayload: [
-          hexToBytes(txID as Hex),
-          hexToBytes(rawDataHex as Hex)
-        ]
-      }
-    }
-  };
-  
-  return updated;
+    // construct tronWeb object
+    // check if the provided token is native 
+    // handle native tx construction
+    // handle Trc20 construction
+
+    // return the object.
+    
 }
 
 

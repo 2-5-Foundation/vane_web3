@@ -165,6 +165,10 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
   });
 
+  beforeEach(async () => {
+    // initialize wasm node
+  });
+
   test("should successfully send 10 TRX transaction", async () => {
     console.log(" \n \n TEST CASE 7: should successfully send 10 TRX transaction");
     
@@ -256,6 +260,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     console.log('✅ Receiver balance change:', receiverBalanceChange, 'TRX');
     expect(Number(receiverBalanceChange)).toEqual(10);
   });
+
+
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
     console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
