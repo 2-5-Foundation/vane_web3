@@ -121,6 +121,62 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     
   })
 
+  it("should receive 10 TRX and confirm successfully", async() => {
+    console.log(" \n \n TEST CASE 2: should receive 10 TRX and confirm successfully (RECEIVER_NODE)");
+    
+    // Import TRON utilities
+    const { getTronWallets, getTronBalance } = await import('./utils/wasm_utils.js');
+    const tronWallets = getTronWallets();
+    const receiverTronWallet = tronWallets[1]; // Receiver is wallet 1
+    
+    console.log('🔑 Receiver TRON address:', receiverTronWallet.address);
+    
+    // Get initial balance
+    const receiverBalanceBefore = await getTronBalance(receiverTronWallet.address);
+    console.log('💰 Receiver balance before:', receiverBalanceBefore / 1000000n, 'TRX');
+   
+    await nodeCoordinator.waitForEvent(
+        NODE_EVENTS.TRANSACTION_RECEIVED,
+        async () => {
+         console.log('👂 TRON TRANSACTION_RECEIVED');
+         const receivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+         const latestTx = receivedTx[0];
+         
+         // Verify this is the TRX transaction
+         if (latestTx.codeWord !== 'TronTest') {
+           console.log('⚠️ Skipping non-TRON transaction');
+           return;
+         }
+         
+         console.log('🔑 Signing TRON address confirmation');
+         const signature = await receiverTronWallet.signMessage(latestTx.receiverAddress);
+         const txManager = new TxStateMachineManager(latestTx);
+         txManager.setReceiverSignature(hexToBytes(signature as `0x${string}`));
+         const updatedTx = txManager.getTx();
+         await receiverConfirm(updatedTx);
+       },
+        60000
+      );
+
+    await nodeCoordinator.waitForEvent(
+      NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
+          // Wait for the sender node to submit the transaction
+          await new Promise(resolve => setTimeout(resolve, 15000));
+          console.log('TRON sender finished its job and disconnected');
+          
+          const receiverBalanceAfter = await getTronBalance(receiverTronWallet.address);
+          console.log('💰 Receiver balance after:', receiverBalanceAfter / 1000000n, 'TRX');
+          
+          const balanceChange = (receiverBalanceAfter - receiverBalanceBefore) / 1000000n;
+          console.log('✅ Receiver balance change:', balanceChange, 'TRX');
+          expect(Number(balanceChange)).toEqual(10);
+       },
+       60000
+    );
+    
+  })
+
+
   // test("should successfully receive ERC20 token transaction", async () => {
   //   await new Promise(resolve => setTimeout(resolve, 15000));
   //   console.log(" \n \n TEST CASE 2: should successfully receive ERC20 token transaction and confirm it (RECEIVER_NODE)");

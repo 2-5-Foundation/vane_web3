@@ -6,6 +6,7 @@ use std::fmt::format;
 
 use anyhow::anyhow;
 use base58ck;
+
 use log::{error, info};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
@@ -102,6 +103,10 @@ impl WasmTxProcessingWorker {
                 ChainTransactionType::Solana { call_payload, .. } => {
                     // Solana needs the raw transaction
                     call_payload.clone()
+                }
+                ChainTransactionType::Tron { call_payload, .. } => {
+                    // TRON needs the txID (first element of tuple)
+                    call_payload.0.clone()
                 }
             };
             let sender_address = tx.sender_address.clone();
@@ -247,8 +252,49 @@ impl WasmTxProcessingWorker {
         msg: Vec<u8>,
         who: &str,
     ) -> Result<(), anyhow::Error> {
-        info!("TRON signature verification for {who}: {address}");
-        todo!("TRON signature verification not implemented yet")
+        // TRON uses ECDSA (same as Ethereum) with keccak256
+        let hashed_msg = {
+            if who == "Receiver" {
+                let mut signable_msg = Vec::<u8>::new();
+                signable_msg.extend_from_slice(b"\x19TRON Signed Message:\n");
+                signable_msg.extend_from_slice(msg.len().to_string().as_bytes());
+                signable_msg.extend_from_slice(msg.as_slice());
+                keccak_256(signable_msg.as_slice())
+            } else {
+                msg.try_into().unwrap()
+            }
+        };
+
+        let signature = EcdsaSignature::try_from(signature.as_slice())
+            .map_err(|err| anyhow!("failed to convert ecdsa signature: {:?}", err))?;
+
+        match signature.recover_from_prehash(<&B256>::from(&hashed_msg)) {
+            Ok(recovered_addr) => {
+                let encoded_point = recovered_addr.to_encoded_point(false).to_bytes().to_vec();
+                
+                if !Self::is_on_curve_sec1(&encoded_point) {
+                    return Err(anyhow!("addresses verification failed: point not on curve: who: {who}"));
+                }
+                
+                // TRON: keccak256 hash, take last 20 bytes, prepend 0x41
+                let pub_key_hash = keccak_256(&encoded_point[1..]);
+                let mut tron_addr = vec![0x41];
+                tron_addr.extend_from_slice(&pub_key_hash[12..]);
+                
+                // Encode to base58check
+                let recovered_tron = bs58::encode(&tron_addr).with_check().into_string();
+                
+                info!("recovered TRON addr: {:?}: who: {who}", recovered_tron);
+                info!("expected TRON addr: {:?}: who: {who}", address);
+                
+                if recovered_tron == address {
+                    Ok(())
+                } else {
+                    Err(anyhow!("TRON address recovery failed"))
+                }
+            }
+            Err(err) => Err(anyhow!("TRON signature verification failed: {err}"))
+        }
     }
 
     /// Verify signature for Solana

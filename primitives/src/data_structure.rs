@@ -420,6 +420,11 @@ pub enum ChainTransactionType {
         #[serde(rename = "bnbLegacyTxFields")]
         bnb_legacy_tx_fields: UnsignedBnbLegacy,
     },
+    #[serde(rename = "tron")]
+    Tron {
+        #[serde(rename = "callPayload")]
+        call_payload: (Vec<u8>, Vec<u8>), // (txID, raw_data_hex)
+    },
 }
 
 #[cfg(feature = "wasm")]

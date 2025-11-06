@@ -165,6 +165,97 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
   });
 
+  test("should successfully send 10 TRX transaction", async () => {
+    console.log(" \n \n TEST CASE 7: should successfully send 10 TRX transaction");
+    
+    // Import TRON utilities
+    const { getTronWallets, getTronBalance } = await import('./utils/wasm_utils.js');
+    const tronWallets = getTronWallets();
+    
+    const senderTronWallet = tronWallets[0];
+    const receiverTronWallet = tronWallets[1];
+    
+    console.log('🔑 Sender TRON address:', senderTronWallet.address);
+    console.log('🔑 Receiver TRON address:', receiverTronWallet.address);
+    
+    // Get initial balances (in SUN, 1 TRX = 1,000,000 SUN)
+    const senderBalanceBefore = await getTronBalance(senderTronWallet.address);
+    const receiverBalanceBefore = await getTronBalance(receiverTronWallet.address);
+    
+    console.log('💰 Sender balance before:', senderBalanceBefore / 1000000n, 'TRX');
+    console.log('💰 Receiver balance before:', receiverBalanceBefore / 1000000n, 'TRX');
+    
+    // Add TRON account to the node
+    await addAccount(senderTronWallet.address, ChainSupported.Tron);
+    
+    // Create TRX token
+    const trxToken = TokenManager.createNativeToken(ChainSupported.Tron);
+    
+    // Initiate transaction: 10 TRX = 10,000,000 SUN
+    await initiateTransaction(
+      senderTronWallet.address,
+      receiverTronWallet.address,
+      BigInt(10_000_000), // 10 TRX in SUN
+      trxToken,
+      'TronTest',
+      ChainSupported.Tron,
+      ChainSupported.Tron
+    );
+    
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Receiver confirms
+    const receiverTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const latestTx = receiverTx[0];
+    
+    console.log('🔑 Receiver signing address confirmation');
+    const recvSignature = await receiverTronWallet.signMessage(latestTx.receiverAddress);
+    const recvTxManager = new TxStateMachineManager(latestTx);
+    recvTxManager.setReceiverSignature(hexToBytes(recvSignature as `0x${string}`));
+    const recvUpdatedTx = recvTxManager.getTx();
+    await receiverConfirm(recvUpdatedTx);
+    
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Sender signs and confirms transaction
+    const senderTx: TxStateMachine[] = await fetchPendingTxUpdates();
+    const senderLatestTx = senderTx[0];
+    
+    if (!senderLatestTx.callPayload) {
+      throw new Error('No call payload found');
+    }
+    
+    if (!('tron' in senderLatestTx.callPayload)) {
+      throw new Error('No TRON call payload found');
+    }
+    
+    const [txID, _rawDataHex] = senderLatestTx.callPayload.tron.callPayload;
+    console.log('🔑 Sender signing TRON transaction:', bytesToHex(txID));
+    
+    // Sign the transaction ID
+    const txSignature = await senderTronWallet.signTransaction(bytesToHex(txID));
+    
+    const senderTxManager = new TxStateMachineManager(senderLatestTx);
+    senderTxManager.setSignedCallPayload(hexToBytes(txSignature as `0x${string}`));
+    const senderUpdatedTx = senderTxManager.getTx();
+    console.log('🔑 TRON TX UPDATED', senderUpdatedTx.status);
+    await senderConfirm(senderUpdatedTx);
+    
+    // Wait for transaction to be mined
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    
+    // Check final balances
+    const senderBalanceAfter = await getTronBalance(senderTronWallet.address);
+    const receiverBalanceAfter = await getTronBalance(receiverTronWallet.address);
+    
+    console.log('💰 Sender balance after:', senderBalanceAfter / 1000000n, 'TRX');
+    console.log('💰 Receiver balance after:', receiverBalanceAfter / 1000000n, 'TRX');
+    
+    // Verify receiver got 10 TRX
+    const receiverBalanceChange = (receiverBalanceAfter - receiverBalanceBefore) / 1000000n;
+    console.log('✅ Receiver balance change:', receiverBalanceChange, 'TRX');
+    expect(Number(receiverBalanceChange)).toEqual(10);
+  });
   test('should successfully initiate and confirm a transaction and submit it to the network', async () => {
     console.log(" \n \n TEST CASE 1: should successfully initiate and confirm a transaction and submit it to the network");
     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
@@ -609,6 +700,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     expect(balanceChange).toEqual(10);
     
 });
+
+  
 
 // test("should successfully send to EVM chain and confirm", async () => {
 //   console.log(" \n \n TEST CASE 7: should successfully send to EVM chain and confirm (BNB)");

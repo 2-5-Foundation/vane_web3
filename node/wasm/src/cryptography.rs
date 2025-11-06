@@ -38,8 +38,26 @@ pub mod vane_crypto {
                 }
             }
             Token::Tron(_) => {
-                // TRON address verification
-                todo!("TRON address verification not implemented yet")
+                let token_network: ChainSupported = token.clone().into();
+                if token_network != network {
+                    return Err(anyhow!("Token network does not match the network"));
+                }
+                
+                // TRON addresses start with 'T' and are base58check encoded
+                if !account.starts_with('T') {
+                    return Err(anyhow!("Invalid TRON address: must start with 'T'"));
+                }
+                
+                // Decode base58check (includes checksum verification)
+                let decoded = decode_check(account)
+                    .map_err(|_| anyhow!("Invalid TRON address: checksum failed"))?;
+                
+                // TRON address should be 21 bytes (1 byte prefix + 20 bytes address)
+                if decoded.len() != 21 || decoded[0] != 0x41 {
+                    return Err(anyhow!("Invalid TRON address format"));
+                }
+                
+                Ok(token_network)
             }
             Token::Solana(_) => {
                 let token_network: ChainSupported = token.clone().into();

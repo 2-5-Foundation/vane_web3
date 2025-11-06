@@ -1,11 +1,26 @@
-import init, * as wasmModule from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { hostFunctions } from '../../../node/wasm/host_functions/main';
-import { createTestClient, http, TestClient,walletActions, publicActions, WalletActions, PublicActions } from 'viem';
-import { foundry } from 'viem/chains';
-import { privateKeyToAccount } from 'viem/accounts';
-import { PublicInterfaceWorkerJs } from '../../../node/wasm/vane_lib/pkg/vane_wasm_node.js';
-import { logger } from '../../../node/wasm/host_functions/logging.js';
-import { getAssociatedTokenAddress, getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import init, * as wasmModule from "../../../node/wasm/vane_lib/pkg/vane_wasm_node.js";
+import { hostFunctions } from "../../../node/wasm/host_functions/main";
+import {
+  createTestClient,
+  http,
+  TestClient,
+  walletActions,
+  publicActions,
+  WalletActions,
+  PublicActions,
+} from "viem";
+import { foundry } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { PublicInterfaceWorkerJs } from "../../../node/wasm/vane_lib/pkg/vane_wasm_node.js";
+import { logger } from "../../../node/wasm/host_functions/logging.js";
+import {
+  getAssociatedTokenAddress,
+  getMint,
+  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
+import TronWeb from "tronweb";
+
 import {
   Connection as SolanaConnection,
   LAMPORTS_PER_SOL,
@@ -14,54 +29,56 @@ import {
 } from "@solana/web3.js";
 
 export function logWasmExports() {
-    console.log('📦 WASM Module Exports:');
-    
-    const exports = Object.keys(wasmModule);
-    console.log(`🔧 Total exports: ${exports.length}`);
-    
-    const functions = [];
-    const classes = [];
-    const constants = [];
-    const other = [];
-    
-    for (const exportName of exports) {
-      const exportValue = (wasmModule as any)[exportName];
-      const type = typeof exportValue;
-      
-      if (type === 'function') {
-        functions.push(exportName);
-      } else if (type === 'object' && exportValue?.constructor?.name) {
-        classes.push(`${exportName} (${exportValue.constructor.name})`);
-      } else if (type === 'number' || type === 'string' || type === 'boolean') {
-        constants.push(`${exportName}: ${exportValue}`);
-      } else {
-        other.push(`${exportName} (${type})`);
-      }
+  console.log("📦 WASM Module Exports:");
+
+  const exports = Object.keys(wasmModule);
+  console.log(`🔧 Total exports: ${exports.length}`);
+
+  const functions = [];
+  const classes = [];
+  const constants = [];
+  const other = [];
+
+  for (const exportName of exports) {
+    const exportValue = (wasmModule as any)[exportName];
+    const type = typeof exportValue;
+
+    if (type === "function") {
+      functions.push(exportName);
+    } else if (type === "object" && exportValue?.constructor?.name) {
+      classes.push(`${exportName} (${exportValue.constructor.name})`);
+    } else if (type === "number" || type === "string" || type === "boolean") {
+      constants.push(`${exportName}: ${exportValue}`);
+    } else {
+      other.push(`${exportName} (${type})`);
     }
-    
-    if (functions.length > 0) {
-      console.log(`\n🔧 Functions (${functions.length}):`);
-      functions.forEach(name => console.log(`  - ${name}`));
-    }
-    
-    if (classes.length > 0) {
-      console.log(`\n📦 Classes/Objects (${classes.length}):`);
-      classes.forEach(name => console.log(`  - ${name}`));
-    }
-    
-    if (constants.length > 0) {
-      console.log(`\n📊 Constants (${constants.length}):`);
-      constants.forEach(name => console.log(`  - ${name}`));
-    }
-    
-    if (other.length > 0) {
-      console.log(`\n❓ Other exports (${other.length}):`);
-      other.forEach(name => console.log(`  - ${name}`));
-    }
-    console.log("xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx")    
+  }
+
+  if (functions.length > 0) {
+    console.log(`\n🔧 Functions (${functions.length}):`);
+    functions.forEach((name) => console.log(`  - ${name}`));
+  }
+
+  if (classes.length > 0) {
+    console.log(`\n📦 Classes/Objects (${classes.length}):`);
+    classes.forEach((name) => console.log(`  - ${name}`));
+  }
+
+  if (constants.length > 0) {
+    console.log(`\n📊 Constants (${constants.length}):`);
+    constants.forEach((name) => console.log(`  - ${name}`));
+  }
+
+  if (other.length > 0) {
+    console.log(`\n❓ Other exports (${other.length}):`);
+    other.forEach((name) => console.log(`  - ${name}`));
+  }
+  console.log(
+    "xxxxxxxxxxxxxxxxxxxxxx END LOGGING WASM EXPORTS xxxxxxxxxxxxxxxxxxxxxxx"
+  );
 }
 
-export function setupWasmLogging() {    
+export function setupWasmLogging() {
   try {
     hostFunctions.hostLogging.setLogLevel(
       hostFunctions.hostLogging.LogLevel.Debug
@@ -70,45 +87,46 @@ export function setupWasmLogging() {
     // ✅ always return the same logger instance used by hostLogging
     return hostFunctions.hostLogging.getLogInstance();
   } catch (error) {
-    console.warn('⚠️ Failed to setup WASM logging:', error);
+    console.warn("⚠️ Failed to setup WASM logging:", error);
     return null;
   }
 }
-  
-  export async function waitForWasmInitialization(timeoutMs: number = 15000): Promise<void> {    
-    const startTime = Date.now();
-    const checkInterval = 500;
-    
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error(`WASM initialization timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
-      
-      const checkInitialization = () => {
-        const elapsed = Date.now() - startTime;
-        
-        try {
-          // Try to access WASM exports to verify it's ready
-          if (wasmModule && typeof wasmModule.start_vane_web3 === 'function') {
-            console.log(`✅ WASM fully initialized after ${elapsed}ms`);
-            clearTimeout(timeoutId);
-            resolve();
-            return;
-          }
-        } catch (error) {
-          // Still initializing, continue checking
-        }
-        
-        if (elapsed < timeoutMs) {
-          console.log(`⏳ Still initializing... (${elapsed}ms elapsed)`);
-          setTimeout(checkInitialization, checkInterval);
-        }
-      };
-      
-      setTimeout(checkInitialization, checkInterval);
-    });
-  }
 
+export async function waitForWasmInitialization(
+  timeoutMs: number = 15000
+): Promise<void> {
+  const startTime = Date.now();
+  const checkInterval = 500;
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`WASM initialization timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const checkInitialization = () => {
+      const elapsed = Date.now() - startTime;
+
+      try {
+        // Try to access WASM exports to verify it's ready
+        if (wasmModule && typeof wasmModule.start_vane_web3 === "function") {
+          console.log(`✅ WASM fully initialized after ${elapsed}ms`);
+          clearTimeout(timeoutId);
+          resolve();
+          return;
+        }
+      } catch (error) {
+        // Still initializing, continue checking
+      }
+
+      if (elapsed < timeoutMs) {
+        console.log(`⏳ Still initializing... (${elapsed}ms elapsed)`);
+        setTimeout(checkInitialization, checkInterval);
+      }
+    };
+
+    setTimeout(checkInitialization, checkInterval);
+  });
+}
 
 export interface RelayNodeInfo {
   peerId: string;
@@ -125,34 +143,40 @@ export interface WasmNodeInstance {
  * Reads relay node info from the file created by the start-relay.js script
  * This allows browser tests to get the real multiaddr without using child_process
  */
-export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<RelayNodeInfo> {
+export async function loadRelayNodeInfo(
+  timeoutMs: number = 10000
+): Promise<RelayNodeInfo> {
   console.log(`🔍 Loading relay node info from relay-info.json`);
-  
+
   return new Promise<RelayNodeInfo>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      reject(new Error(`Relay info not available within ${timeoutMs}ms. Make sure to start the relay node first using: bun run start-relay`));
+      reject(
+        new Error(
+          `Relay info not available within ${timeoutMs}ms. Make sure to start the relay node first using: bun run start-relay`
+        )
+      );
     }, timeoutMs);
 
     const checkRelayInfo = async () => {
       try {
         // In browser environment, we'll fetch the file via HTTP
-        const response = await fetch('/relay-info.json');
+        const response = await fetch("/relay-info.json");
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const relayInfo = await response.json();
-        
+
         // Proceed as soon as essential fields are present; don't require ready: true
         if (relayInfo.peerId && relayInfo.multiAddr) {
           clearTimeout(timeoutId);
           console.log(`✅ Loaded relay node info`);
           console.log(`🎯 Peer ID: ${relayInfo.peerId}`);
           console.log(`🔗 MultiAddr: ${relayInfo.multiAddr}`);
-          
+
           resolve({
             peerId: relayInfo.peerId,
-            multiAddr: relayInfo.multiAddr
+            multiAddr: relayInfo.multiAddr,
           });
         } else {
           // Relay not ready yet, check again
@@ -171,36 +195,46 @@ export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<Rela
 
 export async function getSplTokenBalance(
   connection: SolanaConnection,
-  tokenAddress: PublicKey,   // the mint (a.k.a. token address)
-  owner: PublicKey           // the wallet whose balance you want
+  tokenAddress: PublicKey, // the mint (a.k.a. token address)
+  owner: PublicKey // the wallet whose balance you want
 ) {
   // 1) Which token program owns this mint?
   const mintInfo = await connection.getAccountInfo(tokenAddress);
-  if (!mintInfo) throw new Error('Mint not found');
+  if (!mintInfo) throw new Error("Mint not found");
   const programId = mintInfo.owner.equals(TOKEN_2022_PROGRAM_ID)
     ? TOKEN_2022_PROGRAM_ID
     : TOKEN_PROGRAM_ID;
 
   // 2) Derive the owner’s ATA for this mint
-  const ata = await getAssociatedTokenAddress(tokenAddress, owner, false, programId);
+  const ata = await getAssociatedTokenAddress(
+    tokenAddress,
+    owner,
+    false,
+    programId
+  );
 
   // 3) If ATA doesn’t exist → balance is 0
   const ataInfo = await connection.getAccountInfo(ata);
   if (!ataInfo) {
     // Also useful: pull decimals so you can format 0 properly
-    const mint = await getMint(connection, tokenAddress, 'confirmed', programId);
+    const mint = await getMint(
+      connection,
+      tokenAddress,
+      "confirmed",
+      programId
+    );
     return {
       ata,
       amountRaw: 0n,
       decimals: mint.decimals,
       uiAmount: 0,
-      uiAmountString: '0',
+      uiAmountString: "0",
       exists: false,
     };
   }
 
   // 4) Read the balance
-  const bal = await connection.getTokenAccountBalance(ata, 'confirmed');
+  const bal = await connection.getTokenAccountBalance(ata, "confirmed");
   // bal.value.amount is a decimal-string of raw units; use BigInt for precision
   return {
     ata,
@@ -212,35 +246,149 @@ export async function getSplTokenBalance(
   };
 }
 
-export function getWallets(): [TestClient & WalletActions & PublicActions,string][] {
-  const [walletClient1,privkey1] = [createTestClient({
-    account: privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'), 
-    chain: foundry,
-    mode: 'anvil',
-    transport: http(),
-  }).extend(walletActions).extend(publicActions),'0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80']
+export function getWallets(): [
+  TestClient & WalletActions & PublicActions,
+  string
+][] {
+  const [walletClient1, privkey1] = [
+    createTestClient({
+      account: privateKeyToAccount(
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      ),
+      chain: foundry,
+      mode: "anvil",
+      transport: http(),
+    })
+      .extend(walletActions)
+      .extend(publicActions),
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  ];
 
-  const [walletClient2,privkey2] = [createTestClient({
-    account: privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'), 
-    chain: foundry,
-    mode: 'anvil',
-    transport: http(),
-  }).extend(walletActions).extend(publicActions),'0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d']
+  const [walletClient2, privkey2] = [
+    createTestClient({
+      account: privateKeyToAccount(
+        "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+      ),
+      chain: foundry,
+      mode: "anvil",
+      transport: http(),
+    })
+      .extend(walletActions)
+      .extend(publicActions),
+    "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  ];
 
-  const [walletClient3,privkey3] = [createTestClient({
-    account: privateKeyToAccount('0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'), 
-    chain: foundry,
-    mode: 'anvil',
-    transport: http(),
-  }).extend(walletActions).extend(publicActions),'0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a']
-  
-  const [walletClient4,privkey4] = [createTestClient({
-    account: privateKeyToAccount('0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6'), 
-    chain: foundry,
-    mode: 'anvil',
-    transport: http(),
-  }).extend(walletActions).extend(publicActions),'0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6']
-  
-  return [[walletClient1,privkey1], [walletClient2,privkey2], [walletClient3,privkey3], [walletClient4,privkey4]];
+  const [walletClient3, privkey3] = [
+    createTestClient({
+      account: privateKeyToAccount(
+        "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+      ),
+      chain: foundry,
+      mode: "anvil",
+      transport: http(),
+    })
+      .extend(walletActions)
+      .extend(publicActions),
+    "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+  ];
+
+  const [walletClient4, privkey4] = [
+    createTestClient({
+      account: privateKeyToAccount(
+        "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
+      ),
+      chain: foundry,
+      mode: "anvil",
+      transport: http(),
+    })
+      .extend(walletActions)
+      .extend(publicActions),
+    "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+  ];
+
+  return [
+    [walletClient1, privkey1],
+    [walletClient2, privkey2],
+    [walletClient3, privkey3],
+    [walletClient4, privkey4],
+  ];
 }
 
+// TRON wallet utilities
+export interface TronWallet {
+  address: string;
+  privateKey: string;
+  signMessage: (message: string) => Promise<string>;
+  signTransaction: (txID: string) => Promise<string>;
+}
+
+/**
+ * Get TRON test wallets from the Tron Quickstart
+ */
+export function getTronWallets(): TronWallet[] {
+  const accounts = [
+    {
+      address: "TBbKRLwvpNNWtaUcZVaMYwEBPASdjPAg4c",
+      privateKey:
+        "fdd7f719d27aa2edd14648be4d3c165b31124464c03b6ad3efc410e087002828",
+    },
+    {
+      address: "TMtuamEqq14k88wTv6xuBJrhe37FiHdhtp",
+      privateKey:
+        "6fda3f5678baf62ecb3cb1f7955e80537b27e381f0f355928e55c921a2b8d934",
+    },
+    {
+      address: "TTKEMWdocdos8uW7MqGoEYyyrVeUc8RWbE",
+      privateKey:
+        "852a5a32b1b71021a26c24e8612c81d6abf3a41b1a0670f117fca073e7fc9ed7",
+    },
+    {
+      address: "TSHjeLEorGCxyjGYPF3zxDM4mi84MmxtNJ",
+      privateKey:
+        "974aacbeef0a8829f737fd9bfe9b1734a7a375e58586d259c99dcf063e35e9e5",
+    },
+  ];
+
+  return accounts.map((acc) => ({
+    address: acc.address,
+    privateKey: acc.privateKey,
+    signMessage: async (message: string) => {
+      const tronWeb = new TronWeb({
+        fullHost: "http://127.0.0.1:9090",
+        privateKey: acc.privateKey,
+      });
+
+      // Sign message with TRON prefix
+      const signature = await tronWeb.trx.sign(tronWeb.toHex(message));
+      return signature;
+    },
+    signTransaction: async (txID: string) => {
+          const tronWeb = new TronWeb({
+        fullHost: 'http://127.0.0.1:9090',
+        privateKey: acc.privateKey
+      });
+      // Sign the transaction ID (which is already hashed)
+      const signature = await tronWeb.trx.sign(txID);
+      return signature;
+    },
+  }));
+}
+
+/**
+ * Get TRON balance in SUN (1 TRX = 1,000,000 SUN)
+ */
+export async function getTronBalance(address: string): Promise<bigint> {
+  try {
+    const response = await fetch("http://127.0.0.1:9090/wallet/getaccount", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    });
+
+    const data = await response.json();
+    return BigInt(data.balance || 0);
+  } catch (error) {
+    console.error("Failed to get TRON balance:", error);
+    return 0n;
+  }
+}

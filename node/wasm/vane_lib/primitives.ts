@@ -516,6 +516,11 @@ export type ChainTransactionType =
             callPayload: [Uint8Array, Uint8Array];
             bnbLegacyTxFields: UnsignedBnbLegacy;
         };
+    }
+    | {
+        tron: {
+            callPayload: [Uint8Array, Uint8Array]; // [txID, raw_data_hex]
+        };
     };
 
 /** Transaction data structure state machine, passed in rpc and p2p swarm */

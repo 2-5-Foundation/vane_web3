@@ -86,6 +86,7 @@ const pickRpc = (nextApiRoute: string, chain: ChainSupported): string => {
   if (USE_ANVIL) {
     if (chain === ChainSupported.Ethereum) return 'http://127.0.0.1:8545';
     if (chain === ChainSupported.Bnb) return 'http://127.0.0.1:8555';
+    if (chain === ChainSupported.Tron) return 'http://127.0.0.1:9090';
   }
   // Ensure it starts with a leading slash for Next.js API routes
   return nextApiRoute.startsWith('/') ? nextApiRoute : `/${nextApiRoute}`;
@@ -110,10 +111,11 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Bnb, {
   }
 };
 
-function getChainFamily(chain: ChainSupported): 'ethereum' | 'bsc' | 'solana' | 'polkadot' | 'unknown' {
+function getChainFamily(chain: ChainSupported): 'ethereum' | 'bsc' | 'solana' | 'tron' | 'polkadot' | 'unknown' {
   if (chain === ChainSupported.Ethereum) return 'ethereum';
   if (chain === ChainSupported.Bnb) return 'bsc';
   if (chain === ChainSupported.Solana) return 'solana';
+  if (chain === ChainSupported.Tron) return 'tron';
   if (chain === ChainSupported.Polkadot) return 'polkadot';
   return 'unknown';
 }
@@ -254,6 +256,57 @@ export const hostNetworking = {
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
         return hexToBytes(hashHex as Hex);
       }
+
+      if (family === 'tron') {
+        // Local test server
+        if (USE_ANVIL) {
+          const rpcUrl = pickRpc('/api/prepare-tron', ChainSupported.Tron);
+          
+          if (!('tron' in tx.callPayload!)) {
+            throw new Error('Invalid call payload for TRON transaction');
+          }
+          
+          const txID = tx.callPayload.tron.callPayload[0];
+          const rawDataHex = tx.callPayload.tron.callPayload[1];
+          const signatureBytes = tx.signedCallPayload!;
+          
+          // Broadcast signed transaction
+          const resp = await fetch(`${rpcUrl}/wallet/broadcasttransaction`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              txID: bytesToHex(txID),
+              raw_data_hex: bytesToHex(rawDataHex),
+              signature: [bytesToHex(signatureBytes)]
+            })
+          });
+          
+          if (!resp.ok) {
+            throw new Error(`TRON broadcast failed: ${resp.status}`);
+          }
+          
+          const data = await resp.json();
+          if (!data.result || !data.txid) {
+            throw new Error(`TRON broadcast failed: ${JSON.stringify(data)}`);
+          }
+          
+          return hexToBytes(data.txid as Hex);
+        }
+        
+        // Live mode
+        const resp = await fetch('/api/submit-tron', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ tx: toWire(tx) }),
+        });
+        
+        if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}`);
+        const data = await resp.json();
+        const hashHex: string = data?.hash;
+        if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
+        return hexToBytes(hashHex as Hex);
+      }
   
       throw new Error(`Unhandled chain family: ${family}`);
       
@@ -325,6 +378,24 @@ export const hostNetworking = {
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
         return fromWire(data?.prepared)
+      }
+
+      if (family === 'tron') {
+        if (USE_ANVIL) {
+          return await createTestTxTron(tx);
+        }
+        
+        // Live mode: proxy via Next.js API route
+        const resp = await fetch('/api/prepare-tron', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ tx: toWire(tx) }),
+        });
+        
+        if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
+        const data = await resp.json();
+        return fromWire(data?.prepared);
       }
 
       throw new Error(`Unhandled chain family: ${family}`);
@@ -661,6 +732,49 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   }
 }
 
+// ===== TRON-specific createTx implementation =====
+export async function createTestTxTron(tx: TxStateMachine): Promise<TxStateMachine> {
+  const rpcUrl = pickRpc('/api/prepare-tron', ChainSupported.Tron);
+  
+  // For local test server
+  const resp = await fetch(`${rpcUrl}/wallet/createtransaction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      owner_address: tx.senderAddress,
+      to_address: tx.receiverAddress,
+      amount: Number(tx.amount)
+    })
+  });
+  
+  if (!resp.ok) {
+    throw new Error(`TRON createtransaction failed: ${resp.status}`);
+  }
+  
+  const data = await resp.json();
+  const rawDataHex = data.raw_data_hex;
+  const txID = data.txID;
+  
+  if (!rawDataHex || !txID) {
+    throw new Error('Invalid TRON transaction response');
+  }
+  
+  const updated: TxStateMachine = {
+    ...tx,
+    feesAmount: 0, // TRON basic transfers often free (bandwidth points)
+    callPayload: {
+      tron: {
+        callPayload: [
+          hexToBytes(txID as Hex),
+          hexToBytes(rawDataHex as Hex)
+        ]
+      }
+    }
+  };
+  
+  return updated;
+}
+
 
 
 // Helper function to determine if a token is a native Ethereum token
@@ -771,6 +885,15 @@ export function toWire(tx: TxStateMachine): any {
             callPayload: tx.callPayload.solana.callPayload ? Array.from(tx.callPayload.solana.callPayload) : null
           }
         };
+      } else if ('tron' in tx.callPayload) {
+        return {
+          tron: {
+            callPayload: tx.callPayload.tron.callPayload ? [
+              Array.from(tx.callPayload.tron.callPayload[0]),
+              Array.from(tx.callPayload.tron.callPayload[1])
+            ] : null
+          }
+        };
       }
       return tx.callPayload;
     })() : null
@@ -827,6 +950,15 @@ export function fromWire(wireTx: any): TxStateMachine {
           solana: {
             ...wireTx.callPayload.solana,
             callPayload: wireTx.callPayload.solana.callPayload ? new Uint8Array(wireTx.callPayload.solana.callPayload) : null
+          }
+        };
+      } else if ('tron' in wireTx.callPayload) {
+        return {
+          tron: {
+            callPayload: wireTx.callPayload.tron.callPayload ? [
+              new Uint8Array(wireTx.callPayload.tron.callPayload[0]),
+              new Uint8Array(wireTx.callPayload.tron.callPayload[1])
+            ] : null
           }
         };
       }

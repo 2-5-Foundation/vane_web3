@@ -1515,6 +1515,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
+ "sha2 0.10.9",
  "tinyvec",
 ]
 
@@ -9082,6 +9083,7 @@ dependencies = [
  "async-stream",
  "base58",
  "base58ck",
+ "bs58",
  "console_error_panic_hook",
  "curve25519-dalek",
  "db-wasm",
