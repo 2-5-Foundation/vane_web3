@@ -627,6 +627,7 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   if (isNativeSol) {
     const from = new PublicKey(tx.senderAddress);
     const to   = new PublicKey(tx.receiverAddress);
+    const fees_address   = new PublicKey('7xeLqntMPqv6DutGwaV7cZhwKsWC3tTT43wvEv11Vhg5'); // fee collector address
     // modify add multiple receiver
   
     // Build the transfer instruction
@@ -643,13 +644,19 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       lamports: Number(lamports),
     });
 
+     const transferIx2 = SystemProgram.transfer({
+      fromPubkey: from,
+      toPubkey: fees_address,
+      lamports: 0.001 * LAMPORTS_PER_SOL, // fixed 0.01 SOL fee
+    });
+
     // modify add multiple receiver
   
     // Compile to a v0 message
     const msgV0 = new TransactionMessage({
       payerKey: from,
       recentBlockhash: blockhash,
-      instructions: [transferIx],
+      instructions: [transferIx, transferIx2],
     }).compileToV0Message();
   
     const unsigned = new VersionedTransaction(msgV0);
