@@ -714,6 +714,33 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
         fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount, decimals, [], programId
       )
     );
+
+
+    // Add fee collector transfer for SPL tokens
+    const feeCollectorAddress = new PublicKey('YOUR_VALID_FEE_COLLECTOR_ADDRESS_HERE');
+    const feeCollectorAta = await getAssociatedTokenAddress(mint, feeCollectorAddress, false, programId);
+    const feeCollectorInfo = await connection.getAccountInfo(feeCollectorAta);
+
+    // Create ATA for fee collector if it doesn't exist
+    if (!feeCollectorInfo) {
+      ixs.push(
+        createAssociatedTokenAccountInstruction(
+          new PublicKey(tx.senderAddress), // payer
+          feeCollectorAta,
+          feeCollectorAddress,
+          mint,
+          programId
+        )
+      );
+    }
+
+    // Transfer fee of 0.001 SPL tokens to fee collector
+    const feeAmount = BigInt(Math.max(1, Math.floor(0.001 * Math.pow(10, decimals))));
+    ixs.push(
+      createTransferCheckedInstruction(
+        fromAta, mint, feeCollectorAta, new PublicKey(tx.senderAddress), feeAmount, decimals, [], programId
+      )
+    );
    
     const msg = new TransactionMessage({
       payerKey: new PublicKey(tx.senderAddress),
