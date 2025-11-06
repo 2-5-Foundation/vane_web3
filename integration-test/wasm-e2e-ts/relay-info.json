@@ -1,6 +1,6 @@
 {
-  "peerId": "12D3KooWLDR8iXoekNAFGAben9GNMWR6GQzSVknSWD55TY93T4NN",
-  "multiAddr": "/ip6/::1/tcp/30333/ws/p2p/12D3KooWLDR8iXoekNAFGAben9GNMWR6GQzSVknSWD55TY93T4NN",
+  "peerId": "12D3KooWLFKVsUJkRiHbyoiEvXLCQXbSGjSytD6KTWdwCui3A3oH",
+  "multiAddr": "/ip6/::1/tcp/30333/ws/p2p/12D3KooWLFKVsUJkRiHbyoiEvXLCQXbSGjSytD6KTWdwCui3A3oH",
   "host": "127.0.0.1",
   "port": 30333,
   "ready": true

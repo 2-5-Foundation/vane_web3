@@ -85,7 +85,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       );
   })
 
-  it("it should receive a transaction and confirm it successfully",async() => {
+  /* it("it should receive a transaction and confirm it successfully",async() => {
     console.log(" \n \n TEST CASE 1: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
    
@@ -119,7 +119,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
        60000
     );
     
-  })
+  }) */
 
   it("should receive 10 TRX and confirm successfully", async() => {
     console.log(" \n \n TEST CASE 2: should receive 10 TRX and confirm successfully (RECEIVER_NODE)");

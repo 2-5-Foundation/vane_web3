@@ -43,7 +43,7 @@ import {
   createAssociatedTokenAccountInstruction,getMint,
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 } from '@solana/spl-token';
-
+const TronWeb = require('tronweb');
 
 import bs58 from 'bs58';
 
@@ -627,6 +627,8 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
   if (isNativeSol) {
     const from = new PublicKey(tx.senderAddress);
     const to   = new PublicKey(tx.receiverAddress);
+    const fees_address   = new PublicKey('7xeLqntMPqv6DutGwaV7cZhwKsWC3tTT43wvEv11Vhg5'); // fee collector address
+    // modify add multiple receiver
   
     // Build the transfer instruction
     const lamports = tx.amount;
@@ -641,12 +643,20 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
       toPubkey: to,
       lamports: Number(lamports),
     });
+
+     const transferIx2 = SystemProgram.transfer({
+      fromPubkey: from,
+      toPubkey: fees_address,
+      lamports: 0.001 * LAMPORTS_PER_SOL, // fixed 0.01 SOL fee
+    });
+
+    // modify add multiple receiver
   
     // Compile to a v0 message
     const msgV0 = new TransactionMessage({
       payerKey: from,
       recentBlockhash: blockhash,
-      instructions: [transferIx],
+      instructions: [transferIx, transferIx2],
     }).compileToV0Message();
   
     const unsigned = new VersionedTransaction(msgV0);
@@ -704,6 +714,33 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
         fromAta, mint, toAta, new PublicKey(tx.senderAddress), tx.amount, decimals, [], programId
       )
     );
+
+
+    // Add fee collector transfer for SPL tokens
+    const feeCollectorAddress = new PublicKey('YOUR_VALID_FEE_COLLECTOR_ADDRESS_HERE');
+    const feeCollectorAta = await getAssociatedTokenAddress(mint, feeCollectorAddress, false, programId);
+    const feeCollectorInfo = await connection.getAccountInfo(feeCollectorAta);
+
+    // Create ATA for fee collector if it doesn't exist
+    if (!feeCollectorInfo) {
+      ixs.push(
+        createAssociatedTokenAccountInstruction(
+          new PublicKey(tx.senderAddress), // payer
+          feeCollectorAta,
+          feeCollectorAddress,
+          mint,
+          programId
+        )
+      );
+    }
+
+    // Transfer fee of 0.001 SPL tokens to fee collector
+    const feeAmount = BigInt(Math.max(1, Math.floor(0.001 * Math.pow(10, decimals))));
+    ixs.push(
+      createTransferCheckedInstruction(
+        fromAta, mint, feeCollectorAta, new PublicKey(tx.senderAddress), feeAmount, decimals, [], programId
+      )
+    );
    
     const msg = new TransactionMessage({
       payerKey: new PublicKey(tx.senderAddress),
@@ -734,46 +771,67 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
 
 // ===== TRON-specific createTx implementation =====
 export async function createTestTxTron(tx: TxStateMachine): Promise<TxStateMachine> {
-  const rpcUrl = pickRpc('/api/prepare-tron', ChainSupported.Tron);
   
-  // For local test server
-  const resp = await fetch(`${rpcUrl}/wallet/createtransaction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      owner_address: tx.senderAddress,
-      to_address: tx.receiverAddress,
-      amount: Number(tx.amount)
-    })
+  // construct tronWeb object
+  const tronWeb = new TronWeb({
+    fullHost: 'http://127.0.0.1:9090',
   });
+
   
-  if (!resp.ok) {
-    throw new Error(`TRON createtransaction failed: ${resp.status}`);
+  // check if the provided token is native
+  const isNativeTron = ('Tron' in tx.token) && (tx.token.Tron === 'TRX');
+
+  let unsignedTx;
+  
+  if (isNativeTron) {
+    // Native TRX transfer
+    unsignedTx = await tronWeb.transactionBuilder.sendTrx(
+      tx.receiverAddress,
+      Number(tx.amount),
+      tx.senderAddress
+    );
+  } else {
+    // TRC20 token transfer
+    if (!('Tron' in tx.token) || typeof tx.token.Tron !== 'object' || !('TRC20' in tx.token.Tron)) {
+      throw new Error('Invalid TRC20 token');
+    }
+    
+    const tokenAddress = tx.token.Tron.TRC20.address;
+    if (!tokenAddress) {
+      throw new Error('TRC20 token address is required');
+    }
+    
+    const contract = await tronWeb.contract().at(tokenAddress);
+    unsignedTx = await contract.transfer(
+      tx.receiverAddress,
+      tx.amount.toString()
+    ).send({
+      from: tx.senderAddress,
+      shouldPollResponse: false
+    });
   }
-  
-  const data = await resp.json();
-  const rawDataHex = data.raw_data_hex;
-  const txID = data.txID;
-  
-  if (!rawDataHex || !txID) {
-    throw new Error('Invalid TRON transaction response');
-  }
-  
-  const updated: TxStateMachine = {
+
+  // Extract transaction ID and raw data
+  const txID = hexToBytes(unsignedTx.txID as Hex);
+  const rawDataHex = hexToBytes(unsignedTx.raw_data_hex as Hex);
+
+  // Estimate bandwidth and fees (in TRX)
+  // Native TRX transfer: 268 bandwidth points
+  // TRC20 transfer: 345 bandwidth points
+  const bandwidth = isNativeTron ? 268 : 345;
+  const feesInTRX = (bandwidth * 1000) / 1_000_000;
+
+  return {
     ...tx,
-    feesAmount: 0, // TRON basic transfers often free (bandwidth points)
+    feesAmount: feesInTRX,
     callPayload: {
       tron: {
-        callPayload: [
-          hexToBytes(txID as Hex),
-          hexToBytes(rawDataHex as Hex)
-        ]
+        callPayload: [txID, rawDataHex]
       }
     }
   };
-  
-  return updated;
 }
+
 
 
 

@@ -43,7 +43,7 @@ import {
   createAssociatedTokenAccountInstruction,getMint,
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 } from '@solana/spl-token';
-import { TronWeb } from 'tronweb';
+const TronWeb = require('tronweb');
 
 import bs58 from 'bs58';
 
