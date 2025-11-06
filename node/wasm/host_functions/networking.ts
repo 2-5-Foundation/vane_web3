@@ -43,7 +43,7 @@ import {
   createAssociatedTokenAccountInstruction,getMint,
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 } from '@solana/spl-token';
-
+import { TronWeb } from 'tronweb';
 
 import bs58 from 'bs58';
 
@@ -737,14 +737,67 @@ export async function createTestTxSolana(tx: TxStateMachine): Promise<TxStateMac
 
 // ===== TRON-specific createTx implementation =====
 export async function createTestTxTron(tx: TxStateMachine): Promise<TxStateMachine> {
-    // construct tronWeb object
-    // check if the provided token is native 
-    // handle native tx construction
-    // handle Trc20 construction
+  
+  // construct tronWeb object
+  const tronWeb = new TronWeb({
+    fullHost: 'http://127.0.0.1:9090',
+  });
 
-    // return the object.
+  
+  // check if the provided token is native
+  const isNativeTron = ('Tron' in tx.token) && (tx.token.Tron === 'TRX');
+
+  let unsignedTx;
+  
+  if (isNativeTron) {
+    // Native TRX transfer
+    unsignedTx = await tronWeb.transactionBuilder.sendTrx(
+      tx.receiverAddress,
+      Number(tx.amount),
+      tx.senderAddress
+    );
+  } else {
+    // TRC20 token transfer
+    if (!('Tron' in tx.token) || typeof tx.token.Tron !== 'object' || !('TRC20' in tx.token.Tron)) {
+      throw new Error('Invalid TRC20 token');
+    }
     
+    const tokenAddress = tx.token.Tron.TRC20.address;
+    if (!tokenAddress) {
+      throw new Error('TRC20 token address is required');
+    }
+    
+    const contract = await tronWeb.contract().at(tokenAddress);
+    unsignedTx = await contract.transfer(
+      tx.receiverAddress,
+      tx.amount.toString()
+    ).send({
+      from: tx.senderAddress,
+      shouldPollResponse: false
+    });
+  }
+
+  // Extract transaction ID and raw data
+  const txID = hexToBytes(unsignedTx.txID as Hex);
+  const rawDataHex = hexToBytes(unsignedTx.raw_data_hex as Hex);
+
+  // Estimate bandwidth and fees (in TRX)
+  // Native TRX transfer: 268 bandwidth points
+  // TRC20 transfer: 345 bandwidth points
+  const bandwidth = isNativeTron ? 268 : 345;
+  const feesInTRX = (bandwidth * 1000) / 1_000_000;
+
+  return {
+    ...tx,
+    feesAmount: feesInTRX,
+    callPayload: {
+      tron: {
+        callPayload: [txID, rawDataHex]
+      }
+    }
+  };
 }
+
 
 
 
