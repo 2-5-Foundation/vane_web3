@@ -500,6 +500,7 @@ export type TxStatus =
     | { type: "RecvAddrConfirmationPassed" }
     | { type: "NetConfirmed" }
     | { type: "SenderConfirmed" }
+    | { type: "TxSubmissionPending" }
     | { type: "SenderConfirmationfailed" }
     | { type: "RecvAddrFailed" }
     | { type: "FailedToSubmitTxn", data: TxStatusData["FailedToSubmitTxn"] }

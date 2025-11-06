@@ -80,6 +80,8 @@ pub enum TxStatus {
     NetConfirmed,
     /// if the sender has confirmed, last stage and the txn is being submitted
     SenderConfirmed,
+    /// this is the immediate status after we submitted transaction (As we are submitting now on front end)
+    TxSubmissionPending,
     /// if non-original sender tries to sign
     SenderConfirmationfailed,
     /// if receiver failed to verify
@@ -461,6 +463,9 @@ impl TxStateMachine {
     }
     pub fn sender_confirmation(&mut self) {
         self.status = TxStatus::SenderConfirmed
+    }
+    pub fn tx_submission_pending(&mut self) {
+        self.status = TxStatus::TxSubmissionPending
     }
     pub fn sender_confirmation_failed(&mut self) {
         self.status = TxStatus::SenderConfirmationfailed

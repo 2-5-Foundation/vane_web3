@@ -42,7 +42,7 @@ pub mod vane_crypto {
             }
             Token::Tron(_) => {
                 // TRON address verification
-                // check tron which cryptographic signature scheme they use
+                // 1. u
                 todo!("TRON address verification not implemented yet")
             }
             Token::Solana(_) => {

@@ -254,6 +254,8 @@ impl PublicInterfaceWorker {
             if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) {
                 tx.sender_confirmation();
             }
+            // this path meaning we have already submitted the transaction
+            tx.tx_submission_pending();
             tx.increment_version();
             let sender = sender_channel.clone();
             sender
