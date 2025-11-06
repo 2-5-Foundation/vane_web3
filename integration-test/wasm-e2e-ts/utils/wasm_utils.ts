@@ -382,7 +382,7 @@ export async function getTronBalance(address: string): Promise<bigint> {
     const response = await fetch("http://127.0.0.1:9090/wallet/getaccount", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address }),
+      body: JSON.stringify({ address, visible: true }),
     });
 
     const data = await response.json();
