@@ -322,32 +322,61 @@ export interface TronWallet {
   signTransaction: (txID: string) => Promise<string>;
 }
 
+export interface TronAccount {
+  index: number;
+  address: string;
+  privateKey: string;
+  balance: string;
+}
+
 /**
- * Get TRON test wallets from the Tron Quickstart
+ * Fetch TRON accounts dynamically from Tron Quickstart
  */
-export function getTronWallets(): TronWallet[] {
-  const accounts = [
-    {
-      address: "TBbKRLwvpNNWtaUcZVaMYwEBPASdjPAg4c",
-      privateKey:
-        "fdd7f719d27aa2edd14648be4d3c165b31124464c03b6ad3efc410e087002828",
-    },
-    {
-      address: "TMtuamEqq14k88wTv6xuBJrhe37FiHdhtp",
-      privateKey:
-        "6fda3f5678baf62ecb3cb1f7955e80537b27e381f0f355928e55c921a2b8d934",
-    },
-    {
-      address: "TTKEMWdocdos8uW7MqGoEYyyrVeUc8RWbE",
-      privateKey:
-        "852a5a32b1b71021a26c24e8612c81d6abf3a41b1a0670f117fca073e7fc9ed7",
-    },
-    {
-      address: "TSHjeLEorGCxyjGYPF3zxDM4mi84MmxtNJ",
-      privateKey:
-        "974aacbeef0a8829f737fd9bfe9b1734a7a375e58586d259c99dcf063e35e9e5",
-    },
-  ];
+export async function fetchTronAccounts(): Promise<TronAccount[]> {
+  try {
+    // Get accounts text and private keys JSON
+    const [accountsResponse, keysResponse] = await Promise.all([
+      fetch("http://127.0.0.1:9090/admin/accounts"),
+      fetch("http://127.0.0.1:9090/admin/accounts-json"),
+    ]);
+
+    const accountsText = await accountsResponse.text();
+    const keysData = await keysResponse.json();
+
+    // Parse addresses from the text response
+    const addressMatches = accountsText.matchAll(/\(\d+\)\s+(\w+)\s+\((\d+)\s+TRX\)/g);
+    const accounts: TronAccount[] = [];
+
+    let index = 0;
+    for (const match of addressMatches) {
+      const address = match[1];
+      const balance = match[2];
+      const privateKey = keysData.privateKeys[index];
+
+      if (privateKey) {
+        accounts.push({
+          index,
+          address,
+          privateKey,
+          balance: `${balance} TRX`,
+        });
+      }
+      index++;
+    }
+
+    console.log(`✅ Fetched ${accounts.length} TRON accounts from Quickstart`);
+    return accounts;
+  } catch (error) {
+    console.error("Failed to fetch TRON accounts:", error);
+    throw new Error("Could not fetch TRON accounts. Make sure Tron Quickstart is running.");
+  }
+}
+
+/**
+ * Get TRON test wallets dynamically from the Tron Quickstart
+ */
+export async function getTronWallets(): Promise<TronWallet[]> {
+  const accounts = await fetchTronAccounts();
 
   return accounts.map((acc) => ({
     address: acc.address,
@@ -363,9 +392,9 @@ export function getTronWallets(): TronWallet[] {
       return signature;
     },
     signTransaction: async (txID: string) => {
-          const tronWeb = new TronWeb({
-        fullHost: 'http://127.0.0.1:9090',
-        privateKey: acc.privateKey
+      const tronWeb = new TronWeb({
+        fullHost: "http://127.0.0.1:9090",
+        privateKey: acc.privateKey,
       });
       // Sign the transaction ID (which is already hashed)
       const signature = await tronWeb.trx.sign(txID);
