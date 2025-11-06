@@ -126,7 +126,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     
     // Import TRON utilities
     const { getTronWallets, getTronBalance } = await import('./utils/wasm_utils.js');
-    const tronWallets = getTronWallets();
+    const tronWallets = await getTronWallets();
     const receiverTronWallet = tronWallets[1]; // Receiver is wallet 1
     
     console.log('🔑 Receiver TRON address:', receiverTronWallet.address);
