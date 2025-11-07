@@ -3,13 +3,25 @@
   "type": "module",
   "version": "0.1.0",
   "files": [
-    "vane_wasm_node_bg.wasm",
+    "wasm_node_bg.wasm",
+    "wasm_node.js",
+    "wasm_node.d.ts",
     "vane_wasm_node.js",
-    "vane_wasm_node.d.ts"
+    "host_functions"
   ],
-  "main": "vane_wasm_node.js",
-  "types": "vane_wasm_node.d.ts",
+  "main": "wasm_node.js",
+  "types": "wasm_node.d.ts",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "dependencies": {
+    "@polkadot/api": "^16.4.4",
+    "@solana-program/system": "^0.8.1",
+    "@solana/kit": "^4.0.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "tronweb": "^6.1.0",
+    "viem": "^2.33.3"
+  }
 }
