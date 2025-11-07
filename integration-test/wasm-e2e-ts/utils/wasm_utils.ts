@@ -19,7 +19,8 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-const TronWeb = require("tronweb");
+import { TronWeb } from 'tronweb';
+
 
 import {
   Connection as SolanaConnection,
