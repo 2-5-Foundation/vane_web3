@@ -1,8 +1,10 @@
 mod metric_server;
 mod p2p;
+mod event_feedback;
 
 use crate::metric_server::{metrics_server, MetricService};
 use crate::p2p::RelayP2pWorker;
+use crate::event_feedback::EventFeedbackManager;
 use anyhow::anyhow;
 use log::{error, info};
 pub use std::net::SocketAddr;
@@ -26,6 +28,9 @@ impl MainRelayServerService {
         // Create one shared metric service
         let metric_service = MetricService::new();
 
+        // Create shared event feedback manager
+        let feedback_manager = Arc::new(EventFeedbackManager::new());
+
         // Start metrics server on a different port, using the same service
         let metrics_port = 9945;
         let metrics_service_clone = metric_service.clone();
@@ -38,9 +43,11 @@ impl MainRelayServerService {
         // Spawn P2P worker with pure Tokio instead of TaskManager
         let p2p_worker_clone = p2p_worker.clone();
         let metrics_for_p2p = metric_service.clone();
+        let feedback_for_p2p = feedback_manager.clone(); 
         let p2p_handle = tokio::spawn(async move {
             let mut p2p_worker = p2p_worker_clone.lock().await;
             p2p_worker.metrics = std::sync::Arc::new(metrics_for_p2p);
+            p2p_worker.feedback_manager = feedback_for_p2p;
             let swarm_res = p2p_worker.start_swarm().await;
             if let Err(err) = swarm_res {
                 error!("swarm start encountered error: caused by {err}");
