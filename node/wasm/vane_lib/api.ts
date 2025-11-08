@@ -148,11 +148,6 @@ export async function exportStorage(): Promise<StorageExport> {
   return res as StorageExport;
 }
 
-export async function getMetrics(): Promise<UserMetrics> {
-  const res = await requireWorker().getMetrics();
-  return res as UserMetrics;
-}
-
 /**
  * Get the current node connection status
  * @returns Promise that resolves to the node connection status
@@ -190,7 +185,6 @@ const VaneWeb3 = {
   unsubscribeWatchTxUpdates,
   fetchPendingTxUpdates,
   exportStorage,
-  getMetrics,
   getNodeConnection,
   clearRevertedFromCache,
   clearFinalizedFromCache,

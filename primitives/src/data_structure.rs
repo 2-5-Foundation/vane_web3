@@ -976,21 +976,17 @@ pub trait DbWorkerInterface: Sized {
 
     async fn increment_nonce(&self) -> Result<(), anyhow::Error>;
 
-    // saved peers interacted with
-    async fn record_saved_user_peers(
-        &self,
-        acc_id: String,
-        multi_addr: String,
-    ) -> Result<(), anyhow::Error>;
+    /// Get all saved peers with their associated account IDs
+    async fn get_all_saved_peers_info(&self) -> Result<Vec<SavedPeerInfo>, anyhow::Error>;
 
-    // get saved peers
+    /// Get saved peer ID by account ID
     async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error>;
 
-    // get all saved peers
-    async fn get_all_saved_peers(&self) -> Result<(Vec<String>, String), anyhow::Error>;
-
-    // delete a specific saved peer
+    /// Delete a specific saved peer by peer_id
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error>;
+
+    /// Record a saved peer with account_id and multi_addr
+    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error>;
 }
 
 /// Node error reporting structure
@@ -1005,8 +1001,10 @@ pub struct NodeError {
 /// Information about a saved peer
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct SavedPeerInfo {
-    /// The peer's multi-address
+    /// The peer's ID
     pub peer_id: String,
+    /// The peer's multi-address
+    pub multi_addr: String,
     /// All account IDs associated with this peer
     pub account_ids: Vec<String>,
 }
@@ -1026,20 +1024,4 @@ pub struct StorageExport {
 
     /// All failed transactions  
     pub failed_transactions: Vec<DbTxStateMachine>,
-
-    /// Total value of all successful transactions (in wei/smallest unit)
-    pub total_value_success: u128,
-
-    /// Total value of all failed transactions (in wei/smallest unit)
-    pub total_value_failed: u128,
-
-    /// Multiple saved peers, each with their own account IDs
-    /// Example with 2 separate peers, each having 2 addresses:
-    /// [
-    ///   { peer_id: "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1",
-    ///     account_ids: ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"] },
-    ///   { peer_id: "/ip4/192.168.1.100/tcp/8080/p2p/12D3KooWPeer2",
-    ///     account_ids: ["0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", "0x90F79bf6EB2c4f870365E785982E1f101E45bF15"] }
-    /// ]
-    pub all_saved_peers: Vec<SavedPeerInfo>,
 }

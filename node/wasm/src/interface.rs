@@ -33,7 +33,7 @@ use crate::{
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, SavedPeerInfo, StorageExport, Token, TtlWrapper, TxStateMachine,
+    NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine,
     TxStatus, UserAccount, UserMetrics,
 };
 
@@ -250,7 +250,6 @@ impl PublicInterfaceWorker {
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            
             if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) {
                 tx.sender_confirmation();
             }
@@ -509,19 +508,6 @@ impl PublicInterfaceWorker {
         let nonce = self.db_worker.get_nonce().await.unwrap_or(0);
         let success_transactions = self.db_worker.get_success_txs().await.unwrap_or_default();
         let failed_transactions = self.db_worker.get_failed_txs().await.unwrap_or_default();
-        let total_value_success = self.db_worker.get_total_value_success().await.unwrap_or(0);
-        let total_value_failed = self.db_worker.get_total_value_failed().await.unwrap_or(0);
-
-        // Get saved peers and convert to SavedPeerInfo format
-        let all_saved_peers =
-            if let Ok((account_ids, peer_multiaddr)) = self.db_worker.get_all_saved_peers().await {
-                vec![SavedPeerInfo {
-                    peer_id: peer_multiaddr,
-                    account_ids,
-                }]
-            } else {
-                Vec::new()
-            };
 
         // Create the export structure
         let storage_export = StorageExport {
@@ -529,9 +515,6 @@ impl PublicInterfaceWorker {
             nonce,
             success_transactions,
             failed_transactions,
-            total_value_success,
-            total_value_failed,
-            all_saved_peers,
         };
 
         // Convert to JSON and return as JsValue
@@ -539,38 +522,6 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Failed to serialize storage data: {}", e)))
     }
 
-    // user metrics
-    pub async fn get_user_metrics(&self) -> Result<JsValue, JsError> {
-        let user_account = self
-            .db_worker
-            .get_user_account()
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let total_success_txns = self
-            .db_worker
-            .get_success_txs()
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let total_failed_txns = self
-            .db_worker
-            .get_failed_txs()
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        let saved_target_peers = self
-            .db_worker
-            .get_all_saved_peers()
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
-        let user_metrics = UserMetrics {
-            user_account,
-            total_success_txns,
-            total_failed_txns,
-            saved_target_peers,
-        };
-        serde_wasm_bindgen::to_value(&user_metrics)
-            .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
-    }
 
     // Cache maintenance
     pub fn clear_reverted_from_cache(&self) {
@@ -738,12 +689,6 @@ impl PublicInterfaceWorkerJs {
     pub async fn export_storage(&self) -> Result<JsValue, JsError> {
         let storage_export = self.inner.borrow().export_storage().await?;
         Ok(storage_export)
-    }
-
-    #[wasm_bindgen(js_name = "getMetrics")]
-    pub async fn get_metrics(&self) -> Result<JsValue, JsError> {
-        let metrics = self.inner.borrow().get_user_metrics().await?;
-        Ok(metrics)
     }
 
     #[wasm_bindgen(js_name = "getNodeConnectionStatus")]

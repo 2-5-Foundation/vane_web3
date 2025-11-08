@@ -357,30 +357,63 @@ impl DbWorkerInterface for LocalDbWorker {
     }
 
     // saved peers interacted with
-    async fn record_saved_user_peers(&self, peer_record: PeerRecord) -> Result<(), anyhow::Error> {
+    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error> {
+        // Use multi_addr as the unique identifier (nodeId)
         let client = &self.db;
 
         client
             ._transaction()
             .run(|tx| async move {
-                // Create the SavedPeer first
-                let saved_peer = tx
+                // Find or create the saved peer using multi_addr as nodeId
+                let saved_peer = match tx
                     .saved_peers()
-                    .create(
-                        peer_record.peer_id.unwrap_or_default(),
-                        peer_record.multi_addr.unwrap_or_default(),
-                        vec![],
-                    )
+                    .find_unique(db::saved_peers::UniqueWhereParam::NodeIdEquals(multi_addr.clone()))
+                    .exec()
+                    .await?
+                {
+                    Some(peer) => peer,
+                    None => {
+                        tx.saved_peers()
+                            .create(multi_addr.clone(), multi_addr.clone(), vec![])
+                            .exec()
+                            .await?
+                    }
+                };
+
+                // Check if account already exists for this peer
+                let existing_account = tx
+                    .saved_peer_account_info()
+                    .find_first(vec![
+                        saved_peer_account_info::WhereParam::SavedPeerId(
+                            StringFilter::Equals(saved_peer.id.clone()),
+                        ),
+                        saved_peer_account_info::WhereParam::AccountId(
+                            StringFilter::Equals(account_id.clone()),
+                        ),
+                    ])
                     .exec()
                     .await?;
 
-                // Then create all associated account info records
-                for account_info in peer_record.accounts {
-                    tx.saved_peer_account_info() // Assuming this is your related model
+                // Only create if it doesn't exist
+                if existing_account.is_none() {
+                    // Infer network from account_id format
+                    let network = if account_id.starts_with("0x") && account_id.len() == 42 {
+                        "Ethereum"
+                    } else if account_id.len() == 44 {
+                        "Solana"
+                    } else if account_id.len() == 48 || account_id.starts_with("5") {
+                        "Polkadot"
+                    } else if account_id.starts_with("T") {
+                        "Tron"
+                    } else {
+                        "Ethereum" // default
+                    };
+
+                    tx.saved_peer_account_info()
                         .create(
-                            account_info.account,
-                            account_info.network.to_string(),
-                            db::saved_peers::UniqueWhereParam::IdEquals(saved_peer.id.clone()),
+                            account_id,
+                            network.to_string(),
+                            db::saved_peers::UniqueWhereParam::IdEquals(saved_peer.id),
                             vec![],
                         )
                         .exec()
@@ -404,7 +437,7 @@ impl DbWorkerInterface for LocalDbWorker {
             .await?
             .ok_or(anyhow!("Peer Not found in DB"))?;
 
-        Ok(peer_data.node_id)
+        Ok(peer_data.multi_addr)
     }
 
     // get all saved peers
@@ -449,21 +482,19 @@ impl DbWorkerInterface for LocalDbWorker {
 
     // delete a specific saved peer
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
-        // First find the peer to get its ID
+        // peer_id parameter is actually the multi_addr string (used as nodeId)
         let peer = self
             .db
             .saved_peers()
-            .find_first(vec![saved_peers::WhereParam::NodeId(StringFilter::Equals(
-                peer_id.to_string(),
-            ))])
+            .find_unique(db::saved_peers::UniqueWhereParam::NodeIdEquals(peer_id.to_string()))
             .exec()
             .await?
-            .ok_or_else(|| anyhow!("Peer not found with peer_id: {}", peer_id))?;
+            .ok_or_else(|| anyhow!("Peer not found with multi_addr: {}", peer_id))?;
 
         // Delete the peer (this should cascade to related account info records)
         self.db
             .saved_peers()
-            .delete(saved_peers::UniqueWhereParam::IdEquals(peer.id))
+            .delete(db::saved_peers::UniqueWhereParam::IdEquals(peer.id))
             .exec()
             .await?;
 
@@ -571,7 +602,40 @@ impl DbWorkerInterface for LocalDbWorker {
 
         Ok(account_ids)
     }
+
+    async fn get_all_saved_peers_info(&self) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
+        use primitives::data_structure::SavedPeerInfo;
+
+        let peers = self.db.saved_peers().find_many(vec![]).exec().await?;
+
+        let mut saved_peers_info = Vec::new();
+
+        for peer_data in peers {
+            let account_infos = self
+                .db
+                .saved_peer_account_info()
+                .find_many(vec![saved_peer_account_info::WhereParam::SavedPeerId(
+                    StringFilter::Equals(peer_data.id),
+                )])
+                .exec()
+                .await?;
+
+            let account_ids: Vec<String> = account_infos
+                .into_iter()
+                .map(|acc| acc.account_id)
+                .collect();
+
+            saved_peers_info.push(SavedPeerInfo {
+                peer_id: peer_data.multi_addr.clone(),
+                multi_addr: peer_data.multi_addr,
+                account_ids,
+            });
+        }
+
+        Ok(saved_peers_info)
+    }
 }
+
 
 // Type convertions
 #[cfg(not(target_arch = "wasm32"))]
