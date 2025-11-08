@@ -44,6 +44,8 @@ import {
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 } from '@solana/spl-token';
 
+import { TronWeb } from 'tronweb';
+
 
 import bs58 from 'bs58';
 
@@ -99,22 +101,26 @@ const CHAIN_CONFIGS: Record<ChainSupported.Ethereum | ChainSupported.Bnb, {
   [ChainSupported.Ethereum]: {
     chain: mainnet,
     // Proxy via Next.js API route in live mode to get prepared chain data
-    rpcUrl: pickRpc('/api/prepare-evm', ChainSupported.Ethereum),
+    rpcUrl: pickRpc('/api/create-tx/prepare-evm', ChainSupported.Ethereum),
     chainId: USE_ANVIL ? 31337 : 1
   },
   [ChainSupported.Bnb]: {
     chain: bsc,
     // Proxy via Next.js API route in live mode to get prepared chain data
-    rpcUrl: pickRpc('/api/prepare-bsc', ChainSupported.Bnb),
+    rpcUrl: pickRpc('/api/create-tx/prepare-bsc', ChainSupported.Bnb),
     chainId: USE_ANVIL ? 2192 : 56
   }
 };
 
-function getChainFamily(chain: ChainSupported): 'ethereum' | 'bsc' | 'solana' | 'polkadot' | 'unknown' {
+function getChainFamily(chain: ChainSupported): 'ethereum' | 'bsc' | 'solana' | 'polkadot' | 'base' | 'optimism' | 'arbitrum' | 'polygon' | 'unknown' {
   if (chain === ChainSupported.Ethereum) return 'ethereum';
   if (chain === ChainSupported.Bnb) return 'bsc';
   if (chain === ChainSupported.Solana) return 'solana';
   if (chain === ChainSupported.Polkadot) return 'polkadot';
+  if (chain === ChainSupported.Base) return 'base';
+  if (chain === ChainSupported.Optimism) return 'optimism';
+  if (chain === ChainSupported.Arbitrum) return 'arbitrum';
+  if (chain === ChainSupported.Polygon) return 'polygon';
   return 'unknown';
 }
 
@@ -161,7 +167,7 @@ export const hostNetworking = {
         }
 
         // Live mode: send txStateMachine to next API route handler
-        const resp = await fetch('/api/submit-evm', {
+        const resp = await fetch('/api/submit-tx/submit-evm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -192,7 +198,7 @@ export const hostNetworking = {
         }
 
         // Live mode: send txStateMachine to next API route handler
-        const resp = await fetch('/api/submit-bsc', {
+        const resp = await fetch('/api/submit-tx/submit-bsc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -241,7 +247,7 @@ export const hostNetworking = {
           return bs58.decode(sig);
         }
 
-        const resp = await fetch("/api/submit-solana", {
+        const resp = await fetch("/api/submit-tx/submit-solana", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -272,10 +278,10 @@ export const hostNetworking = {
         throw new Error(`Unsupported chain: ${tx.senderAddressNetwork}`);
       }
       
-      if (family === 'ethereum') {
+      if (family === 'ethereum' || family === 'base' || family === 'optimism' || family === 'arbitrum' || family === 'polygon') {
         // Local Anvil: build fields on client
         if (USE_ANVIL) {
-          return await createTestTxEthereum(tx);
+          return await createTestTxEVM(tx);
         }
 
         // Live mode: get prepared chain data from server, then construct tx locally
@@ -289,7 +295,7 @@ export const hostNetworking = {
         if (!resp.ok) throw new Error(`API prepareCreateTx failed: ${resp.status}`);
         const data = await resp.json();
         return fromWire(data?.prepared)
-      }
+      }  
 
       if (family === 'bsc') {
         // Local Anvil: build fields on client
@@ -316,7 +322,7 @@ export const hostNetworking = {
         }
         // Live mode: get prepared chain data from server, then construct tx locally
         // Get latest blockhash
-        const resp = await fetch("/api/prepare-solana", {
+        const resp = await fetch("/api/create-tx/prepare-solana", {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -338,7 +344,7 @@ export const hostNetworking = {
 };
 
 // ===== Family-specific createTx implementations =====
-export async function createTestTxEthereum(tx: TxStateMachine): Promise<TxStateMachine> {
+export async function createTestTxEVM(tx: TxStateMachine): Promise<TxStateMachine> {
 
   // construct an unsigned ethereum transaction
   const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];

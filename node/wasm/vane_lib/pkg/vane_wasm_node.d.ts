@@ -13,7 +13,6 @@ export class PublicInterfaceWorkerJs {
   receiverConfirm(tx: any): Promise<void>;
   revertTransaction(tx: any, reason?: string | null): Promise<void>;
   exportStorage(): Promise<any>;
-  getMetrics(): Promise<any>;
   getNodeConnectionStatus(): any;
   clearRevertedFromCache(): void;
   clearFinalizedFromCache(): void;
@@ -39,7 +38,6 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_receiverConfirm: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
   readonly publicinterfaceworkerjs_exportStorage: (a: number) => any;
-  readonly publicinterfaceworkerjs_getMetrics: (a: number) => any;
   readonly publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
@@ -56,10 +54,10 @@ export interface InitOutput {
   readonly __wbindgen_export_6: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-  readonly closure1231_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1588_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1203_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1561_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-  readonly closure1986_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure1959_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

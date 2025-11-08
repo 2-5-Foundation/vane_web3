@@ -523,7 +523,6 @@ impl MainServiceWorker {
                     let peer_id = PeerId::from_str(&*result_peer.peer_id)?;
 
                     // save the target peer id to local db
-                    let peer_record = result_peer.into();
                     info!(target: "MainServiceWorker","recording target peer id to local db");
 
                     // ========================================================================= //
@@ -531,7 +530,7 @@ impl MainServiceWorker {
                         self.db_worker
                             .lock()
                             .await
-                            .record_saved_user_peers(peer_record)
+                            .record_saved_user_peers(target_id_addr.clone(), result_peer.multi_addr.clone())
                             .await?;
                     }
 

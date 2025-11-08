@@ -15,7 +15,7 @@ use axum::{
 };
 use log::{error, info, warn};
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, SavedPeerInfo, StorageExport, UserAccount,
+    ChainSupported, DbTxStateMachine, StorageExport, UserAccount,
 };
 use prometheus_client::{
     encoding::text::encode,
@@ -53,12 +53,10 @@ pub struct ReservationDeniedDetail {
 }
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ClientSnapshot {
-    pub peer_id: String,
+    pub account_id: String,
     pub success_txs: u64,
     pub failed_txs: u64,
-    pub total_value_success: u64,
-    pub total_value_failed: u64,
-    pub saved_peers: u64,
+    pub failed_transactions: Vec<DbTxStateMachine>,
 }
 
 // Simplified: no label-based families
@@ -91,16 +89,15 @@ pub struct RelayMetrics {
 }
 
 pub struct ClientMetricsStore {
-    pub last_update_times: HashMap<String, SystemTime>,
-    pub last_totals: HashMap<String, (u64, u64, u64, u64, u64)>, // success_cnt, failed_cnt, value_success, value_failed, peers_cnt
+    // All maps keyed by account_id, not peer_id
+    pub last_update_times: HashMap<String, SystemTime>, // account_id -> last update time
+    pub last_totals: HashMap<String, (u64, u64)>, // account_id -> (success_cnt, failed_cnt)
     // Aggregates
     pub total_success_txs: Counter,
     pub total_failed_txs: Counter,
-    pub total_value_success: Counter,
-    pub total_value_failed: Counter,
-    pub total_saved_peers: Counter,
     pub tx_success_rate_percent: Gauge,
-    // Per-client snapshots
+    // Per-client snapshots keyed by account_id (sender account)
+    // Keyed by account_id since one account can have different peer_ids over time
     pub per_client: HashMap<String, ClientSnapshot>,
 }
 
@@ -205,9 +202,6 @@ impl ClientMetricsStore {
             last_totals: HashMap::new(),
             total_success_txs: Counter::default(),
             total_failed_txs: Counter::default(),
-            total_value_success: Counter::default(),
-            total_value_failed: Counter::default(),
-            total_saved_peers: Counter::default(),
             tx_success_rate_percent: Gauge::default(),
             per_client: HashMap::new(),
         }
@@ -225,21 +219,6 @@ impl ClientMetricsStore {
             self.total_failed_txs.clone(),
         );
         registry.register(
-            "total_value_success",
-            "Total value of successful transactions",
-            self.total_value_success.clone(),
-        );
-        registry.register(
-            "total_value_failed",
-            "Total value of failed transactions",
-            self.total_value_failed.clone(),
-        );
-        registry.register(
-            "total_saved_peers",
-            "Total saved peers",
-            self.total_saved_peers.clone(),
-        );
-        registry.register(
             "tx_success_rate_percent",
             "Transaction success rate (percent)",
             self.tx_success_rate_percent.clone(),
@@ -251,10 +230,6 @@ impl ClientMetricsStore {
         let client_type = payload.client_type.clone();
         let storage = &payload.storage_export;
 
-        // Update last seen timestamp
-        self.last_update_times
-            .insert(peer_id.clone(), SystemTime::now());
-
         // Extract account_id from user_account if available
         let account_id = storage
             .user_account
@@ -262,6 +237,10 @@ impl ClientMetricsStore {
             .and_then(|ua| ua.accounts.first())
             .map(|(acc, _)| acc.clone())
             .unwrap_or_else(|| "unknown".to_string());
+
+        // Update last seen timestamp keyed by account_id
+        self.last_update_times
+            .insert(account_id.clone(), SystemTime::now());
 
         // Process basic metrics
         self.process_basic_metrics(&peer_id, &account_id, &client_type, storage);
@@ -276,16 +255,15 @@ impl ClientMetricsStore {
         self.process_peer_network_metrics(&peer_id, &client_type, storage);
 
         // Update aggregated system metrics
-        self.update_aggregated_metrics(&client_type, storage);
+        self.update_aggregated_metrics(&account_id, storage);
 
         info!(
-            "Updated metrics for peer {} account {} ({}) - {} success txs, {} failed txs, {} saved peers", 
+            "Updated metrics for peer {} account {} ({}) - {} success txs, {} failed txs", 
             peer_id,
             account_id,
             client_type,
             storage.success_transactions.len(),
-            storage.failed_transactions.len(),
-            storage.all_saved_peers.len()
+            storage.failed_transactions.len()
         );
     }
 
@@ -324,55 +302,31 @@ impl ClientMetricsStore {
     ) {
     }
 
-    fn infer_network_from_account(&self, account_id: &str) -> String {
-        if account_id.starts_with("0x") && account_id.len() == 42 {
-            "ethereum".to_string()
-        } else if account_id.len() == 48 || account_id.starts_with("5") {
-            "polkadot".to_string()
-        } else if account_id.len() == 44 {
-            "solana".to_string()
-        } else if account_id.starts_with("T") {
-            "tron".to_string()
-        } else {
-            "unknown".to_string()
-        }
-    }
+   
 
-    fn update_aggregated_metrics(&mut self, peer_id: &str, storage: &StorageExport) {
-        // Compute deltas per peer to avoid double counting
+    fn update_aggregated_metrics(&mut self, account_id: &str, storage: &StorageExport) {
+        // Compute deltas per account to avoid double counting
+        // Note: Value metrics are not aggregated here since transactions can have different tokens
+        // (e.g., ETH, SOL, TRX). Individual transaction amounts and tokens are available in
+        // success_transactions and failed_transactions vectors.
         let current = (
             storage.success_transactions.len() as u64,
             storage.failed_transactions.len() as u64,
-            storage.total_value_success as u64,
-            storage.total_value_failed as u64,
-            storage.all_saved_peers.len() as u64,
         );
 
         let last = self
             .last_totals
-            .get(peer_id)
+            .get(account_id)
             .cloned()
-            .unwrap_or((0, 0, 0, 0, 0));
+            .unwrap_or((0, 0));
         let delta_success = current.0.saturating_sub(last.0);
         let delta_failed = current.1.saturating_sub(last.1);
-        let delta_val_success = current.2.saturating_sub(last.2);
-        let delta_val_failed = current.3.saturating_sub(last.3);
-        let delta_peers = current.4.saturating_sub(last.4);
 
         if delta_success > 0 {
             self.total_success_txs.inc_by(delta_success);
         }
         if delta_failed > 0 {
             self.total_failed_txs.inc_by(delta_failed);
-        }
-        if delta_val_success > 0 {
-            self.total_value_success.inc_by(delta_val_success);
-        }
-        if delta_val_failed > 0 {
-            self.total_value_failed.inc_by(delta_val_failed);
-        }
-        if delta_peers > 0 {
-            self.total_saved_peers.inc_by(delta_peers);
         }
 
         // Success rate using current snapshot
@@ -383,45 +337,36 @@ impl ClientMetricsStore {
                 .set(success_rate.round() as i64);
         }
 
-        self.last_totals.insert(peer_id.to_string(), current);
+        self.last_totals.insert(account_id.to_string(), current);
 
-        // Update per-client snapshot
-        self.per_client.insert(
-            peer_id.to_string(),
-            ClientSnapshot {
-                peer_id: peer_id.to_string(),
-                success_txs: current.0,
-                failed_txs: current.1,
-                total_value_success: current.2,
-                total_value_failed: current.3,
-                saved_peers: current.4,
-            },
-        );
-    }
-
-    pub fn cleanup_stale_clients(&mut self, max_age: Duration) {
-        let now = SystemTime::now();
-        let mut stale_peers = Vec::new();
-
-        for (peer_id, last_update) in &self.last_update_times {
-            if let Ok(elapsed) = now.duration_since(*last_update) {
-                if elapsed > max_age {
-                    stale_peers.push(peer_id.clone());
-                }
+        // Update per-client snapshot keyed by account_id
+        // Merge with existing snapshot if it exists, otherwise create new one
+        let existing_snapshot = self.per_client
+            .entry(account_id.to_string())
+            .or_insert_with(|| ClientSnapshot {
+                account_id: account_id.to_string(),
+                success_txs: 0,
+                failed_txs: 0,
+                failed_transactions: Vec::new(),
+            });
+        
+        // Update snapshot with current values
+        existing_snapshot.success_txs = current.0;
+        existing_snapshot.failed_txs = current.1;
+        
+        // Merge failed transactions, avoiding duplicates
+        for new_tx in &storage.failed_transactions {
+            let is_duplicate = existing_snapshot
+                .failed_transactions
+                .iter()
+                .any(|existing_tx| existing_tx.tx_hash == new_tx.tx_hash);
+            
+            if !is_duplicate {
+                existing_snapshot.failed_transactions.push(new_tx.clone());
             }
         }
-
-        for peer_id in stale_peers {
-            self.last_update_times.remove(&peer_id);
-            // Note: prometheus_client doesn't support removing metrics dynamically
-            // In production, you might want to use a different approach or
-            // implement custom cleanup logic
-            warn!(
-                "Client {} metrics are stale and should be cleaned up",
-                peer_id
-            );
-        }
     }
+
 }
 
 #[derive(Clone)]
@@ -462,18 +407,6 @@ impl MetricService {
 
 pub async fn metrics_server(service: MetricService, port: u16) -> Result<()> {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-
-    // Start cleanup task for stale client metrics
-    let client_metrics_cleanup = service.get_client_metrics();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
-        loop {
-            interval.tick().await;
-            if let Ok(mut metrics) = client_metrics_cleanup.try_lock() {
-                metrics.cleanup_stale_clients(Duration::from_secs(600)); // 10 minutes
-            }
-        }
-    });
 
     let app = Router::new()
         .route("/metrics", get(respond_with_metrics))

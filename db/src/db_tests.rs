@@ -163,27 +163,19 @@ async fn storing_n_retrieving_saved_peers_works() -> Result<(), anyhow::Error> {
     let nonce = Nonce::from_slice(&key[..12]);
     let encrypted_keypair = cipher.encrypt(nonce, bytes_keypair.as_ref()).unwrap();
 
-    let saved_peer_1 = PeerRecord {
-        record_id: "".to_string(),
-        peer_id: Some(peer_id.clone()),
-        account_id1: Some("0x4690152131E5399dE5E76801Fc7742A087829F00".to_string()),
-        account_id2: None,
-        account_id3: None,
-        account_id4: None,
-        multi_addr: Some("/ip4/127.0.0.1/tcp/8080".to_string()),
-        keypair: None,
-    };
+    let account_id = "0x4690152131E5399dE5E76801Fc7742A087829F00".to_string();
+    let multi_addr = format!("/ip4/127.0.0.1/tcp/8080/p2p/{}", peer_id);
+    
     db_client
-        .record_saved_user_peers(saved_peer_1.clone())
+        .record_saved_user_peers(account_id.clone(), multi_addr.clone())
         .await?;
 
     // retrieving
-    let recorded_saved_peer_1: PeerRecord = db_client
-        .get_saved_user_peers(saved_peer_1.account_id1.clone().unwrap())
-        .await?
-        .into();
-
-    assert_eq!(saved_peer_1, recorded_saved_peer_1);
+    let recorded_multi_addr = db_client
+        .get_saved_user_peers(account_id.clone())
+        .await?;
+    
+    assert_eq!(recorded_multi_addr, multi_addr);
     Ok(())
 }
 
