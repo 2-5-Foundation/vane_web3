@@ -1234,7 +1234,6 @@ pub async fn start_vane_web3(
     account: String,
     network: String,
     live: bool,
-    libp2p_key: String,
     storage: JsValue,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
     let storage = if storage.is_undefined() || storage.is_null() {

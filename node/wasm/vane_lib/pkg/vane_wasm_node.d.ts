@@ -1,6 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
-export function start_vane_web3(relay_node_multi_addr: string, account: string, network: string, live: boolean, libp2p_key: string, storage: any): Promise<PublicInterfaceWorkerJs>;
+export function start_vane_web3(relay_node_multi_addr: string, account: string, network: string, live: boolean, storage: any): Promise<PublicInterfaceWorkerJs>;
 export class PublicInterfaceWorkerJs {
   private constructor();
   free(): void;
@@ -41,7 +41,7 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
-  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any) => any;
+  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any) => any;
   readonly __wbg_requestarguments_free: (a: number, b: number) => void;
   readonly requestarguments_method: (a: number) => [number, number];
   readonly requestarguments_params: (a: number) => any;
