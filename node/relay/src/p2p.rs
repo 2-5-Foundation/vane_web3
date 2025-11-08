@@ -12,6 +12,7 @@ use libp2p::swarm::{NetworkInfo, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder};
 
 use crate::metric_server::MetricService;
+use crate::event_feedback::EventFeedbackManager;
 use anyhow::anyhow;
 use futures::future::Either;
 use libp2p::kad::Event as DhtEvent;
@@ -46,6 +47,7 @@ pub struct RelayP2pWorker {
     pub external_multi_addr: Multiaddr,
     pub listening_addr: (Multiaddr, Multiaddr),
     pub metrics: Arc<MetricService>,
+    pub feedback_manager: Arc<EventFeedbackManager>,
 }
 
 impl RelayP2pWorker {
@@ -120,6 +122,7 @@ impl RelayP2pWorker {
         relay_swarm.add_external_address(external_multi_addr.clone());
 
         let metrics = Arc::new(MetricService::new());
+        let feedback_manager = Arc::new(EventFeedbackManager::new());
 
         Ok(Self {
             peer_id,
@@ -127,6 +130,7 @@ impl RelayP2pWorker {
             external_multi_addr,
             listening_addr: (ipv4_listening_addr, ipv6_listening_addr),
             metrics,
+            feedback_manager,
         })
     }
 
@@ -154,6 +158,7 @@ impl RelayP2pWorker {
                 SwarmEvent::ConnectionEstablished {
                     peer_id,
                     established_in,
+                    endpoint,
                     ..
                 } => {
                     info!(target:"p2p","connection established {:?}: duration {:?}",peer_id,established_in);
@@ -162,6 +167,13 @@ impl RelayP2pWorker {
                         Some(&peer_id.to_string()),
                         None,
                     );
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_connection_established(
+                        peer_id,
+                        established_in.as_millis() as u64,
+                        format!("{:?}", endpoint),
+                    ).await;
                 }
                 SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                     info!(target:"p2p","connection closed: {:?}, reason {:?}",peer_id,cause);
@@ -170,6 +182,12 @@ impl RelayP2pWorker {
                         Some(&peer_id.to_string()),
                         None,
                     );
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_connection_closed(
+                        peer_id,
+                        format!("{:?}", cause),
+                    ).await;
                 }
                 SwarmEvent::Dialing { peer_id, .. } => {
                     info!(target:"p2p","dialing: {:?}",peer_id);
@@ -179,10 +197,19 @@ impl RelayP2pWorker {
                             Some(&pid.to_string()),
                             None,
                         );
+                        
+                        // Send feedback
+                        self.feedback_manager.notify_connection_dialing(pid).await;
                     }
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                     info!(target:"p2p","outgoing connection error: {:?}, error {:?}",peer_id,error);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_connection_error(
+                        peer_id,
+                        format!("{:?}", error),
+                    ).await;
                 }
                 SwarmEvent::ListenerClosed {
                     listener_id,
@@ -191,29 +218,73 @@ impl RelayP2pWorker {
                     ..
                 } => {
                     info!(target:"p2p","listener closed: {:?}, addresses {:?}, reason {:?}",listener_id,addresses,reason);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_listener_closed(
+                        format!("{:?}", listener_id),
+                        addresses.iter().map(|a| a.to_string()).collect(),
+                        format!("{:?}", reason),
+                    ).await;
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
                     debug!(target:"p2p","new listen addr: {:?}",address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_listener_started(
+                        address.to_string(),
+                    ).await;
                 }
                 SwarmEvent::ExpiredListenAddr { address, .. } => {
                     debug!(target:"p2p","expired listen addr: {:?}",address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_listener_expired(
+                        address.to_string(),
+                    ).await;
                 }
                 SwarmEvent::NewExternalAddrCandidate { address, .. } => {
                     debug!(target:"p2p","new external addr candidate: {:?}",address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_external_addr_candidate(
+                        address.to_string(),
+                    ).await;
                 }
                 SwarmEvent::ExternalAddrConfirmed { address, .. } => {
                     debug!(target:"p2p","external addr confirmed: {:?}",address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_external_addr_confirmed(
+                        address.to_string(),
+                    ).await;
                 }
                 SwarmEvent::ExternalAddrExpired { address, .. } => {
                     debug!(target:"p2p","external addr expired: {:?}",address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_external_addr_expired(
+                        address.to_string(),
+                    ).await;
                 }
                 SwarmEvent::NewExternalAddrOfPeer {
                     peer_id, address, ..
                 } => {
                     info!(target:"p2p","new external addr of peer: {:?}, {:?}",peer_id,address);
+                    
+                    // Send feedback
+                    self.feedback_manager.notify_external_addr_of_peer(
+                        peer_id,
+                        address.to_string(),
+                    ).await;
                 }
                 _ => {
                     info!(target:"p2p","swarm event: {:?}",swarm_event);
+                    
+                    // Send feedback for unknown events
+                    self.feedback_manager.notify_unknown_event(
+                        "unknown_swarm_event".to_string(),
+                        format!("{:?}", swarm_event),
+                    ).await;
                 }
             }
         }
@@ -234,6 +305,13 @@ impl RelayP2pWorker {
                     &dst_peer_id.to_string(),
                     error.as_ref().map(|e| format!("{:?}", e)).as_deref(),
                 );
+                
+                // Send feedback
+                self.feedback_manager.notify_circuit_closed(
+                    src_peer_id,
+                    dst_peer_id,
+                    error.map(|e| format!("{:?}", e)),
+                ).await;
             }
             RelayServerEvent::CircuitReqAccepted {
                 src_peer_id,
@@ -247,6 +325,12 @@ impl RelayP2pWorker {
                     &dst_peer_id.to_string(),
                     None,
                 );
+                
+                // Send feedback
+                self.feedback_manager.notify_circuit_accepted(
+                    src_peer_id,
+                    dst_peer_id,
+                ).await;
             }
             RelayServerEvent::CircuitReqDenied {
                 src_peer_id,
@@ -256,6 +340,13 @@ impl RelayP2pWorker {
                 info!(target:"p2p","relay message, circuit req denied status: {:?}, src_peer_id: {:?}, dst_peer_id: {:?}",status,src_peer_id,dst_peer_id);
                 self.metrics
                     .record_circuit_event("denied", Some(&src_peer_id.to_string()), None);
+                
+                // Send feedback
+                self.feedback_manager.notify_circuit_denied(
+                    src_peer_id,
+                    dst_peer_id,
+                    format!("{:?}", status),
+                ).await;
             }
             RelayServerEvent::ReservationReqAccepted {
                 src_peer_id,
@@ -265,6 +356,12 @@ impl RelayP2pWorker {
                 // Count only via peer-level recorder to avoid double counting
                 self.metrics
                     .record_reservation_event_peer("accepted", &src_peer_id.to_string());
+                
+                // Send feedback
+                self.feedback_manager.notify_reservation_accepted(
+                    src_peer_id,
+                    renewed,
+                ).await;
             }
             RelayServerEvent::ReservationReqDenied {
                 src_peer_id,
@@ -276,6 +373,12 @@ impl RelayP2pWorker {
                     Some(&src_peer_id.to_string()),
                     None,
                 );
+                
+                // Send feedback
+                self.feedback_manager.notify_reservation_denied(
+                    src_peer_id,
+                    format!("{:?}", status),
+                ).await;
             }
             RelayServerEvent::ReservationTimedOut { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation timed out: {:?}",src_peer_id);
@@ -284,16 +387,93 @@ impl RelayP2pWorker {
                     Some(&src_peer_id.to_string()),
                     None,
                 );
+                
+                // Send feedback
+                self.feedback_manager.notify_reservation_timed_out(
+                    src_peer_id,
+                ).await;
             }
             RelayServerEvent::ReservationClosed { src_peer_id } => {
                 info!(target:"p2p","relay message, reservation closed: {:?}",src_peer_id);
                 // Count only via peer-level recorder to avoid double counting
                 self.metrics
                     .record_reservation_event_peer("closed", &src_peer_id.to_string());
+                
+                // Send feedback
+                self.feedback_manager.notify_reservation_closed(
+                    src_peer_id,
+                    "graceful_close".to_string(),
+                ).await;
             }
             _ => {
                 trace!(target:"p2p","relay message: {:?}",event);
+                
+                // Send feedback for unknown relay events
+                self.feedback_manager.notify_unknown_event(
+                    "unknown_relay_event".to_string(),
+                    format!("{:?}", event),
+                ).await;
             }
         }
+    }
+
+    // ========== PUBLIC FEEDBACK API ==========
+
+    /// Subscribe to all circuit events
+    pub async fn subscribe_all_circuits(&self) -> tokio::sync::mpsc::UnboundedReceiver<crate::event_feedback::EventResult> {
+        use crate::event_feedback::EventSubscription;
+        self.feedback_manager.subscribe(EventSubscription::AllCircuits).await
+    }
+
+    /// Subscribe to all reservation events
+    pub async fn subscribe_all_reservations(&self) -> tokio::sync::mpsc::UnboundedReceiver<crate::event_feedback::EventResult> {
+        use crate::event_feedback::EventSubscription;
+        self.feedback_manager.subscribe(EventSubscription::AllReservations).await
+    }
+
+    /// Subscribe to all connection events
+    pub async fn subscribe_all_connections(&self) -> tokio::sync::mpsc::UnboundedReceiver<crate::event_feedback::EventResult> {
+        use crate::event_feedback::EventSubscription;
+        self.feedback_manager.subscribe(EventSubscription::AllConnections).await
+    }
+
+    /// Subscribe to all events
+    pub async fn subscribe_all_events(&self) -> tokio::sync::mpsc::UnboundedReceiver<crate::event_feedback::EventResult> {
+        use crate::event_feedback::EventSubscription;
+        self.feedback_manager.subscribe(EventSubscription::AllEvents).await
+    }
+
+    /// Subscribe to a specific circuit (one-time feedback when closed/denied)
+    pub async fn subscribe_circuit(
+        &self,
+        src_peer: PeerId,
+        dst_peer: PeerId,
+    ) -> tokio::sync::oneshot::Receiver<crate::event_feedback::EventResult> {
+        self.feedback_manager.subscribe_circuit_once(src_peer, dst_peer).await
+    }
+
+    /// Subscribe to a specific reservation (one-time feedback when closed/denied/timeout)
+    pub async fn subscribe_reservation(
+        &self,
+        peer: PeerId,
+    ) -> tokio::sync::oneshot::Receiver<crate::event_feedback::EventResult> {
+        self.feedback_manager.subscribe_reservation_once(peer).await
+    }
+
+    /// Subscribe to a specific connection (one-time feedback when closed/error)
+    pub async fn subscribe_connection(
+        &self,
+        peer: PeerId,
+    ) -> tokio::sync::oneshot::Receiver<crate::event_feedback::EventResult> {
+        self.feedback_manager.subscribe_connection_once(peer).await
+    }
+
+    /// Get statistics on active events
+    pub async fn get_feedback_stats(&self) -> (usize, usize, usize) {
+        (
+            self.feedback_manager.get_active_circuits_count().await,
+            self.feedback_manager.get_active_reservations_count().await,
+            self.feedback_manager.get_active_connections_count().await,
+        )
     }
 }
