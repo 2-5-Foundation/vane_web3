@@ -705,6 +705,8 @@ export interface DbTxStateMachine {
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
     amount: bigint; // u128 in Rust -> bigint in TS
+    /** Token type */
+    token: Token;
     /** Sender address */
     sender: string;
     /** Receiver address */
