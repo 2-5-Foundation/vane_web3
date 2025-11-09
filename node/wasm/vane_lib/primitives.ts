@@ -719,8 +719,10 @@ export interface DbTxStateMachine {
 
 /** Information about a saved peer */
 export interface SavedPeerInfo {
-    /** The peer's multi-address (e.g., "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1") */
+    /** The peer's ID */
     peer_id: string;
+    /** The peer's multi-address */
+    multi_addr: string;
     /** All account IDs associated with this peer */
     account_ids: string[];
 }
@@ -741,28 +743,6 @@ export interface StorageExport {
     
     /** All failed transactions */
     failed_transactions: DbTxStateMachine[];
-    
-    /** Total value of all successful transactions (in wei/smallest unit) */
-    total_value_success: bigint; // u128 in Rust -> bigint in TS
-    
-    /** Total value of all failed transactions (in wei/smallest unit) */
-    total_value_failed: bigint; // u128 in Rust -> bigint in TS
-    
-    /** 
-     * Multiple saved peers, each with their own account IDs
-     * Example with 2 separate peers, each having 2 addresses:
-     * [
-     *   { 
-     *     peer_id: "/ip4/127.0.0.1/tcp/8080/p2p/12D3KooWPeer1", 
-     *     account_ids: ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"] 
-     *   },
-     *   { 
-     *     peer_id: "/ip4/192.168.1.100/tcp/8080/p2p/12D3KooWPeer2", 
-     *     account_ids: ["0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", "0x90F79bf6EB2c4f870365E785982E1f101E45bF15"] 
-     *   }
-     * ]
-     */
-    all_saved_peers: SavedPeerInfo[];
 }
 
 /** Node connection status information */
@@ -862,21 +842,6 @@ export class StorageExportManager {
         };
     }
 
-    /**
-     * Get all account IDs from saved peers
-     */
-    getAllAccountIds(): string[] {
-        return this.storage.all_saved_peers.flatMap(peer => peer.account_ids);
-    }
-
-    /**
-     * Find peer by account ID
-     */
-    findPeerByAccountId(accountId: string): SavedPeerInfo | undefined {
-        return this.storage.all_saved_peers.find(peer => 
-            peer.account_ids.includes(accountId)
-        );
-    }
 
     /**
      * Get storage export data
@@ -903,11 +868,7 @@ export class StorageExportManager {
         failedTransactions: number;
         largestFailedTransactionAmount: number;
         successRate: string;
-        totalValueSuccess: bigint;
-        totalValueFailed: bigint;
         networksUsed: ChainSupported[];
-        peersCount: number;
-        accountsCount: number;
         currentNonce: number;
     } {
         return {
@@ -916,11 +877,7 @@ export class StorageExportManager {
             largestFailedTransactionAmount: this.getLargestFailedTransactionAmount(),
             failedTransactions: this.storage.failed_transactions.length,
             successRate: `${this.getSuccessRate().toFixed(2)}%`,
-            totalValueSuccess: this.storage.total_value_success,
-            totalValueFailed: this.storage.total_value_failed,
             networksUsed: this.getNetworksUsed(),
-            peersCount: this.storage.all_saved_peers.length,
-            accountsCount: this.getAllAccountIds().length,
             currentNonce: this.storage.nonce,
         };
     }

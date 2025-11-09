@@ -138,10 +138,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     nodeCoordinator = NodeCoordinator.getInstance();
     nodeCoordinator.registerNode('SENDER_NODE');
 
-    // generate a libp2p key
-    const mnemonic = mnemonicGenerate();
-    const miniSecret = mnemonicToMiniSecret(mnemonic);
-    libp2pKey = bytesToHex(miniSecret);
+    
 
     // Initialize WASM node using vane_lib
     try {
@@ -149,7 +146,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       relayMultiAddr: relayInfo.multiAddr,
       account: wasm_client_address,
       network: "Ethereum",
-      libp2pKey: libp2pKey,
         live: false,
         logLevel: LogLevel.Debug
       });
