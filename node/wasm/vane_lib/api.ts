@@ -1,11 +1,12 @@
-import type { 
-  TxStateMachine, 
-  Token, 
-  ChainSupported, 
-  NodeConnectionStatus, 
+import type {
+  TxStateMachine,
+  Token,
+  ChainSupported,
+  NodeConnectionStatus,
   StorageExport,
   UserMetrics,
-  AccountProfile
+  AccountProfile,
+  P2pEventResult,
 } from "./primitives";
 
 // WASM bindings (ESM)
@@ -62,6 +63,9 @@ export function onLog(callback: LogCallback): void {
 
 // Type for transaction update callback
 export type TxUpdateCallback = (tx: TxStateMachine) => void;
+
+// Type for p2p notification callback
+export type P2pNotificationCallback = (event: P2pEventResult) => void;
 
 // Type for revert transaction reason
 export type RevertReason = string | null | undefined;
@@ -133,8 +137,16 @@ export async function watchTxUpdates(callback: TxUpdateCallback): Promise<void> 
   await requireWorker().watchTxUpdates(callback);
 }
 
+export async function watchP2pNotifications(callback: P2pNotificationCallback): Promise<void> {
+  await requireWorker().watchP2pNotifications(callback);
+}
+
 export function unsubscribeWatchTxUpdates(): void {
   requireWorker().unsubscribeWatchTxUpdates();
+}
+
+export function unsubscribeWatchP2pNotifications(): void {
+  requireWorker().unsubscribeWatchP2pNotifications();
 }
 
 export async function fetchPendingTxUpdates(): Promise<TxStateMachine[]> {
@@ -181,7 +193,9 @@ const VaneWeb3 = {
   receiverConfirm,
   revertTransaction,
   watchTxUpdates,
+  watchP2pNotifications,
   unsubscribeWatchTxUpdates,
+  unsubscribeWatchP2pNotifications,
   fetchPendingTxUpdates,
   exportStorage,
   getNodeConnection,

@@ -219,18 +219,19 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Ok(())
     }
 
-    async fn get_all_saved_peers_info(&self) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
+    async fn get_all_saved_peers_info(
+        &self,
+    ) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
+
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(SAVED_PEERS_TABLE)?;
-        
+
         match table.get(SAVED_PEERS_KEY)? {
             Some(value) => {
                 let encoded = value.value();
-                let saved_peers: Vec<SavedPeerInfo> = 
-                    Decode::decode(&mut &encoded[..])
-                        .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?;
+                let saved_peers: Vec<SavedPeerInfo> = Decode::decode(&mut &encoded[..])
+                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?;
                 Ok(saved_peers)
             }
             None => Ok(Vec::new()),
@@ -239,22 +240,22 @@ impl DbWorkerInterface for OpfsRedbWorker {
 
     async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error> {
         let saved_peers = self.get_all_saved_peers_info().await?;
-        
+
         for peer_info in saved_peers {
             if peer_info.account_ids.contains(&account_id) {
                 return Ok(peer_info.multi_addr);
             }
         }
-        
+
         Err(anyhow!("Peer Not found in DB"))
     }
 
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
+
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(SAVED_PEERS_TABLE)?;
-        
+
         let mut saved_peers: Vec<SavedPeerInfo> = match table.get(SAVED_PEERS_KEY)? {
             Some(value) => {
                 let encoded = value.value();
@@ -263,14 +264,14 @@ impl DbWorkerInterface for OpfsRedbWorker {
             }
             None => Vec::new(),
         };
-        
+
         let original_len = saved_peers.len();
         saved_peers.retain(|peer| peer.multi_addr != peer_id);
-        
+
         if saved_peers.len() == original_len {
             return Err(anyhow!("Peer not found with multi_addr: {}", peer_id));
         }
-        
+
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SAVED_PEERS_TABLE)?;
@@ -282,12 +283,16 @@ impl DbWorkerInterface for OpfsRedbWorker {
         Ok(())
     }
 
-    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error> {
+    async fn record_saved_user_peers(
+        &self,
+        account_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
+
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(SAVED_PEERS_TABLE)?;
-        
+
         let mut saved_peers: Vec<SavedPeerInfo> = match table.get(SAVED_PEERS_KEY)? {
             Some(value) => {
                 let encoded = value.value();
@@ -296,10 +301,10 @@ impl DbWorkerInterface for OpfsRedbWorker {
             }
             None => Vec::new(),
         };
-        
+
         // Find or create the peer using multi_addr as the identifier
         let peer_index = saved_peers.iter().position(|p| p.multi_addr == multi_addr);
-        
+
         if let Some(idx) = peer_index {
             // Peer exists, add account_id if not already present
             if !saved_peers[idx].account_ids.contains(&account_id) {
@@ -313,7 +318,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
                 account_ids: vec![account_id],
             });
         }
-        
+
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SAVED_PEERS_TABLE)?;
@@ -517,7 +522,6 @@ impl DbWorkerInterface for OpfsRedbWorker {
 
         Ok(data.failed_value as u128)
     }
-
 }
 
 // ------------------------------------ Testing ------------------------------------ //
@@ -591,14 +595,15 @@ impl DbWorkerInterface for InMemoryDbWorker {
         Ok(())
     }
 
-    async fn get_all_saved_peers_info(&self) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
+    async fn get_all_saved_peers_info(
+        &self,
+    ) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
+
         match self.saved_peers.borrow().get(SAVED_PEERS_KEY) {
             Some(encoded) => {
-                let saved_peers: Vec<SavedPeerInfo> = 
-                    Decode::decode(&mut &encoded[..])
-                        .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?;
+                let saved_peers: Vec<SavedPeerInfo> = Decode::decode(&mut &encoded[..])
+                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?;
                 Ok(saved_peers)
             }
             None => Ok(Vec::new()),
@@ -607,34 +612,33 @@ impl DbWorkerInterface for InMemoryDbWorker {
 
     async fn get_saved_user_peers(&self, account_id: String) -> Result<String, anyhow::Error> {
         let saved_peers = self.get_all_saved_peers_info().await?;
-        
+
         for peer_info in saved_peers {
             if peer_info.account_ids.contains(&account_id) {
                 return Ok(peer_info.multi_addr);
             }
         }
-        
+
         Err(anyhow!("Peer Not found in DB"))
     }
 
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
-        let mut saved_peers: Vec<SavedPeerInfo> = match self.saved_peers.borrow().get(SAVED_PEERS_KEY) {
-            Some(encoded) => {
-                Decode::decode(&mut &encoded[..])
-                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?
-            }
-            None => Vec::new(),
-        };
-        
+
+        let mut saved_peers: Vec<SavedPeerInfo> =
+            match self.saved_peers.borrow().get(SAVED_PEERS_KEY) {
+                Some(encoded) => Decode::decode(&mut &encoded[..])
+                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?,
+                None => Vec::new(),
+            };
+
         let original_len = saved_peers.len();
         saved_peers.retain(|peer| peer.multi_addr != peer_id);
-        
+
         if saved_peers.len() == original_len {
             return Err(anyhow!("Peer not found with multi_addr: {}", peer_id));
         }
-        
+
         self.saved_peers
             .borrow_mut()
             .insert(SAVED_PEERS_KEY.to_string(), saved_peers.encode());
@@ -642,20 +646,23 @@ impl DbWorkerInterface for InMemoryDbWorker {
         Ok(())
     }
 
-    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error> {
+    async fn record_saved_user_peers(
+        &self,
+        account_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error> {
         use primitives::data_structure::SavedPeerInfo;
-        
-        let mut saved_peers: Vec<SavedPeerInfo> = match self.saved_peers.borrow().get(SAVED_PEERS_KEY) {
-            Some(encoded) => {
-                Decode::decode(&mut &encoded[..])
-                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?
-            }
-            None => Vec::new(),
-        };
-        
+
+        let mut saved_peers: Vec<SavedPeerInfo> =
+            match self.saved_peers.borrow().get(SAVED_PEERS_KEY) {
+                Some(encoded) => Decode::decode(&mut &encoded[..])
+                    .map_err(|e| anyhow!("Failed to decode saved peers: {}", e))?,
+                None => Vec::new(),
+            };
+
         // Find or create the peer using multi_addr as the identifier
         let peer_index = saved_peers.iter().position(|p| p.multi_addr == multi_addr);
-        
+
         if let Some(idx) = peer_index {
             // Peer exists, add account_id if not already present
             if !saved_peers[idx].account_ids.contains(&account_id) {
@@ -669,7 +676,7 @@ impl DbWorkerInterface for InMemoryDbWorker {
                 account_ids: vec![account_id],
             });
         }
-        
+
         self.saved_peers
             .borrow_mut()
             .insert(SAVED_PEERS_KEY.to_string(), saved_peers.encode());
@@ -843,7 +850,6 @@ impl DbWorkerInterface for InMemoryDbWorker {
         }
         Ok(success_txs)
     }
-
 }
 
 /// Enum wrapper for different database worker implementations
@@ -959,7 +965,9 @@ impl DbWorkerInterface for DbWorker {
         }
     }
 
-    async fn get_all_saved_peers_info(&self) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
+    async fn get_all_saved_peers_info(
+        &self,
+    ) -> Result<Vec<primitives::data_structure::SavedPeerInfo>, anyhow::Error> {
         match self {
             DbWorker::Opfs(worker) => worker.get_all_saved_peers_info().await,
             DbWorker::InMemory(worker) => worker.get_all_saved_peers_info().await,
@@ -980,11 +988,16 @@ impl DbWorkerInterface for DbWorker {
         }
     }
 
-    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error> {
+    async fn record_saved_user_peers(
+        &self,
+        account_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error> {
         match self {
             DbWorker::Opfs(worker) => worker.record_saved_user_peers(account_id, multi_addr).await,
-            DbWorker::InMemory(worker) => worker.record_saved_user_peers(account_id, multi_addr).await,
+            DbWorker::InMemory(worker) => {
+                worker.record_saved_user_peers(account_id, multi_addr).await
+            }
         }
     }
-
 }

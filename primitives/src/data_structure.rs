@@ -80,8 +80,6 @@ pub enum TxStatus {
     NetConfirmed,
     /// if the sender has confirmed, last stage and the txn is being submitted
     SenderConfirmed,
-    /// this is the immediate status after we submitted transaction (As we are submitting now on front end)
-    TxSubmissionPending,
     /// if non-original sender tries to sign
     SenderConfirmationfailed,
     /// if receiver failed to verify
@@ -463,9 +461,6 @@ impl TxStateMachine {
     }
     pub fn sender_confirmation(&mut self) {
         self.status = TxStatus::SenderConfirmed
-    }
-    pub fn tx_submission_pending(&mut self) {
-        self.status = TxStatus::TxSubmissionPending
     }
     pub fn sender_confirmation_failed(&mut self) {
         self.status = TxStatus::SenderConfirmationfailed
@@ -986,7 +981,11 @@ pub trait DbWorkerInterface: Sized {
     async fn delete_saved_peer(&self, peer_id: &str) -> Result<(), anyhow::Error>;
 
     /// Record a saved peer with account_id and multi_addr
-    async fn record_saved_user_peers(&self, account_id: String, multi_addr: String) -> Result<(), anyhow::Error>;
+    async fn record_saved_user_peers(
+        &self,
+        account_id: String,
+        multi_addr: String,
+    ) -> Result<(), anyhow::Error>;
 }
 
 /// Node error reporting structure
@@ -1024,4 +1023,37 @@ pub struct StorageExport {
 
     /// All failed transactions  
     pub failed_transactions: Vec<DbTxStateMachine>,
+}
+
+// Events tracking on p2p networking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum P2pEventResult {
+    // Connection and dialing events
+    RelayerConnectionClosed,
+    PeerConnectionClosed {
+        peer_id: String,
+        address: String,
+    },
+    PeerIsOnline,
+    Dialing {
+        peer_id: Option<String>,
+        address: Option<String>,
+    },
+    RecvIncomingConnectionError {
+        error: String,
+    },
+    SenderOutgoingConnectionError {
+        error: String,
+        address: Option<String>,
+    },
+    PeerIsOffline,
+
+    // relay circuits events
+    SenderCircuitEstablished,
+    ReceiverConnected {
+        peer_id: String,
+        address: String,
+    },
+    // reservation events
+    ReservationAccepted,
 }
