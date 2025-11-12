@@ -15,7 +15,8 @@ import {
   fetchPendingTxUpdates,
   exportStorage,
   addAccount,
-  receiverConfirm
+  receiverConfirm,
+  watchP2pNotifications
 } from '../../node/wasm/vane_lib/api.js';
 import {
   TxStateMachine,
@@ -154,6 +155,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       throw error;
     }
 
+    // Register P2P notifications watcher early to catch all connection events
+    watchP2pNotifications((event) => {
+      console.log('🔑 P2P EVENT NOTIFICATION', event);
+    });
+
     await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
       console.log('✅ SENDER_NODE READY');
     });
@@ -198,6 +204,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
         console.log('🔑 RECV NOT CONFIRMED', tx.status);
         return;
       }
+      
       
       console.log("Processing - receiver confirmed, signing transaction");
 
@@ -255,13 +262,13 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     const balanceChange = Math.ceil(senderBalanceBefore) - Math.ceil(senderBalanceAfter);
     expect(balanceChange).toEqual(10);
 
+
     // assert storage updates
     const storage:StorageExport = await exportStorage() as StorageExport;
 
     const storageManager = new StorageExportManager(storage);
-    const metrics = storageManager.getSummary();
+    const metrics = storageManager.getSummary();  
     console.log('🔑 STORAGE METRICS', metrics);
-   
     
    
   });

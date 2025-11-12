@@ -203,12 +203,6 @@ function debugString(val) {
     // TODO we could test for more things here, like `Set`s and `Map`s.
     return className;
 }
-
-function takeFromExternrefTable0(idx) {
-    const value = wasm.__wbindgen_export_4.get(idx);
-    wasm.__externref_table_dealloc(idx);
-    return value;
-}
 /**
  * @param {string} relay_node_multi_addr
  * @param {string} account
@@ -228,24 +222,29 @@ export function start_vane_web3(relay_node_multi_addr, account, network, live, s
     return ret;
 }
 
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_export_4.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
+}
 function __wbg_adapter_58(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc(arg0, arg1);
 }
 
 function __wbg_adapter_61(arg0, arg1, arg2) {
-    wasm.closure1203_externref_shim(arg0, arg1, arg2);
+    wasm.closure1192_externref_shim(arg0, arg1, arg2);
 }
 
 function __wbg_adapter_68(arg0, arg1, arg2) {
-    wasm.closure1561_externref_shim(arg0, arg1, arg2);
+    wasm.closure1550_externref_shim(arg0, arg1, arg2);
 }
 
 function __wbg_adapter_71(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2(arg0, arg1);
 }
 
-function __wbg_adapter_217(arg0, arg1, arg2, arg3) {
-    wasm.closure1959_externref_shim(arg0, arg1, arg2, arg3);
+function __wbg_adapter_219(arg0, arg1, arg2, arg3) {
+    wasm.closure1948_externref_shim(arg0, arg1, arg2, arg3);
 }
 
 const __wbindgen_enum_BinaryType = ["blob", "arraybuffer"];
@@ -326,6 +325,17 @@ export class PublicInterfaceWorkerJs {
     }
     unsubscribeWatchTxUpdates() {
         wasm.publicinterfaceworkerjs_unsubscribeWatchTxUpdates(this.__wbg_ptr);
+    }
+    /**
+     * @param {Function} callback
+     * @returns {Promise<void>}
+     */
+    watchP2pNotifications(callback) {
+        const ret = wasm.publicinterfaceworkerjs_watchP2pNotifications(this.__wbg_ptr, callback);
+        return ret;
+    }
+    unsubscribeWatchP2pNotifications() {
+        wasm.publicinterfaceworkerjs_unsubscribeWatchP2pNotifications(this.__wbg_ptr);
     }
     /**
      * @returns {Promise<any>}
@@ -632,7 +642,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_217(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_219(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -872,28 +882,28 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper2522 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1004, __wbg_adapter_58);
+    imports.wbg.__wbindgen_closure_wrapper2507 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 993, __wbg_adapter_58);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3452 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1204, __wbg_adapter_61);
+    imports.wbg.__wbindgen_closure_wrapper3436 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1193, __wbg_adapter_61);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3453 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1204, __wbg_adapter_61);
+    imports.wbg.__wbindgen_closure_wrapper3437 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1193, __wbg_adapter_61);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3454 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1204, __wbg_adapter_61);
+    imports.wbg.__wbindgen_closure_wrapper3438 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1193, __wbg_adapter_61);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper4810 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1562, __wbg_adapter_68);
+    imports.wbg.__wbindgen_closure_wrapper4794 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1551, __wbg_adapter_68);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper4898 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1611, __wbg_adapter_71);
+    imports.wbg.__wbindgen_closure_wrapper4882 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1600, __wbg_adapter_71);
         return ret;
     };
     imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {

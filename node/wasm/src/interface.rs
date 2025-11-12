@@ -27,13 +27,13 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     cryptography::{verify_public_bytes, verify_route},
-    p2p::{P2pNetworkService, WasmP2pWorker},
+    p2p::{P2pEventNotifSubSystem, P2pNetworkService, WasmP2pWorker},
     HashMap,
 };
 
 use primitives::data_structure::{
     AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine,
+    NodeConnectionStatus, P2pEventResult, StorageExport, Token, TtlWrapper, TxStateMachine,
     TxStatus, UserAccount, UserMetrics,
 };
 
@@ -60,11 +60,18 @@ pub struct PublicInterfaceWorker {
     pub watcher_active: Rc<RefCell<bool>>,
     /// List of registered callbacks for transaction updates
     pub tx_callbacks: Rc<RefCell<Vec<js_sys::Function>>>,
+    /// p2p event notification worker for notifying user about the full connection cycle
+    pub p2p_event_notif_sub_system: Rc<P2pEventNotifSubSystem>,
+    /// Flag to track if p2p watcher is already active
+    pub p2p_watcher_active: Rc<RefCell<bool>>,
+    /// List of registered callbacks for p2p event updates
+    pub p2p_callbacks: Rc<RefCell<Vec<js_sys::Function>>>,
 }
 
 impl PublicInterfaceWorker {
     pub async fn new(
         db_worker: Rc<DbWorker>,
+        p2p_event_notif_sub_system: Rc<P2pEventNotifSubSystem>,
         p2p_worker: Rc<WasmP2pWorker>,
         p2p_network_service: Rc<P2pNetworkService>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
@@ -83,6 +90,9 @@ impl PublicInterfaceWorker {
             tx_integrity: Rc::new(RefCell::new(HashMap::new())),
             watcher_active: Rc::new(RefCell::new(false)),
             tx_callbacks: Rc::new(RefCell::new(Vec::new())),
+            p2p_event_notif_sub_system,
+            p2p_watcher_active: Rc::new(RefCell::new(false)),
+            p2p_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
     }
     pub fn compute_tx_integrity_hash(tx: &TxStateMachine) -> [u8; 32] {
@@ -214,8 +224,9 @@ impl PublicInterfaceWorker {
 
     pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
-        info!("sender_confirming transaction: {:?}", tx.tx_nonce);
+        info!("sender_confirming transaction: {:?}", tx);
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
+
         let recv_tx_integrity = self
             .tx_integrity
             .borrow_mut()
@@ -225,37 +236,44 @@ impl PublicInterfaceWorker {
             )))?
             .clone();
         if tx_integrity_hash != recv_tx_integrity {
+            error!("Transaction integrity failed");
             Err(anyhow!("Transaction integrity failed".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         }
 
+
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
+            error!("Transaction already reverted");
             return Err(JsError::new("Transaction already reverted"));
         }
 
         if let TxStatus::ReceiverNotRegistered = tx.status {
+            error!("Receiver not registered");
             return Err(JsError::new("Receiver not registered"));
         }
 
         if let TxStatus::RecvAddrFailed = tx.status {
+            error!("Receiver address failed");
             return Err(JsError::new("Receiver address failed"));
         }
 
+
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
+            error!("Wait for Receiver to confirm or sender should confirm");
             Err(anyhow!(
                 "Wait for Receiver to confirm or sender should confirm".to_string(),
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) {
+            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) | !matches!(tx.status, TxStatus::FailedToSubmitTxn(_)) {
                 tx.sender_confirmation();
             }
             // this path meaning we have already submitted the transaction
-            tx.tx_submission_pending();
             tx.increment_version();
+
             let sender = sender_channel.clone();
             sender
                 .send(tx.clone())
@@ -283,6 +301,20 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
+    /// watch notifications coming from p2p communication to notify the user about the transaction updates
+    pub async fn watch_p2p_notifications(&self, callback: &js_sys::Function) -> Result<(), JsError> {
+        let callback = callback.clone();
+
+        // Add the callback to our list
+        self.p2p_callbacks.borrow_mut().push(callback);
+
+        // Start the background watcher if it's not already running
+        if !*self.p2p_watcher_active.borrow() {
+            self.start_p2p_notifications_watcher().await?;
+        }
+
+        Ok(())
+    }
     /// Register a callback for transaction updates. Multiple callbacks can be registered.
     /// The background watcher will be started automatically if it's not already running.
     pub async fn watch_tx_updates(&self, callback: &js_sys::Function) -> Result<(), JsError> {
@@ -349,6 +381,56 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
+    /// Start the p2p notifications background watcher task (internal method)
+    async fn start_p2p_notifications_watcher(&self) -> Result<(), JsError> {
+        if *self.p2p_watcher_active.borrow() {
+            return Ok(()); // Already running
+        }
+
+        // Mark watcher as active
+        *self.p2p_watcher_active.borrow_mut() = true;
+        info!("Starting P2P notifications watcher");
+
+        let receiver_channel = self.p2p_event_notif_sub_system.recv.clone();
+        let callbacks = self.p2p_callbacks.clone();
+        let watcher_active = self.p2p_watcher_active.clone();
+
+        // Spawn a single background task to continuously poll for p2p event updates
+        wasm_bindgen_futures::spawn_local(async move {
+            info!("P2P notifications watcher task started");
+            let mut receiver = receiver_channel.borrow_mut();
+
+            loop {
+                match receiver.recv().await {
+                    Some(event) => {
+                        // Convert p2p event to JS value using serde
+                        let event_js_value = serde_wasm_bindgen::to_value(&event)
+                            .unwrap_or_else(|e| {
+                                error!("Failed to serialize P2P event: {:?}", e);
+                                JsValue::NULL
+                            });
+
+                        // Call all registered callbacks
+                        let callbacks_guard = callbacks.borrow();
+                        for callback in callbacks_guard.iter() {
+                            if let Err(e) = callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &event_js_value) {
+                                error!("Error calling P2P notification callback: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {
+                        info!("P2P notification channel closed");
+                        // Mark watcher as inactive when done
+                        *watcher_active.borrow_mut() = false;
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
     /// Unsubscribe from all transaction updates (stops watcher and clears all callbacks)
     pub fn unsubscribe_watch_tx_updates(&self) {
         *self.watcher_active.borrow_mut() = false;
@@ -356,11 +438,18 @@ impl PublicInterfaceWorker {
         info!("Unsubscribed from all transaction updates");
     }
 
+    /// Unsubscribe from all p2p notifications (stops watcher and clears all callbacks)
+    pub fn unsubscribe_watch_p2p_notifications(&self) {
+        *self.p2p_watcher_active.borrow_mut() = false;
+        self.p2p_callbacks.borrow_mut().clear();
+        info!("Unsubscribed from all p2p notifications");
+    }
+
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
         // flush out valyues that have been expired
         let now = (js_sys::Date::now() / 1000.0) as u32;
         info!("🔑 NOW: {:?}", now);
-        let time_to_live = 180;
+        let time_to_live = 60 * 40; // 40 minutes
         let expired_keys = self
             .lru_cache
             .borrow()
@@ -522,7 +611,6 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Failed to serialize storage data: {}", e)))
     }
 
-
     // Cache maintenance
     pub fn clear_reverted_from_cache(&self) {
         let keys: Vec<u32> = self
@@ -661,6 +749,20 @@ impl PublicInterfaceWorkerJs {
     #[wasm_bindgen(js_name = "unsubscribeWatchTxUpdates")]
     pub fn unsubscribe_watch_tx_updates(&self) {
         self.inner.borrow().unsubscribe_watch_tx_updates();
+    }
+
+    #[wasm_bindgen(js_name = "watchP2pNotifications")]
+    pub async fn watch_p2p_notifications(
+        &self,
+        callback: &js_sys::Function,
+    ) -> Result<(), JsError> {
+        self.inner.borrow().watch_p2p_notifications(callback).await?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "unsubscribeWatchP2pNotifications")]
+    pub fn unsubscribe_watch_p2p_notifications(&self) {
+        self.inner.borrow().unsubscribe_watch_p2p_notifications();
     }
 
     #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]

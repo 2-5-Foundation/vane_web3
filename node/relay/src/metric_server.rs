@@ -14,9 +14,7 @@ use axum::{
     Json, Router,
 };
 use log::{error, info, warn};
-use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, StorageExport, UserAccount,
-};
+use primitives::data_structure::{ChainSupported, DbTxStateMachine, StorageExport, UserAccount};
 use prometheus_client::{
     encoding::text::encode,
     metrics::{counter::Counter, gauge::Gauge},
@@ -91,7 +89,7 @@ pub struct RelayMetrics {
 pub struct ClientMetricsStore {
     // All maps keyed by account_id, not peer_id
     pub last_update_times: HashMap<String, SystemTime>, // account_id -> last update time
-    pub last_totals: HashMap<String, (u64, u64)>, // account_id -> (success_cnt, failed_cnt)
+    pub last_totals: HashMap<String, (u64, u64)>,       // account_id -> (success_cnt, failed_cnt)
     // Aggregates
     pub total_success_txs: Counter,
     pub total_failed_txs: Counter,
@@ -258,7 +256,7 @@ impl ClientMetricsStore {
         self.update_aggregated_metrics(&account_id, storage);
 
         info!(
-            "Updated metrics for peer {} account {} ({}) - {} success txs, {} failed txs", 
+            "Updated metrics for peer {} account {} ({}) - {} success txs, {} failed txs",
             peer_id,
             account_id,
             client_type,
@@ -302,8 +300,6 @@ impl ClientMetricsStore {
     ) {
     }
 
-   
-
     fn update_aggregated_metrics(&mut self, account_id: &str, storage: &StorageExport) {
         // Compute deltas per account to avoid double counting
         // Note: Value metrics are not aggregated here since transactions can have different tokens
@@ -314,11 +310,7 @@ impl ClientMetricsStore {
             storage.failed_transactions.len() as u64,
         );
 
-        let last = self
-            .last_totals
-            .get(account_id)
-            .cloned()
-            .unwrap_or((0, 0));
+        let last = self.last_totals.get(account_id).cloned().unwrap_or((0, 0));
         let delta_success = current.0.saturating_sub(last.0);
         let delta_failed = current.1.saturating_sub(last.1);
 
@@ -341,7 +333,8 @@ impl ClientMetricsStore {
 
         // Update per-client snapshot keyed by account_id
         // Merge with existing snapshot if it exists, otherwise create new one
-        let existing_snapshot = self.per_client
+        let existing_snapshot = self
+            .per_client
             .entry(account_id.to_string())
             .or_insert_with(|| ClientSnapshot {
                 account_id: account_id.to_string(),
@@ -349,24 +342,23 @@ impl ClientMetricsStore {
                 failed_txs: 0,
                 failed_transactions: Vec::new(),
             });
-        
+
         // Update snapshot with current values
         existing_snapshot.success_txs = current.0;
         existing_snapshot.failed_txs = current.1;
-        
+
         // Merge failed transactions, avoiding duplicates
         for new_tx in &storage.failed_transactions {
             let is_duplicate = existing_snapshot
                 .failed_transactions
                 .iter()
                 .any(|existing_tx| existing_tx.tx_hash == new_tx.tx_hash);
-            
+
             if !is_duplicate {
                 existing_snapshot.failed_transactions.push(new_tx.clone());
             }
         }
     }
-
 }
 
 #[derive(Clone)]

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use crate::p2p::{host_get_dht, host_set_dht};
 use crate::{
     interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs},
-    p2p::{P2pNetworkService, WasmP2pWorker},
+    p2p::{P2pEventNotifSubSystem, P2pNetworkService, WasmP2pWorker},
     tx_processing::WasmTxProcessingWorker,
 };
 use anyhow::{anyhow, Error};
@@ -26,8 +26,8 @@ use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
 use log::{debug, error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, StorageExport,
-    SwarmMessage, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
+    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, P2pEventResult,
+    StorageExport, SwarmMessage, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_timer::TryFutureExt;
@@ -80,6 +80,9 @@ impl WasmMainServiceWorker {
         let (dht_query_result_tx, dht_query_result_recv) =
             tokio_with_wasm::alias::sync::mpsc::channel::<(Option<Multiaddr>, u32)>(10);
 
+        let (p2p_event_notif_tx, p2p_event_notif_recv) =
+            tokio_with_wasm::alias::sync::mpsc::channel::<P2pEventResult>(20);
+
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
         let db = DbWorker::initialize_inmemory_db_client("vane.db").await?;
@@ -95,6 +98,11 @@ impl WasmMainServiceWorker {
         // PEER TO PEER NETWORKING WORKER
         // ===================================================================================== //
 
+        let p2p_event_notif_sub_system = Rc::new(P2pEventNotifSubSystem::new(
+            Rc::new(RefCell::new(p2p_event_notif_tx)),
+            Rc::new(RefCell::new(p2p_event_notif_recv)),
+        ));
+
         let p2p_worker = WasmP2pWorker::new(
             live,
             db_worker.clone(),
@@ -102,6 +110,7 @@ impl WasmMainServiceWorker {
             account.clone(),
             p2p_command_recv,
             dht_query_result_tx,
+            p2p_event_notif_sub_system.clone(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
@@ -130,6 +139,7 @@ impl WasmMainServiceWorker {
 
         let public_interface_worker = PublicInterfaceWorker::new(
             db_worker.clone(),
+            p2p_event_notif_sub_system.clone(),
             Rc::new(p2p_worker.clone()),
             Rc::new(p2p_network_service.clone()),
             Rc::new(RefCell::new(rpc_recv_channel)),
@@ -490,7 +500,9 @@ impl WasmMainServiceWorker {
                                         .get(&tx.tx_nonce.into())
                                         .expect("Failed to get transaction from cache; panic")
                                         .clone();
+
                                     ttl_wrapper.update_value(tx.clone());
+
                                     lru_cache
                                         .borrow_mut()
                                         .push(tx.tx_nonce.into(), ttl_wrapper.clone());
@@ -1070,6 +1082,7 @@ impl WasmMainServiceWorker {
     }
 
     pub async fn handle_public_interface_tx_updates(&mut self) -> Result<(), anyhow::Error> {
+        info!("reaching here 7");
         while let Some(txn) = {
             let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
             receiver.recv().await
@@ -1096,7 +1109,7 @@ impl WasmMainServiceWorker {
                     todo!()
                 }
 
-                TxStatus::SenderConfirmed => {
+                TxStatus::SenderConfirmed | TxStatus::FailedToSubmitTxn(_) | TxStatus::TxSubmissionPassed { hash: _ } => {
                     info!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates");
                     debug!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates: {:?}",txn.clone());
 
@@ -1128,14 +1141,7 @@ impl WasmMainServiceWorker {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
 
         // ====================================================================================== //
-        let main_worker = Self::new(
-            relay_node_multi_addr,
-            account,
-            network,
-            live,
-            storage
-        )
-        .await?;
+        let main_worker = Self::new(relay_node_multi_addr, account, network, live, storage).await?;
 
         // ====================================================================================== //
 
@@ -1212,7 +1218,6 @@ impl WasmMainServiceWorker {
         // Apply nonce - set it to the exported value
         db_worker.set_nonce(storage_export.nonce).await?;
 
-
         // Apply successful transactions
         for tx in storage_export.success_transactions {
             db_worker.update_success_tx(tx).await?;
@@ -1251,15 +1256,7 @@ pub async fn start_vane_web3(
 
     log::debug!("Rust debug log test from inside WASM");
 
-    match WasmMainServiceWorker::run(
-        relay_node_multi_addr,
-        account,
-        network,
-        live,
-        storage
-    )
-    .await
-    {
+    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live, storage).await {
         Ok(public_interface_worker) => {
             // Convert the PublicInterfaceWorker to PublicInterfaceWorkerJs and return it
             let js_worker =

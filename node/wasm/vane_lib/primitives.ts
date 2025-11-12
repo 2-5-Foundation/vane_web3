@@ -500,7 +500,6 @@ export type TxStatus =
     | { type: "RecvAddrConfirmationPassed" }
     | { type: "NetConfirmed" }
     | { type: "SenderConfirmed" }
-    | { type: "TxSubmissionPending" }
     | { type: "SenderConfirmationfailed" }
     | { type: "RecvAddrFailed" }
     | { type: "FailedToSubmitTxn", data: TxStatusData["FailedToSubmitTxn"] }
@@ -755,6 +754,25 @@ export interface NodeConnectionStatus {
     connection_uptime_seconds?: number;
     last_connection_change?: number; // Unix timestamp
 }
+
+/**
+ * P2P event result types
+ * Events tracking on p2p networking
+ * Matches serde's default enum serialization format:
+ * - Unit variants: just the string name
+ * - Variants with data: { "VariantName": {...data...} }
+ */
+export type P2pEventResult =
+    | "RelayerConnectionClosed"
+    | "PeerIsOnline"
+    | "PeerIsOffline"
+    | "ReservationAccepted"
+    | "SenderCircuitEstablished"
+    | { PeerConnectionClosed: { peer_id: string; address: string } }
+    | { Dialing: { peer_id: string | null; address: string | null } }
+    | { RecvIncomingConnectionError: { error: string } }
+    | { SenderOutgoingConnectionError: { error: string; address: string | null } }
+    | { ReceiverConnected: { peer_id: string; address: string } };
 
 /** User metrics structure */
 export interface UserMetrics {

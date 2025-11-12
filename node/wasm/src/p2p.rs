@@ -35,9 +35,23 @@ use libp2p_websocket_websys;
 pub use codec::Encode;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use primitives::data_structure::{
-    ConnectionState, DHTResponse, DbWorkerInterface, HashId, NetworkCommand, SwarmMessage,
-    TxStateMachine,
+    ConnectionState, DHTResponse, DbWorkerInterface, HashId, NetworkCommand, P2pEventResult,
+    SwarmMessage, TxStateMachine,
 };
+
+// p2p event notification worker
+#[derive(Clone)]
+pub struct P2pEventNotifSubSystem {
+    pub sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<P2pEventResult>>>,
+    pub recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<P2pEventResult>>>,
+}
+
+impl P2pEventNotifSubSystem {
+    pub fn new(sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<P2pEventResult>>>, recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<P2pEventResult>>>) -> Self {
+        Self { sender, recv }
+    }
+}
+
 #[derive(Clone)]
 pub struct WasmP2pWorker {
     pub live: bool,
@@ -54,6 +68,9 @@ pub struct WasmP2pWorker {
     pub dht_channel_query: Rc<tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>>,
     pub dht_announce_once: Rc<Once>,
     pub relay_connection_state: Rc<RefCell<ConnectionState>>,
+    pub p2p_event_notif_sub_system: Rc<P2pEventNotifSubSystem>,
+    //  cache of the receiver address matched with peerId
+    pub receiver_address_cache: Rc<RefCell<HashMap<PeerId, String>>>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -89,6 +106,7 @@ impl WasmP2pWorker {
         user_account_id: String,
         command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,
         dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>,
+        p2p_event_notif_sub_system: Rc<P2pEventNotifSubSystem>,
     ) -> Result<Self, anyhow::Error> {
         let self_keypair = libp2p::identity::Keypair::generate_ed25519();
 
@@ -114,7 +132,7 @@ impl WasmP2pWorker {
             .boxed();
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(core::time::Duration::from_secs(610)); // 10 minutes waiting time for a response with 10 second buffer
+            .with_request_timeout(core::time::Duration::from_secs(60 * 60)); // 10 minutes waiting time for a response with 10 second buffer
 
         let mut dht_config = KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol"));
         dht_config.set_kbucket_inserts(libp2p::kad::BucketInserts::Manual);
@@ -148,7 +166,7 @@ impl WasmP2pWorker {
             combined_behaviour,
             peer_id,
             libp2p::swarm::Config::with_wasm_executor()
-                .with_idle_connection_timeout(std::time::Duration::from_secs(700)),
+                .with_idle_connection_timeout(std::time::Duration::from_secs(60 * 60)),
         );
 
         wasm_swarm.add_external_address(user_circuit_multi_addr.clone());
@@ -166,6 +184,8 @@ impl WasmP2pWorker {
             dht_channel_query: Rc::new(dht_query_result_tx),
             dht_announce_once: Rc::new(Once::new()),
             relay_connection_state: Rc::new(RefCell::new(ConnectionState::default())),
+            p2p_event_notif_sub_system: p2p_event_notif_sub_system,
+            receiver_address_cache: Rc::new(RefCell::new(HashMap::new())),
         })
     }
 
@@ -184,7 +204,7 @@ impl WasmP2pWorker {
                     self.handle_app_json_events(app_json_event, sender).await;
                 }
                 WasmRelayBehaviourEvent::RelayClient(relay_client_event) => {
-                    Self::handle_relay_events(
+                    self.handle_relay_events(
                         relay_client_event,
                         self.relay_connection_state.clone(),
                     )
@@ -200,13 +220,53 @@ impl WasmP2pWorker {
                 num_established,
                 ..
             } => {
-                info!(target:"p2p","🟢 Connected to peer {} (connections: {})", peer_id, num_established)
+                info!(target:"p2p","🟢 Connected to peer {} (connections: {})", peer_id, num_established);
+                let receiver_address = self.receiver_address_cache.borrow().get(&peer_id).cloned().unwrap_or_else(|| {
+                    warn!(target:"p2p", "Peer {} disconnected but not in address cache, using unknown", peer_id);
+                    "unknown".to_string()
+                });
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::ReceiverConnected {
+                        peer_id: peer_id.clone().to_base58(),
+                        address: receiver_address,
+                    })
+                    .await
+                    .expect("failed to send p2p event result");
             }
+
             SwarmEvent::IncomingConnection { send_back_addr, .. } => {
                 info!(target:"p2p","📥 Incoming connection from {}", send_back_addr)
             }
+
             SwarmEvent::Dialing { peer_id, .. } => {
-                info!(target:"p2p","📞 Dialing peer {}", peer_id.map(|p| p.to_string()).unwrap_or_else(|| "unknown".to_string()))
+                info!(target:"p2p","📞 Dialing peer {}", peer_id.map(|p| p.to_string()).unwrap_or_else(|| "unknown".to_string()));
+
+                if let Some(peer_id) = peer_id {
+                    if let Some(address) = self.receiver_address_cache.borrow().get(&peer_id) {
+                        self.p2p_event_notif_sub_system
+                            .sender
+                            .borrow_mut()
+                            .send(P2pEventResult::Dialing {
+                                peer_id: Some(peer_id.clone().to_base58()),
+                                address: Some(address.clone()),
+                            })
+                            .await
+                            .expect("failed to send p2p event result");
+                    }
+                }else{
+
+                    self.p2p_event_notif_sub_system
+                        .sender
+                        .borrow_mut()
+                        .send(P2pEventResult::Dialing {
+                            peer_id: None,
+                            address: None
+                        })
+                        .await
+                        .expect("failed to send p2p event result");
+                }
             }
             SwarmEvent::ListenerError { error, .. } => {
                 error!(target: "p2p","❌ Listener error: {}", error);
@@ -223,24 +283,97 @@ impl WasmP2pWorker {
                     }
                 });
 
-                if let Some(relay_peer) = relay_peer_id {
-                    if peer_id == relay_peer {
-                        let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
-                        *self.relay_connection_state.borrow_mut() =
-                            ConnectionState::Disconnected(now);
-                        info!(target:"p2p","🔴 Relay connection lost");
-                    }
+                // Check if this is the relay peer
+                let is_relay = relay_peer_id.map_or(false, |relay_peer| peer_id == relay_peer);
+
+                if is_relay {
+                    let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
+                    *self.relay_connection_state.borrow_mut() =
+                        ConnectionState::Disconnected(now);
+
+                    self.p2p_event_notif_sub_system
+                        .sender
+                        .borrow_mut()
+                        .send(P2pEventResult::RelayerConnectionClosed)
+                        .await
+                        .expect("failed to send p2p event result");
+
+                    info!(target:"p2p","🔴 Relay connection lost, cause: {:?}", cause);
+                } else {
+                    // Handle regular peer disconnection
+                    // Try to get address from cache, but don't panic if not found
+                    let receiver_address = self
+                        .receiver_address_cache
+                        .borrow()
+                        .get(&peer_id)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            warn!(target:"p2p", "Peer {} disconnected but not in address cache, using unknown", peer_id);
+                            "unknown".to_string()
+                        });
+
+                    self.p2p_event_notif_sub_system
+                        .sender
+                        .borrow_mut()
+                        .send(P2pEventResult::PeerConnectionClosed {
+                            peer_id: peer_id.clone().to_base58(),
+                            address: receiver_address,
+                        })
+                        .await
+                        .expect("failed to send p2p event result");
                 }
             }
             SwarmEvent::IncomingConnectionError { error, .. } => {
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::RecvIncomingConnectionError {
+                        error: error.to_string(),
+                    })
+                    .await
+                    .expect("failed to send p2p event result");
                 error!(target:"p2p","❌ Incoming connection failed: {}", error)
             }
-            SwarmEvent::OutgoingConnectionError { error, .. } => {
+
+            SwarmEvent::OutgoingConnectionError { error, peer_id,.. } => {
+                // idk if the peer is already resolved
+
+                if let Some(peer_id) = peer_id {
+                    if let Some(address) = self.receiver_address_cache.borrow().get(&peer_id) {
+                        self.p2p_event_notif_sub_system
+                            .sender
+                            .borrow_mut()
+                            .send(P2pEventResult::SenderOutgoingConnectionError {
+                                error: error.to_string(),
+                                address: Some(address.clone()),
+                            })
+                            .await
+                            .expect("failed to send p2p event result");
+                    }
+                }else{
+                    self.p2p_event_notif_sub_system
+                        .sender
+                        .borrow_mut()
+                        .send(P2pEventResult::SenderOutgoingConnectionError {
+                            error: error.to_string(),
+                            address: None,
+                        })
+                        .await
+                        .expect("failed to send p2p event result");
+                }
                 error!(target:"p2p","❌ Outgoing connection failed: {}", error)
             }
+
             SwarmEvent::ListenerClosed {
                 reason, addresses, ..
             } => {
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::PeerIsOffline)
+                    .await
+                    .expect("failed to send p2p event result");
+
                 info!(target:"p2p","🔌 Listener closed: {:?} {:?}", reason, addresses)
             }
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -259,6 +392,13 @@ impl WasmP2pWorker {
                 if !self.live {
                     value = value.replace("/tcp/443", "/tcp/30333");
                 }
+
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::PeerIsOnline)
+                    .await
+                    .expect("failed to send p2p event result");
 
                 // Use Once to ensure DHT announcement happens only once
                 self.dht_announce_once.call_once(|| {
@@ -417,24 +557,42 @@ impl WasmP2pWorker {
     }
 
     async fn handle_relay_events(
+        &self,
         relay_client_event: RelayClientEvent,
         connection_state: Rc<RefCell<ConnectionState>>,
     ) {
         match relay_client_event {
             RelayClientEvent::InboundCircuitEstablished { src_peer_id, .. } => {
+
                 info!(target: "p2p","inbound circuit established: {src_peer_id:?}");
                 let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
                 *connection_state.borrow_mut() = ConnectionState::Connected(now);
             }
             RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
+
                 info!(target: "p2p","outbound circuit established: {relay_peer_id:?}");
                 let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
-                *connection_state.borrow_mut() = ConnectionState::Connected(now);
+                *connection_state.borrow_mut() = ConnectionState::Connected(now);       
+
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::SenderCircuitEstablished)
+                    .await
+                    .expect("failed to send p2p event result");
+
             }
             RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
                 info!(target: "p2p","reservation request accepted: {relay_peer_id:?}");
                 let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
                 *connection_state.borrow_mut() = ConnectionState::Connected(now);
+
+                self.p2p_event_notif_sub_system
+                    .sender
+                    .borrow_mut()
+                    .send(P2pEventResult::ReservationAccepted)
+                    .await
+                    .expect("failed to send p2p event result");
             }
         }
     }
@@ -776,6 +934,12 @@ impl P2pNetworkService {
         target_multi_addr: Multiaddr,
     ) -> Result<(), Error> {
         let req = request.borrow().clone();
+
+        // cache the receiver address
+        self.wasm_p2p_worker.receiver_address_cache
+            .borrow_mut()
+            .insert(target_peer_id, req.receiver_address.clone());
+
         let req_command = NetworkCommand::WasmSendRequest {
             request: req,
             peer_id: target_peer_id,
