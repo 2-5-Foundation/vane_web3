@@ -274,15 +274,6 @@ impl PublicInterfaceWorker {
             // this path meaning we have already submitted the transaction
             tx.increment_version();
 
-            let sender = sender_channel.clone();
-            sender
-                .send(tx.clone())
-                .await
-                .map_err(|_| {
-                    anyhow!("failed to send sender confirmation tx state to sender-channel")
-                })
-                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
             let mut ttl_wrapper = self
                 .lru_cache
                 .borrow_mut()
@@ -297,6 +288,16 @@ impl PublicInterfaceWorker {
                 .lru_cache
                 .borrow_mut()
                 .push(tx.tx_nonce.into(), ttl_wrapper);
+            
+            let sender = sender_channel.clone();
+            sender
+                .send(tx.clone())
+                .await
+                .map_err(|_| {
+                    anyhow!("failed to send sender confirmation tx state to sender-channel")
+                })
+                .map_err(|e| JsError::new(&format!("{:?}", e)))?;
+
         }
         Ok(())
     }
