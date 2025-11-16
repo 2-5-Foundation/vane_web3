@@ -268,9 +268,10 @@ impl PublicInterfaceWorker {
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) | !matches!(tx.status, TxStatus::FailedToSubmitTxn(_)) {
+            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) && !matches!(tx.status, TxStatus::FailedToSubmitTxn(_)) {
                 tx.sender_confirmation();
             }
+
             // this path meaning we have already submitted the transaction
             tx.increment_version();
 
@@ -288,7 +289,7 @@ impl PublicInterfaceWorker {
                 .lru_cache
                 .borrow_mut()
                 .push(tx.tx_nonce.into(), ttl_wrapper);
-            
+
             let sender = sender_channel.clone();
             sender
                 .send(tx.clone())

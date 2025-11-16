@@ -180,6 +180,25 @@ impl DbWorkerInterface for OpfsRedbWorker {
         account_id: String,
         network: ChainSupported,
     ) -> Result<UserAccount, anyhow::Error> {
+        // First, check if account already exists in a read transaction
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(USER_ACCOUNT_TABLE)?;
+        let existing_user_account = table
+            .get(USER_ACC_KEY)?
+            .map(|v| {
+                let val = v.value();
+                let decoded_val: UserAccount =
+                    Decode::decode(&mut &val[..]).expect("failed to decode");
+                decoded_val
+            })
+            .ok_or_else(|| anyhow!("user account not found"))?;
+        
+        // Check if account already exists - if so, return early (no-op)
+        if existing_user_account.accounts.contains(&(account_id.clone(), network)) {
+            return Ok(existing_user_account);
+        }
+        
+        // Account doesn't exist, proceed with update
         let write_txn = self.db.begin_write()?;
         let user_account = {
             let mut table = write_txn.open_table(USER_ACCOUNT_TABLE)?;
@@ -192,6 +211,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
                     decoded_val
                 })
                 .ok_or_else(|| anyhow!("user account not found"))?;
+            
             user_account.accounts.push((account_id, network));
             table.insert(USER_ACC_KEY, &user_account.encode())?;
             user_account
@@ -576,6 +596,12 @@ impl DbWorkerInterface for InMemoryDbWorker {
                 decoded_val
             })
             .ok_or_else(|| anyhow!("user account not found"))?;
+        
+        // Check if account already exists - if so, return early (no-op)
+        if user_account.accounts.contains(&(account_id.clone(), network)) {
+            return Ok(user_account);
+        }
+        
         user_account.accounts.push((account_id, network));
         self.user_accounts
             .borrow_mut()

@@ -776,26 +776,45 @@ impl WasmP2pWorker {
                                 swarm.disconnect_peer_id(peer_id).map_err(|err|anyhow!("failed to disconnect peer: {err:?}"));
                             },
                             Some(NetworkCommand::AddDhtAccount {account_id,value}) => {
-                                // NO ACTUAL DHT FOR NOW
-
-                                // let record = libp2p::kad::Record::new(account_id.as_bytes().to_vec(), value.as_bytes().to_vec());
-                                // let query_id = swarm.behaviour_mut().app_client_dht.put_record(record.clone(), libp2p::kad::Quorum::Majority);
-                                // swarm.behaviour_mut().app_client_dht.start_providing(record.key).map_err(|err|anyhow!("failed to start providing; {err:?}"));
-                                // info!(target: "p2p", "Added account record to DHT: account_id={}, query_id={:?}", account_id, query_id);
-
                                 let acc = account_id.clone();
+                                let p2p_event_notif = self_clone.p2p_event_notif_sub_system.clone();
+                                
                                 wasm_bindgen_futures::spawn_local(async move {
-                                    match host_set_dht(acc, value).await {
+                                    match host_set_dht(acc.clone(), value).await {
                                         Ok(response) => {
                                             if let Some(error_msg) = &response.error {
-                                                // retrying logic point (as this operations are not fatal)
                                                 error!(target: "p2p","Failed to add account record to DHT: error_msg={}", error_msg);
+                                                p2p_event_notif
+                                                    .sender
+                                                    .borrow_mut()
+                                                    .send(P2pEventResult::AccountAdditionFailed {
+                                                        account_id: acc.clone(),
+                                                    })
+                                                    .await
+                                                    .expect("failed to send p2p event result");
                                             } else {
                                                 info!(target: "p2p","Added account record to DHT successfully: response={:?}", response);
+                                                p2p_event_notif
+                                                    .sender
+                                                    .borrow_mut()
+                                                    .send(P2pEventResult::AccountAddedSuccessfully {
+                                                        account_id: acc.clone(),
+                                                    })
+                                                    .await
+                                                    .expect("failed to send p2p event result");
                                             }
                                         }
-                                        // retrying logic point
-                                        Err(e) => error!(target: "p2p","Failed to add account record to DHT: error={:?}", e),
+                                        Err(e) => {
+                                            error!(target: "p2p","Failed to add account record to DHT: error={:?}", e);
+                                            p2p_event_notif
+                                                .sender
+                                                .borrow_mut()
+                                                .send(P2pEventResult::AccountAdditionFailed {
+                                                    account_id: acc.clone(),
+                                                })
+                                                .await
+                                                .expect("failed to send p2p event result");
+                                        }
                                     }
                                 });
 

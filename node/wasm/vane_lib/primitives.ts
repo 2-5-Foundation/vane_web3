@@ -577,7 +577,7 @@ export interface TxStateMachine {
     /** Signed call payload (signed hash of the transaction) */
     signedCallPayload?: number[];
     /** Call payload (hash of transaction and raw transaction bytes) */
-    callPayload?: ChainTransactionType | null;
+    callPayload?: ChainTransactionType;
     /** Inbound Request id for p2p */
     inboundReqId?: number; // Option<u64> in Rust -> number | undefined in TS
     /** Outbound Request id for p2p */
@@ -772,7 +772,9 @@ export type P2pEventResult =
     | { Dialing: { peer_id: string | null; address: string | null } }
     | { RecvIncomingConnectionError: { error: string } }
     | { SenderOutgoingConnectionError: { error: string; address: string | null } }
-    | { ReceiverConnected: { peer_id: string; address: string } };
+    | { ReceiverConnected: { peer_id: string; address: string } }
+    | { AccountAddedSuccessfully: { account_id: string } }
+    | { AccountAdditionFailed: { account_id: string } };
 
 /** User metrics structure */
 export interface UserMetrics {
