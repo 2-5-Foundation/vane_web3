@@ -1056,4 +1056,12 @@ pub enum P2pEventResult {
     },
     // reservation events
     ReservationAccepted,
+
+    // adding account
+    AccountAddedSuccessfully{
+        account_id: String
+    },
+    AccountAdditionFailed{
+        account_id: String
+    },
 }

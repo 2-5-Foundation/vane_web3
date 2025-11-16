@@ -30,7 +30,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any) => any;
   readonly __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
   readonly publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
@@ -46,6 +45,7 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
+  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any) => any;
   readonly __wbg_requestarguments_free: (a: number, b: number) => void;
   readonly requestarguments_method: (a: number) => [number, number];
   readonly requestarguments_params: (a: number) => any;
@@ -58,10 +58,10 @@ export interface InitOutput {
   readonly __wbindgen_export_6: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-  readonly closure1192_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1550_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1194_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure1552_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-  readonly closure1948_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure1950_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 
