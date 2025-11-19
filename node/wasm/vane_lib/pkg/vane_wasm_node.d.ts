@@ -16,6 +16,7 @@ export class PublicInterfaceWorkerJs {
   revertTransaction(tx: any, reason?: string | null): Promise<void>;
   exportStorage(): Promise<any>;
   getNodeConnectionStatus(): any;
+  deleteTxInCache(tx: any): void;
   clearRevertedFromCache(): void;
   clearFinalizedFromCache(): void;
 }
@@ -43,6 +44,7 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
   readonly publicinterfaceworkerjs_exportStorage: (a: number) => any;
   readonly publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
+  readonly publicinterfaceworkerjs_deleteTxInCache: (a: number, b: any) => void;
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
   readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any) => any;
