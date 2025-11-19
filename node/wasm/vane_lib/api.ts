@@ -176,6 +176,10 @@ export function clearFinalizedFromCache(): void {
   requireWorker().clearFinalizedFromCache();
 }
 
+export function deleteTxInCache(tx: TxStateMachine): void {
+  requireWorker().deleteTxInCache(tx);
+}
+
 export function getWorker(): PublicInterfaceWorkerJs | null {
   return nodeWorker;
 }
@@ -201,6 +205,7 @@ const VaneWeb3 = {
   getNodeConnection,
   clearRevertedFromCache,
   clearFinalizedFromCache,
+  deleteTxInCache,
   getWorker,
 };
 
