@@ -117,6 +117,7 @@ impl WasmP2pWorker {
         // user account and multi_addr
         let relay_multi_addr =
             Multiaddr::try_from(relay_node_multi_addr).expect("failed to parse relay multiaddr");
+            
         let user_circuit_multi_addr = relay_multi_addr
             .clone()
             .with(libp2p::multiaddr::Protocol::P2pCircuit);

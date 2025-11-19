@@ -393,6 +393,7 @@ pub enum ChainTransactionType {
         #[serde(rename = "callPayload")]
         call_payload: (Vec<u8>, Vec<u8>),
     },
+    
     #[serde(rename = "solana")]
     Solana {
         #[serde(rename = "callPayload")]

@@ -92,41 +92,41 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       );
   })
 
-  it("it should receive a ETH transaction and confirm it successfully",async() => {
-    console.log(" \n \n TEST CASE 1: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
-    const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+  // it("it should receive a ETH transaction and confirm it successfully",async() => {
+  //   console.log(" \n \n TEST CASE 1: it should receive a transaction and confirm it successfully (RECEIVER_NODE)");
+  //   const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
    
-    await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.TRANSACTION_RECEIVED,
-        async () => {
-         console.log('👂 TRANSACTION_RECEIVED');
-         const receivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-         const latestTx = receivedTx[0];
-         if (!walletClient) throw new Error('walletClient not initialized');
-         const account = walletClient.account!;
-         // @ts-ignore
-         const signature = await account.signMessage({ message: latestTx.receiverAddress });
-         const txManager = new TxStateMachineManager(latestTx);
-         txManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
-         const updatedTx = txManager.getTx();
-         await receiverConfirm(updatedTx);
-       },
-        60000
-      );
+  //   await nodeCoordinator.waitForEvent(
+  //       NODE_EVENTS.TRANSACTION_RECEIVED,
+  //       async () => {
+  //        console.log('👂 TRANSACTION_RECEIVED');
+  //        const receivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  //        const latestTx = receivedTx[0];
+  //        if (!walletClient) throw new Error('walletClient not initialized');
+  //        const account = walletClient.account!;
+  //        // @ts-ignore
+  //        const signature = await account.signMessage({ message: latestTx.receiverAddress });
+  //        const txManager = new TxStateMachineManager(latestTx);
+  //        txManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
+  //        const updatedTx = txManager.getTx();
+  //        await receiverConfirm(updatedTx);
+  //      },
+  //       60000
+  //     );
 
-    await nodeCoordinator.waitForEvent(
-      NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
-          // abritray wait for the sender node to submit the transaction
-          await new Promise(resolve => setTimeout(resolve, 10000));
-          console.log('sender finished its job and disconnected');
-          const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-          const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
-          expect(balanceChange).toEqual(10);
-       },
-       60000
-    );
+  //   await nodeCoordinator.waitForEvent(
+  //     NODE_EVENTS.P2P_SENT_TO_EVENT, async () => { 
+  //         // abritray wait for the sender node to submit the transaction
+  //         await new Promise(resolve => setTimeout(resolve, 10000));
+  //         console.log('sender finished its job and disconnected');
+  //         const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+  //         const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
+  //         expect(balanceChange).toEqual(10);
+  //      },
+  //      60000
+  //   );
     
-  })
+  // })
 
   // test("should successfully receive ERC20 token transaction", async () => {
   //   await new Promise(resolve => setTimeout(resolve, 15000));
@@ -154,27 +154,27 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   //   await new Promise(resolve => setTimeout(resolve, 30000));
   // });
 
-  // test("should successfully receive SOLANA token transaction", async () => {
-  //   console.log(" \n \n TEST CASE 2: should successfully receive SOLANA token transaction and confirm it (RECEIVER_NODE)");
-  //   await addAccount(solWasmWalletAddress2, ChainSupported.Solana);
+  test("should successfully receive SOLANA token transaction", async () => {
+    console.log(" \n \n TEST CASE 2: should successfully receive SOLANA token transaction and confirm it (RECEIVER_NODE)");
+    await addAccount(solWasmWalletAddress2, ChainSupported.Solana);
 
-  //   await nodeCoordinator.waitForEvent(
-  //     NODE_EVENTS.TRANSACTION_RECEIVED,
-  //     async () => {
-  //       console.log('👂 TRANSACTION_RECEIVED SOLANA TOKEN');
-  //         const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-  //         const latestTx = receiverReceivedTx[0];
-  //         const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
-  //         const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
+    await nodeCoordinator.waitForEvent(
+      NODE_EVENTS.TRANSACTION_RECEIVED,
+      async () => {
+        console.log('👂 TRANSACTION_RECEIVED SOLANA TOKEN');
+          const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+          const latestTx = receiverReceivedTx[0];
+          const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
+          const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
 
-  //         const recvTxManager = new TxStateMachineManager(latestTx);
-  //         recvTxManager.setReceiverSignature(Array.from(signature));
-  //         const recvUpdatedTx = recvTxManager.getTx();
-  //         await receiverConfirm(recvUpdatedTx);
-  //     }
-  //   );
+          const recvTxManager = new TxStateMachineManager(latestTx);
+          recvTxManager.setReceiverSignature(Array.from(signature));
+          const recvUpdatedTx = recvTxManager.getTx();
+          await receiverConfirm(recvUpdatedTx);
+      }
+    );
     
-  // })
+  })
 
 
   afterAll(() => {
