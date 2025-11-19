@@ -254,7 +254,7 @@ export const hostNetworking = {
           body: JSON.stringify({ tx: toWire(tx) })
         });
         
-        if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}`);
+        if (!resp.ok) throw new Error(`API submitTx failed: ${resp.status}: ${resp}`);
         const data = await resp.json();
         const hashHex: string = data?.hash;
         if (!hashHex || typeof hashHex !== 'string') throw new Error('Invalid hash from API');
@@ -733,53 +733,36 @@ function isNativeSolToken(token: Token): boolean {
 export function toWire(tx: TxStateMachine): any {
   return {
     ...tx,
+    inboundReqId: tx.inboundReqId ? tx.inboundReqId : null,
+    outboundReqId: tx.outboundReqId ? tx.outboundReqId : null,
     amount: tx.amount.toString(),
-    // Convert Uint8Array fields to regular arrays
-    multiId: tx.multiId ? Array.from(tx.multiId) : null,
-    recvSignature: tx.recvSignature ? Array.from(tx.recvSignature) : null,
-    signedCallPayload: tx.signedCallPayload ? Array.from(tx.signedCallPayload) : null,
-    // Convert callPayload arrays with type safety
+    // Convert BigInt fields to strings for JSON serialization
     callPayload: tx.callPayload ? (() => {
       if ('ethereum' in tx.callPayload) {
         const f = tx.callPayload.ethereum.ethUnsignedTxFields;
         return {
           ethereum: {
+            ...tx.callPayload.ethereum,
             ethUnsignedTxFields: {
               ...f,
-              // Convert all bigints to strings for JSON serialization
               value: f.value.toString(),
               gas: f.gas.toString(),
               maxFeePerGas: f.maxFeePerGas.toString(),
               maxPriorityFeePerGas: f.maxPriorityFeePerGas.toString(),
             },
-            callPayload: tx.callPayload.ethereum.callPayload ? [
-              Array.from(tx.callPayload.ethereum.callPayload[0]),
-              Array.from(tx.callPayload.ethereum.callPayload[1])
-            ] : null
           }
         };
       } else if ('bnb' in tx.callPayload) {
         const f = tx.callPayload.bnb.bnbLegacyTxFields;
         return {
           bnb: {
+            ...tx.callPayload.bnb,
             bnbLegacyTxFields: {
               ...f,
-              // Convert all bigints to strings for JSON serialization
               value: f.value.toString(),
               gas: f.gas.toString(),
               gasPrice: f.gasPrice.toString(),
             },
-            callPayload: tx.callPayload.bnb.callPayload ? [
-              Array.from(tx.callPayload.bnb.callPayload[0]),
-              Array.from(tx.callPayload.bnb.callPayload[1])
-            ] : null
-          }
-        };
-      } else if ('solana' in tx.callPayload) {
-        return {
-          solana: {
-            ...tx.callPayload.solana,
-            callPayload: tx.callPayload.solana.callPayload ? Array.from(tx.callPayload.solana.callPayload) : null
           }
         };
       }
@@ -791,57 +774,44 @@ export function toWire(tx: TxStateMachine): any {
 export function fromWire(wireTx: any): TxStateMachine {
   return {
     ...wireTx,
+    inboundReqId: typeof wireTx.inboundReqId === 'number' ? wireTx.inboundReqId : null,
+    outboundReqId: typeof wireTx.outboundReqId === 'number' ? wireTx.outboundReqId : null,
     amount: BigInt(wireTx.amount),
-    // Convert arrays back to Uint8Array fields
-    multiId: wireTx.multiId ? new Uint8Array(wireTx.multiId) : null,
-    recvSignature: wireTx.recvSignature ? new Uint8Array(wireTx.recvSignature) : null,
-    signedCallPayload: wireTx.signedCallPayload ? new Uint8Array(wireTx.signedCallPayload) : null,
-    // Convert callPayload arrays back with type safety
-    callPayload: wireTx.callPayload ? (() => {
-      if ('ethereum' in wireTx.callPayload) {
-        const f = wireTx.callPayload.ethereum.ethUnsignedTxFields;
-        return {
-          ethereum: {
-            ethUnsignedTxFields: {
-              ...f,
-              // Convert strings back to bigints
-              value: BigInt(f.value),
-              gas: BigInt(f.gas),
-              maxFeePerGas: BigInt(f.maxFeePerGas),
-              maxPriorityFeePerGas: BigInt(f.maxPriorityFeePerGas),
-            },
-            callPayload: wireTx.callPayload.ethereum.callPayload ? [
-              new Uint8Array(wireTx.callPayload.ethereum.callPayload[0]),
-              new Uint8Array(wireTx.callPayload.ethereum.callPayload[1])
-            ] : null
+    callPayload: wireTx.callPayload
+      ? (() => {
+          if ('ethereum' in wireTx.callPayload) {
+            const fields = wireTx.callPayload.ethereum.ethUnsignedTxFields;
+            return {
+              ethereum: {
+                ...wireTx.callPayload.ethereum,
+                ethUnsignedTxFields: {
+                  ...fields,
+                  value: BigInt(fields.value),
+                  gas: BigInt(fields.gas),
+                  maxFeePerGas: BigInt(fields.maxFeePerGas),
+                  maxPriorityFeePerGas: BigInt(fields.maxPriorityFeePerGas),
+                },
+              },
+            };
           }
-        };
-      } else if ('bnb' in wireTx.callPayload) {
-        const f = wireTx.callPayload.bnb.bnbLegacyTxFields;
-        return {
-          bnb: {
-            bnbLegacyTxFields: {
-              ...f,
-              // Convert strings back to bigints
-              value: BigInt(f.value),
-              gas: BigInt(f.gas),
-              gasPrice: BigInt(f.gasPrice),
-            },
-            callPayload: wireTx.callPayload.bnb.callPayload ? [
-              new Uint8Array(wireTx.callPayload.bnb.callPayload[0]),
-              new Uint8Array(wireTx.callPayload.bnb.callPayload[1])
-            ] : null
+
+          if ('bnb' in wireTx.callPayload) {
+            const fields = wireTx.callPayload.bnb.bnbLegacyTxFields;
+            return {
+              bnb: {
+                ...wireTx.callPayload.bnb,
+                bnbLegacyTxFields: {
+                  ...fields,
+                  value: BigInt(fields.value),
+                  gas: BigInt(fields.gas),
+                  gasPrice: BigInt(fields.gasPrice),
+                },
+              },
+            };
           }
-        };
-      } else if ('solana' in wireTx.callPayload) {
-        return {
-          solana: {
-            ...wireTx.callPayload.solana,
-            callPayload: wireTx.callPayload.solana.callPayload ? new Uint8Array(wireTx.callPayload.solana.callPayload) : null
-          }
-        };
-      }
-      return wireTx.callPayload;
-    })() : null
+
+          return wireTx.callPayload;
+        })()
+      : null,
   } as TxStateMachine;
 }

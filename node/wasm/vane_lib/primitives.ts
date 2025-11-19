@@ -703,7 +703,7 @@ export interface DbTxStateMachine {
     /** Transaction hash based on the chain's hashing algorithm */
     tx_hash: number[]; // Vec<u8> in Rust -> number[] in TS
     /** Amount sent in the transaction */
-    amount: bigint; // u128 in Rust -> bigint in TS
+    amount: number; // u128 in Rust -> number in TS
     /** Token type */
     token: Token;
     /** Sender address */
@@ -877,7 +877,7 @@ export class StorageExportManager {
      */
     getLargestFailedTransactionAmount(): number {
         return this.storage.failed_transactions.reduce((max, tx) => {
-            return Math.max(max, Number(tx.amount));
+            return Math.max(max, tx.amount);
         }, 0);
     }
 
