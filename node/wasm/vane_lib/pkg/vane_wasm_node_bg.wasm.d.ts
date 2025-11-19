@@ -14,6 +14,7 @@ export const publicinterfaceworkerjs_receiverConfirm: (a: number, b: any) => any
 export const publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
 export const publicinterfaceworkerjs_exportStorage: (a: number) => any;
 export const publicinterfaceworkerjs_getNodeConnectionStatus: (a: number) => [number, number, number];
+export const publicinterfaceworkerjs_deleteTxInCache: (a: number, b: any) => void;
 export const publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
 export const publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
 export const start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any) => any;

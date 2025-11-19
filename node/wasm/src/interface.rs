@@ -613,6 +613,13 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Failed to serialize storage data: {}", e)))
     }
 
+    pub fn delete_tx_in_cache(&self, tx: JsValue) -> Result<(), JsError> {
+        let tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
+        self.lru_cache.borrow_mut().pop(&tx.tx_nonce.into());
+        info!("Deleted transaction from cache: {:?}", tx.tx_nonce);
+        Ok(())
+    }
+
     // Cache maintenance
     pub fn clear_reverted_from_cache(&self) {
         let keys: Vec<u32> = self
@@ -799,6 +806,10 @@ impl PublicInterfaceWorkerJs {
     pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
         let status = self.inner.borrow().get_node_connection_status()?;
         Ok(status)
+    }
+    #[wasm_bindgen(js_name = "deleteTxInCache")]
+    pub fn delete_tx_in_cache(&self, tx: JsValue) {
+        self.inner.borrow().delete_tx_in_cache(tx);
     }
 
     #[wasm_bindgen(js_name = "clearRevertedFromCache")]
