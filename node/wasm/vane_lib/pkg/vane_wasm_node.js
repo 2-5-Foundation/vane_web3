@@ -213,18 +213,19 @@ function takeFromExternrefTable0(idx) {
  * @param {string} relay_node_multi_addr
  * @param {string} account
  * @param {string} network
+ * @param {boolean} self_node
  * @param {boolean} live
  * @param {any} storage
  * @returns {Promise<PublicInterfaceWorkerJs>}
  */
-export function start_vane_web3(relay_node_multi_addr, account, network, live, storage) {
+export function start_vane_web3(relay_node_multi_addr, account, network, self_node, live, storage) {
     const ptr0 = passStringToWasm0(relay_node_multi_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(account, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passStringToWasm0(network, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.start_vane_web3(ptr0, len0, ptr1, len1, ptr2, len2, live, storage);
+    const ret = wasm.start_vane_web3(ptr0, len0, ptr1, len1, ptr2, len2, self_node, live, storage);
     return ret;
 }
 

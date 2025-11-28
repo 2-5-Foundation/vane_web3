@@ -74,7 +74,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
         relayMultiAddr: relayInfo!.multiAddr,
         account: wasm_client_address!,
         network: "Ethereum",
-        libp2pKey: libp2pKey,
+        self_node: false,
         live: false,
         logLevel: LogLevel.Debug
       });

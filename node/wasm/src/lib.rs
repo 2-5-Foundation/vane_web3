@@ -1082,7 +1082,6 @@ impl WasmMainServiceWorker {
     }
 
     pub async fn handle_public_interface_tx_updates(&mut self) -> Result<(), anyhow::Error> {
-        info!("reaching here 7");
         while let Some(txn) = {
             let mut receiver = self.user_rpc_update_recv_channel.borrow_mut();
             receiver.recv().await
@@ -1109,7 +1108,9 @@ impl WasmMainServiceWorker {
                     todo!()
                 }
 
-                TxStatus::SenderConfirmed | TxStatus::FailedToSubmitTxn(_) | TxStatus::TxSubmissionPassed { hash: _ } => {
+                TxStatus::SenderConfirmed
+                | TxStatus::FailedToSubmitTxn(_)
+                | TxStatus::TxSubmissionPassed { hash: _ } => {
                     info!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates");
                     debug!(target:"MainServiceWorker","handling incoming sender addr-confirmed tx updates: {:?}",txn.clone());
 
@@ -1136,6 +1137,7 @@ impl WasmMainServiceWorker {
         account: String,
         network: String,
         live: bool,
+        self_node: bool,
         storage: Option<StorageExport>,
     ) -> Result<PublicInterfaceWorker, anyhow::Error> {
         info!("\n🔥 =========== Vane Web3 =========== 🔥\n");
@@ -1179,8 +1181,6 @@ impl WasmMainServiceWorker {
         // Extract public_interface_worker before moving main_worker into futures
         let public_interface_worker = main_worker.public_interface_worker.borrow().clone();
 
-        let swarm_handler_future = async move { main_worker.start_swarm_handler() };
-
         // Spawn both futures as background tasks instead of using select!
         // This prevents one from being cancelled when the other completes
         // Use wasm_bindgen_futures::spawn_local for WASM compatibility
@@ -1190,11 +1190,15 @@ impl WasmMainServiceWorker {
             }
         });
 
-        wasm_bindgen_futures::spawn_local(async move {
-            if let Err(err) = swarm_handler_future.await {
-                error!("swarm handle error: {err}");
-            }
-        });
+        if !self_node {
+            let swarm_handler_future = async move { main_worker.start_swarm_handler() };
+
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(err) = swarm_handler_future.await {
+                    error!("swarm handle error: {err}");
+                }
+            });
+        }
 
         // In WASM environment, we don't want to block forever
         // Return the public interface worker so JavaScript can interact with it
@@ -1238,6 +1242,7 @@ pub async fn start_vane_web3(
     relay_node_multi_addr: String,
     account: String,
     network: String,
+    self_node: bool, // as running this node to send transactions to self
     live: bool,
     storage: JsValue,
 ) -> Result<PublicInterfaceWorkerJs, JsValue> {
@@ -1256,7 +1261,16 @@ pub async fn start_vane_web3(
 
     log::debug!("Rust debug log test from inside WASM");
 
-    match WasmMainServiceWorker::run(relay_node_multi_addr, account, network, live, storage).await {
+    match WasmMainServiceWorker::run(
+        relay_node_multi_addr,
+        account,
+        network,
+        live,
+        self_node,
+        storage,
+    )
+    .await
+    {
         Ok(public_interface_worker) => {
             // Convert the PublicInterfaceWorker to PublicInterfaceWorkerJs and return it
             let js_worker =

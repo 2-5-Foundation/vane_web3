@@ -40,12 +40,6 @@ pub struct WasmTxProcessingWorker {
     pub sender_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
     /// In-memory Db for to be confirmed tx on receiver
     pub receiver_tx_pending: Rc<RefCell<Vec<TxStateMachine>>>,
-    // /// substrate client
-    // sub_client: OnlineClient<PolkadotConfig>,
-    //// ethereum & bnb client
-    // eth_client: ReqwestProvider,
-    // bnb_client: ReqwestProvider,
-    // solana_client: RpcClient
 }
 
 impl WasmTxProcessingWorker {
