@@ -143,12 +143,13 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     // Initialize WASM node using vane_lib
     try {
-    await initializeNode({
-      relayMultiAddr: relayInfo.multiAddr,
-      account: wasm_client_address,
-      network: "Ethereum",
+      await initializeNode({
+        relayMultiAddr: relayInfo.multiAddr,
+        account: wasm_client_address,
+        network: "Ethereum",
         live: false,
-        logLevel: LogLevel.Debug
+        self_node: false,
+        logLevel: LogLevel.Debug,
       });
     } catch (error) {
       console.error('❌ Failed to initialize WASM node:', error);
@@ -526,173 +527,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     
   // });
 
-//   test("should successfuly send transaction and confirm to self",async () => {
-//     console.log(" \n \n TEST CASE 6: should successfuly send transaction and confirm to self");
-//     const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-
-//     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-//     await addAccount(wasm_client_address2, ChainSupported.Ethereum);
-
-//     const storage:StorageExport = await exportStorage() as StorageExport;
-//     expect(storage.user_account?.accounts.length).toEqual(2);
-
-//     initiateTransaction(
-//       wasm_client_address,
-//       wasm_client_address2,
-//       BigInt(10) * BigInt(10 ** 18),
-//       ethToken,
-//       'Maji',
-//       ChainSupported.Ethereum,
-//       ChainSupported.Ethereum
-//     );
-
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-
-//     const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const latestTx = receiverReceivedTx[0];
-
-//     if(latestTx.receiverAddress !== wasm_client_address2) {
-//       return;
-//     }
-
-//     if (!walletClient2) throw new Error('walletClient not initialized');
-//     const recvAccount = walletClient2.account!;
-//     // @ts-ignore
-//     const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
-//     const recvTxManager = new TxStateMachineManager(latestTx);
-//     recvTxManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
-//     const recvUpdatedTx = recvTxManager.getTx();
-//     await receiverConfirm(recvUpdatedTx);
-
-//     await new Promise(resolve => setTimeout(resolve, 5000));
-//     const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//     const senderPendinglatestTx = senderPendingTx[0];
-
-//     if(senderPendinglatestTx.receiverAddress !== wasm_client_address2) {
-//       return;
-//     }
-
-//     if (!walletClient) throw new Error('walletClient not initialized');
-//     if (!walletClient.account) throw new Error('walletClient account not available');
-//     if (!senderPendinglatestTx.callPayload) {
-//       throw new Error('No call payload found');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload) || !senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields) {
-//       throw new Error('No unsigned transaction fields found');
-//     }
-
-//     const account = walletClient.account!;
-//     if (!account.signMessage) {
-//       throw new Error('Account signMessage function not available');
-//     }
-//     if (!senderPendinglatestTx.callPayload || !('ethereum' in senderPendinglatestTx.callPayload)) {
-//       throw new Error('No Ethereum call payload found');
-//     }
-//     const [txHash, txBytes] = senderPendinglatestTx.callPayload.ethereum.callPayload;
-//     const txSignature =  await sign({ hash: bytesToHex(txHash as unknown as ByteArray), privateKey: privkey as `0x${string}` });
-    
-//     const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//     txManager.setSignedCallPayload(Array.from(hexToBytes(serializeSignature(txSignature))));
-//     const updatedTx = txManager.getTx();
-//     console.log('🔑 TX UPDATED', updatedTx.status);
-//     await senderConfirm(updatedTx);
-
-//     await new Promise(resolve => setTimeout(resolve, 2000));
-
-//     const senderBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-//     const balanceChange = Math.ceil(senderBalanceBefore)-Math.ceil(senderBalanceAfter);
-//     expect(balanceChange).toEqual(10);
-    
-// });
-
-// test("should successfully submit txn to self, outside the vane lib and update accordingly the state", async () => {
-//   console.log(" \n \n TEST CASE 7: should successfully submit txn outside the vane lib and update accordingly the state");
-
-//   const senderBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-
-//   const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-//   await addAccount(wasm_client_address2, ChainSupported.Ethereum);
-
-//   const storage:StorageExport = await exportStorage() as StorageExport;
-
-//   initiateTransaction(
-//     wasm_client_address,
-//     wasm_client_address2,
-//     BigInt(10) * BigInt(10 ** 18),
-//     ethToken,
-//     'Maji',
-//     ChainSupported.Ethereum,
-//     ChainSupported.Ethereum
-//   );
-
-//   await new Promise(resolve => setTimeout(resolve, 5000));
-
-//   const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const latestTx = receiverReceivedTx[0];
-
-//   if(latestTx.receiverAddress !== wasm_client_address2) {
-//     return;
-//   }
-
-//   if (!walletClient2) throw new Error('walletClient not initialized');
-//   const recvAccount = walletClient2.account!;
-//   // @ts-ignore
-//   const signature = await recvAccount.signMessage({ message: latestTx.receiverAddress });
-//   const recvTxManager = new TxStateMachineManager(latestTx);
-//   recvTxManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
-//   const recvUpdatedTx = recvTxManager.getTx();
-//   await receiverConfirm(recvUpdatedTx);
-
-//   await new Promise(resolve => setTimeout(resolve, 2000));
-
-//   const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const senderPendinglatestTx = senderPendingTx[0];
-
-//   if(senderPendinglatestTx.receiverAddress !== wasm_client_address2) {
-//     return;
-//   }
-//   if(senderPendinglatestTx.status.type !== "RecvAddrConfirmationPassed") {
-//     return;
-//   }
-  
-//   // submit txn outside the vane lib
-//   if(!senderPendinglatestTx.callPayload){
-//     throw new Error('No call payload found');
-//   }
-//   const callPayload = ("ethereum" in senderPendinglatestTx.callPayload) ? senderPendinglatestTx.callPayload.ethereum.callPayload : null;
-//   if(!callPayload){
-//     throw new Error('No call payload found');
-//   }
-
-//   const txObject = ("ethereum" in senderPendinglatestTx.callPayload) ? senderPendinglatestTx.callPayload.ethereum.ethUnsignedTxFields : null;
-
-//   // @ts-ignore
-//   const signedTx = await walletClient.signTransaction(txObject);
-//   const txHash = await walletClient.sendRawTransaction({serializedTransaction: signedTx});
-//   const receipt = await walletClient.waitForTransactionReceipt({hash: txHash});
-
-//   const txManager = new TxStateMachineManager(senderPendinglatestTx);
-//   txManager.setSignedCallPayload(callPayload[0]);
-
-
-//   if(receipt.status !== "success"){
-//      txManager.setTxSubmissionFailed('Transaction failed to submit');
-//      const updatedTx = txManager.getTx();
-//      await senderConfirm(updatedTx);
-//   }else{
-//     txManager.setTxSubmissionPassed(Array.from(hexToBytes(txHash as `0x${string}`)));
-//     const feesAmount = Number(formatEther(receipt.gasUsed * receipt.effectiveGasPrice));
-//     txManager.setFeesAmount(feesAmount);
-//     const updatedTx = txManager.getTx();
-//     await senderConfirm(updatedTx);
-//   }
-
-
-//   // immediately fetch the updated tx
-//   const updatedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-//   const updatedLatestTx = updatedTx[0];
-
-  
 //   // the tsStatus must be either TxSubmissionPassed or FailedToSubmitTxn
 //   if(updatedLatestTx.status.type !== "TxSubmissionPassed" && updatedLatestTx.status.type !== "FailedToSubmitTxn"){
 //     throw new Error('Tx Status must be either TxSubmissionPassed or FailedToSubmitTxn');

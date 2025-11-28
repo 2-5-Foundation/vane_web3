@@ -393,7 +393,7 @@ pub enum ChainTransactionType {
         #[serde(rename = "callPayload")]
         call_payload: (Vec<u8>, Vec<u8>),
     },
-    
+
     #[serde(rename = "solana")]
     Solana {
         #[serde(rename = "callPayload")]
@@ -1059,10 +1059,10 @@ pub enum P2pEventResult {
     ReservationAccepted,
 
     // adding account
-    AccountAddedSuccessfully{
-        account_id: String
+    AccountAddedSuccessfully {
+        account_id: String,
     },
-    AccountAdditionFailed{
-        account_id: String
+    AccountAdditionFailed {
+        account_id: String,
     },
 }

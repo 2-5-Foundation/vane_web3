@@ -285,8 +285,8 @@ export const hostNetworking = {
         }
 
         // Live mode: get prepared chain data from server, then construct tx locally
-        const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-        const resp = await fetch(chainConfig.rpcUrl, {
+        // Use /api/create-tx/prepare-evm for all EVM chains (Ethereum, Base, Polygon, Optimism, Arbitrum)
+        const resp = await fetch('/api/create-tx/prepare-evm', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -304,8 +304,7 @@ export const hostNetworking = {
         }
 
         // Live mode: get prepared chain data from server, then construct tx locally
-        const chainConfig = CHAIN_CONFIGS[tx.senderAddressNetwork as keyof typeof CHAIN_CONFIGS];
-        const resp = await fetch(chainConfig.rpcUrl, {
+        const resp = await fetch('/api/create-tx/prepare-bsc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',

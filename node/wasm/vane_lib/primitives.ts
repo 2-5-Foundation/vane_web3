@@ -125,6 +125,18 @@ export function getTokenDecimals(token: Token): number | null {
   if ('Ethereum' in token && token.Ethereum === EthereumToken.ETH) {
     return 18;
   }
+  if ('Optimism' in token && token.Optimism === OptimismToken.ETH) {
+    return 18;
+  }
+  if ('Arbitrum' in token && token.Arbitrum === ArbitrumToken.ETH) {
+    return 18;
+  }
+  if ('Polygon' in token && token.Polygon === PolygonToken.POL) {
+    return 18;
+  }
+  if ('Base' in token && token.Base === BaseToken.ETH) {
+    return 18;
+  }
   if ('Bnb' in token && token.Bnb === BnbToken.BNB) {
     return 18;
   }
@@ -138,6 +150,18 @@ export function getTokenDecimals(token: Token): number | null {
   // TOKENS
   if ('Ethereum' in token && typeof token.Ethereum === 'object' && 'ERC20' in token.Ethereum) {
     return token.Ethereum.ERC20.decimals;
+  }
+  if ('Optimism' in token && typeof token.Optimism === 'object' && 'ERC20' in token.Optimism) {
+    return token.Optimism.ERC20.decimals;
+  }
+  if ('Arbitrum' in token && typeof token.Arbitrum === 'object' && 'ERC20' in token.Arbitrum) {
+    return token.Arbitrum.ERC20.decimals;
+  }
+  if ('Polygon' in token && typeof token.Polygon === 'object' && 'ERC20' in token.Polygon) {
+    return token.Polygon.ERC20.decimals;
+  }
+  if ('Base' in token && typeof token.Base === 'object' && 'ERC20' in token.Base) {
+    return token.Base.ERC20.decimals;
   }
   if ('Bnb' in token && typeof token.Bnb === 'object' && 'BEP20' in token.Bnb) {
     return token.Bnb.BEP20.decimals;

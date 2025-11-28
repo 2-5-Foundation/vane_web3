@@ -241,7 +241,6 @@ impl PublicInterfaceWorker {
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         }
 
-
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
         // Guard: ignore if already reverted
         if let TxStatus::Reverted(_) = tx.status {
@@ -259,7 +258,6 @@ impl PublicInterfaceWorker {
             return Err(JsError::new("Receiver address failed"));
         }
 
-
         if tx.signed_call_payload.is_none() && tx.status != TxStatus::RecvAddrConfirmationPassed {
             // return error as receiver hasnt confirmed yet or sender hasnt confirmed on his turn
             error!("Wait for Receiver to confirm or sender should confirm");
@@ -268,7 +266,9 @@ impl PublicInterfaceWorker {
             ))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
         } else {
-            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ }) && !matches!(tx.status, TxStatus::FailedToSubmitTxn(_)) {
+            if !matches!(tx.status, TxStatus::TxSubmissionPassed { hash: _ })
+                && !matches!(tx.status, TxStatus::FailedToSubmitTxn(_))
+            {
                 tx.sender_confirmation();
             }
 
@@ -298,13 +298,15 @@ impl PublicInterfaceWorker {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
                 })
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
         }
         Ok(())
     }
 
     /// watch notifications coming from p2p communication to notify the user about the transaction updates
-    pub async fn watch_p2p_notifications(&self, callback: &js_sys::Function) -> Result<(), JsError> {
+    pub async fn watch_p2p_notifications(
+        &self,
+        callback: &js_sys::Function,
+    ) -> Result<(), JsError> {
         let callback = callback.clone();
 
         // Add the callback to our list
@@ -406,8 +408,8 @@ impl PublicInterfaceWorker {
                 match receiver.recv().await {
                     Some(event) => {
                         // Convert p2p event to JS value using serde
-                        let event_js_value = serde_wasm_bindgen::to_value(&event)
-                            .unwrap_or_else(|e| {
+                        let event_js_value =
+                            serde_wasm_bindgen::to_value(&event).unwrap_or_else(|e| {
                                 error!("Failed to serialize P2P event: {:?}", e);
                                 JsValue::NULL
                             });
@@ -415,7 +417,9 @@ impl PublicInterfaceWorker {
                         // Call all registered callbacks
                         let callbacks_guard = callbacks.borrow();
                         for callback in callbacks_guard.iter() {
-                            if let Err(e) = callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &event_js_value) {
+                            if let Err(e) =
+                                callback.call1(&wasm_bindgen::JsValue::UNDEFINED, &event_js_value)
+                            {
                                 error!("Error calling P2P notification callback: {:?}", e);
                             }
                         }
@@ -765,7 +769,10 @@ impl PublicInterfaceWorkerJs {
         &self,
         callback: &js_sys::Function,
     ) -> Result<(), JsError> {
-        self.inner.borrow().watch_p2p_notifications(callback).await?;
+        self.inner
+            .borrow()
+            .watch_p2p_notifications(callback)
+            .await?;
         Ok(())
     }
 

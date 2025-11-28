@@ -47,7 +47,10 @@ pub struct P2pEventNotifSubSystem {
 }
 
 impl P2pEventNotifSubSystem {
-    pub fn new(sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<P2pEventResult>>>, recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<P2pEventResult>>>) -> Self {
+    pub fn new(
+        sender: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<P2pEventResult>>>,
+        recv: Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<P2pEventResult>>>,
+    ) -> Self {
         Self { sender, recv }
     }
 }
@@ -117,7 +120,7 @@ impl WasmP2pWorker {
         // user account and multi_addr
         let relay_multi_addr =
             Multiaddr::try_from(relay_node_multi_addr).expect("failed to parse relay multiaddr");
-            
+
         let user_circuit_multi_addr = relay_multi_addr
             .clone()
             .with(libp2p::multiaddr::Protocol::P2pCircuit);
@@ -133,7 +136,7 @@ impl WasmP2pWorker {
             .boxed();
 
         let request_response_config = libp2p::request_response::Config::default()
-            .with_request_timeout(core::time::Duration::from_secs(60 * 60)); // 10 minutes waiting time for a response with 10 second buffer
+            .with_request_timeout(core::time::Duration::from_secs(60 * 60)); // 60 minutes waiting time for a response with 10 second buffer
 
         let mut dht_config = KademliaConfig::new(StreamProtocol::new("/vane_dht_protocol"));
         dht_config.set_kbucket_inserts(libp2p::kad::BucketInserts::Manual);
@@ -256,14 +259,13 @@ impl WasmP2pWorker {
                             .await
                             .expect("failed to send p2p event result");
                     }
-                }else{
-
+                } else {
                     self.p2p_event_notif_sub_system
                         .sender
                         .borrow_mut()
                         .send(P2pEventResult::Dialing {
                             peer_id: None,
-                            address: None
+                            address: None,
                         })
                         .await
                         .expect("failed to send p2p event result");
@@ -289,8 +291,7 @@ impl WasmP2pWorker {
 
                 if is_relay {
                     let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
-                    *self.relay_connection_state.borrow_mut() =
-                        ConnectionState::Disconnected(now);
+                    *self.relay_connection_state.borrow_mut() = ConnectionState::Disconnected(now);
 
                     self.p2p_event_notif_sub_system
                         .sender
@@ -336,7 +337,7 @@ impl WasmP2pWorker {
                 error!(target:"p2p","❌ Incoming connection failed: {}", error)
             }
 
-            SwarmEvent::OutgoingConnectionError { error, peer_id,.. } => {
+            SwarmEvent::OutgoingConnectionError { error, peer_id, .. } => {
                 // idk if the peer is already resolved
 
                 if let Some(peer_id) = peer_id {
@@ -351,7 +352,7 @@ impl WasmP2pWorker {
                             .await
                             .expect("failed to send p2p event result");
                     }
-                }else{
+                } else {
                     self.p2p_event_notif_sub_system
                         .sender
                         .borrow_mut()
@@ -564,16 +565,14 @@ impl WasmP2pWorker {
     ) {
         match relay_client_event {
             RelayClientEvent::InboundCircuitEstablished { src_peer_id, .. } => {
-
                 info!(target: "p2p","inbound circuit established: {src_peer_id:?}");
                 let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
                 *connection_state.borrow_mut() = ConnectionState::Connected(now);
             }
             RelayClientEvent::OutboundCircuitEstablished { relay_peer_id, .. } => {
-
                 info!(target: "p2p","outbound circuit established: {relay_peer_id:?}");
                 let now = (js_sys::Date::now() / 1000.0) as u64; // Convert from ms to seconds
-                *connection_state.borrow_mut() = ConnectionState::Connected(now);       
+                *connection_state.borrow_mut() = ConnectionState::Connected(now);
 
                 self.p2p_event_notif_sub_system
                     .sender
@@ -581,7 +580,6 @@ impl WasmP2pWorker {
                     .send(P2pEventResult::SenderCircuitEstablished)
                     .await
                     .expect("failed to send p2p event result");
-
             }
             RelayClientEvent::ReservationReqAccepted { relay_peer_id, .. } => {
                 info!(target: "p2p","reservation request accepted: {relay_peer_id:?}");
@@ -779,7 +777,7 @@ impl WasmP2pWorker {
                             Some(NetworkCommand::AddDhtAccount {account_id,value}) => {
                                 let acc = account_id.clone();
                                 let p2p_event_notif = self_clone.p2p_event_notif_sub_system.clone();
-                                
+
                                 wasm_bindgen_futures::spawn_local(async move {
                                     match host_set_dht(acc.clone(), value).await {
                                         Ok(response) => {
@@ -956,7 +954,8 @@ impl P2pNetworkService {
         let req = request.borrow().clone();
 
         // cache the receiver address
-        self.wasm_p2p_worker.receiver_address_cache
+        self.wasm_p2p_worker
+            .receiver_address_cache
             .borrow_mut()
             .insert(target_peer_id, req.receiver_address.clone());
 

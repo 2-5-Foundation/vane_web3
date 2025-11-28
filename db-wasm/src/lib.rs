@@ -192,12 +192,15 @@ impl DbWorkerInterface for OpfsRedbWorker {
                 decoded_val
             })
             .ok_or_else(|| anyhow!("user account not found"))?;
-        
+
         // Check if account already exists - if so, return early (no-op)
-        if existing_user_account.accounts.contains(&(account_id.clone(), network)) {
+        if existing_user_account
+            .accounts
+            .contains(&(account_id.clone(), network))
+        {
             return Ok(existing_user_account);
         }
-        
+
         // Account doesn't exist, proceed with update
         let write_txn = self.db.begin_write()?;
         let user_account = {
@@ -211,7 +214,7 @@ impl DbWorkerInterface for OpfsRedbWorker {
                     decoded_val
                 })
                 .ok_or_else(|| anyhow!("user account not found"))?;
-            
+
             user_account.accounts.push((account_id, network));
             table.insert(USER_ACC_KEY, &user_account.encode())?;
             user_account
@@ -596,12 +599,15 @@ impl DbWorkerInterface for InMemoryDbWorker {
                 decoded_val
             })
             .ok_or_else(|| anyhow!("user account not found"))?;
-        
+
         // Check if account already exists - if so, return early (no-op)
-        if user_account.accounts.contains(&(account_id.clone(), network)) {
+        if user_account
+            .accounts
+            .contains(&(account_id.clone(), network))
+        {
             return Ok(user_account);
         }
-        
+
         user_account.accounts.push((account_id, network));
         self.user_accounts
             .borrow_mut()

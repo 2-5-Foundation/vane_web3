@@ -8,6 +8,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PINK='\033[1;35m'
 NC='\033[0m' # No Color
 
 # Default values
@@ -122,6 +123,8 @@ elif [[ "${node_name}" == "WASM Node 2" ]]; then
     VITE_USE_ANVIL=true bunx vitest run wasm_node2.test.ts --reporter=verbose
 elif [[ "${node_name}" == "WASM Node 3 (Malicious)" ]]; then
     VITE_USE_ANVIL=true bunx vitest run wasm_node3_mal.test.ts --reporter=verbose
+elif [[ "${node_name}" == "WASM Node Self" ]]; then
+    VITE_USE_ANVIL=true bunx vitest run wasm_node_self.test.ts --reporter=verbose
 fi
 
 echo -e "${color}${node_name} finished. Press any key to close this terminal...${NC}"
@@ -166,6 +169,17 @@ EOF
                     set normal text color to {65535, 65535, 65535}
                 end tell
             end tell"
+        elif [[ "${node_name}" == "WASM Node Self" ]]; then
+            # Pink background for Self Node
+            osascript -e "
+            tell application \"Terminal\"
+                set newTab to do script \"$temp_script\"
+                set current settings of newTab to settings set \"Pro\"
+                tell newTab
+                    set background color to {10240, 0, 10240}
+                    set normal text color to {65535, 65535, 65535}
+                end tell
+            end tell"
         else
             # Default for other nodes
             osascript -e "tell application \"Terminal\" to do script \"$temp_script\""
@@ -184,6 +198,10 @@ EOF
             gnome-terminal --tab --title="WASM Node 3 (Malicious)" --profile="Red" -- bash -c "$temp_script; exec bash" 2>/dev/null || \
             xterm -bg '#330000' -fg '#ffffff' -e "bash $temp_script" 2>/dev/null || \
             konsole --profile Red -e "bash $temp_script" 2>/dev/null
+        elif [[ "${node_name}" == "WASM Node Self" ]]; then
+            gnome-terminal --tab --title="WASM Node Self" --profile="Pink" -- bash -c "$temp_script; exec bash" 2>/dev/null || \
+            xterm -bg '#330033' -fg '#ffffff' -e "bash $temp_script" 2>/dev/null || \
+            konsole --profile Pink -e "bash $temp_script" 2>/dev/null
         else
             gnome-terminal -- bash -c "$temp_script; exec bash" 2>/dev/null || \
             xterm -e "bash $temp_script" 2>/dev/null || \
@@ -336,12 +354,13 @@ echo ""
 echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 
+
 # Start Node 2
 start_node "WASM Node 2" "$BLUE"
 
-# Add delay between node starts
-echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
-sleep 1
+# # Add delay between node starts
+# echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
+# sleep 1
 
 # # Start Malicious Node 3
 # start_node "WASM Node 3 (Malicious)" "$RED"
@@ -349,6 +368,9 @@ sleep 1
 # # Add delay between node starts to prevent connection conflicts
 # echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
 # sleep 5
+
+# Start Self Node
+start_node "WASM Node Self" "$PINK"
 
 # Start Node 1
 start_node "WASM Node 1" "$GREEN"
