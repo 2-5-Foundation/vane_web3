@@ -1,0 +1,19 @@
+[package]
+name = "vane-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jsonrpsee-wasm-client                   = { version = "0.26.0"}
+jsonrpsee                               = { workspace = true}
+serde_json                              = { workspace = true}
+primitives                              = { workspace = true}
+sp-runtime                              = { workspace = true, features = ["std"] }
+sp-core                                 = { workspace = true, features = ["std"] }
+log                                     = { workspace = true}
+serde                                   = { workspace = true}
+anyhow                                  = { workspace = true}
+tokio                                   = { workspace = true}
+axum                                    = "0.8.6"
+prometheus-client                       = "0.24"
+simple_logger                           = "5.0.0"

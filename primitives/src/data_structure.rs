@@ -6,16 +6,14 @@ use anyhow::Error;
 use codec::{Decode, Encode};
 use core::hash::{Hash, Hasher};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
-use libp2p::{kad::QueryId, Multiaddr, PeerId};
+use libp2p::{ Multiaddr, PeerId};
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
-use sp_core::{blake2_256, keccak_256, sha2_256};
 use twox_hash::XxHash64;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::{JsError, JsValue};
 
-use dotenv::dotenv;
 // Ethereum signature preimage prefix according to EIP-191
 // keccak256("\x19Ethereum Signed Message:\n" + len(message) + message))
 pub const ETH_SIG_MSG_PREFIX: &str = "\x19Ethereum Signed Message:\n";
@@ -246,36 +244,6 @@ where
         }
         Value::Null => Ok(None),
         _ => Err(D::Error::custom("Expected string, number, or null")),
-    }
-}
-
-fn string_serialize<S, T>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: serde::Serialize,
-{
-    match value {
-        Some(val) => {
-            let json_str = serde_json::to_string(val).map_err(serde::ser::Error::custom)?;
-            serializer.serialize_str(&json_str)
-        }
-        None => serializer.serialize_none(),
-    }
-}
-
-/// Deserialize a string into `AccountInfo`
-fn string_deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: serde::de::DeserializeOwned,
-{
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    match s {
-        Some(json_str) => {
-            let parsed = serde_json::from_str(&json_str).map_err(serde::de::Error::custom)?;
-            Ok(Some(parsed))
-        }
-        None => Ok(None),
     }
 }
 

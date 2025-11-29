@@ -560,37 +560,7 @@ impl WasmMainServiceWorker {
         });
 
         return Ok(());
-
-        // match db.get_saved_user_peers(target_id.clone()).await {
-        //     Ok(addr_str) => {
-        //         let multi_addr = addr_str
-        //             .parse::<Multiaddr>()
-        //             .map_err(|e| anyhow::anyhow!("failed to parse multiaddr: {e}"))?;
-
-        //         let peer_id = match multi_addr.clone().pop() {
-        //             Some(Protocol::P2p(id)) => id,
-        //             _ => return Err(anyhow::anyhow!("peer id not found")),
-        //         };
-
-        //         // if it fails here, it either means, the peer is not currently online or the receiver changed their peer id
-        //         p2p_network_service
-        //             .borrow_mut()
-        //             .dial_to_peer_id(multi_addr.clone(), &peer_id)
-        //             .await?;
-
-        //         p2p_network_service
-        //             .borrow_mut()
-        //             .wasm_send_request(txn.clone(), peer_id, multi_addr)
-        //             .await?;
-
-        //         return Ok(());
-        //     }
-
-        //     Err(_) => {
-        //         // 2) DB miss → spawn DHT fallback and return immediately
-
-        //     }
-        // }
+ 
     }
 
     pub async fn handle_recv_addr_confirmed_tx_state(
