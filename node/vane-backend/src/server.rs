@@ -1,15 +1,18 @@
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
+use hex;
+use dashmap::DashMap;
 
 use anyhow::{anyhow, Result};
 use axum::{
     extract::State,
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use jsonrpsee::{
@@ -19,7 +22,7 @@ use jsonrpsee::{
     server::ServerBuilder,
 };
 use log::{error, info, warn};
-use primitives::data_structure::{ChainSupported, TxStateMachine};
+use primitives::data_structure::{ChainSupported, DbTxStateMachine, StorageExport, TxStateMachine};
 use prometheus_client::{
     metrics::{counter::Counter, gauge::Gauge},
     registry::Registry,
@@ -27,10 +30,70 @@ use prometheus_client::{
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, Mutex as TokioMutex},
+    sync::{broadcast, mpsc, Mutex},
 };
 
 pub type Data = Vec<u8>;
+
+const REQUEST_TTL_SECONDS: u64 = 60 * 60;
+
+struct RequestEntry {
+    data: Data,
+    created_at: u64,
+}
+
+impl RequestEntry {
+    fn new(data: Data) -> Self {
+        Self {
+            data,
+            created_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }
+    }
+
+    fn is_expired(&self, ttl_seconds: u64) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.created_at) > ttl_seconds
+    }
+
+    fn update_data(&mut self, data: Data) {
+        self.data = data;
+    }
+}
+
+struct RequestListEntry {
+    multi_ids: Vec<String>,
+    created_at: u64,
+}
+
+impl RequestListEntry {
+    fn new() -> Self {
+        Self {
+            multi_ids: Vec::new(),
+            created_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }
+    }
+
+    fn is_expired(&self, ttl_seconds: u64) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.created_at) > ttl_seconds
+    }
+
+    fn push(&mut self, multi_id: String) {
+        self.multi_ids.push(multi_id);
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TargetPeer {
@@ -61,6 +124,10 @@ pub enum BackendEvent {
     PeerDisconnected {
         account_id: String,
     },
+    DataExpired {
+        multi_id: String,
+        data: Data,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -83,31 +150,133 @@ pub enum SystemNotification {
 
 pub struct VaneSwarmServer {
     peers: HashMap<String, TargetPeers>,
-    requests: HashMap<String, Data>,
+    requests: Arc<DashMap<String, RequestEntry>>,
+    sender_requests: Arc<DashMap<String, RequestListEntry>>,
+    receiver_requests: Arc<DashMap<String, RequestListEntry>>,
     metrics: Arc<MetricService>,
-    event_sender: mpsc::Sender<BackendEvent>,
+    event_sender: broadcast::Sender<BackendEvent>,
     system_notification_sender: mpsc::Sender<SystemNotification>,
 }
 
 impl VaneSwarmServer {
-    pub fn new(metrics: Arc<MetricService>, event_sender: mpsc::Sender<BackendEvent>, system_notification_sender: mpsc::Sender<SystemNotification>) -> Self {
+    pub fn new(metrics: Arc<MetricService>, event_sender: broadcast::Sender<BackendEvent>, system_notification_sender: mpsc::Sender<SystemNotification>) -> Self {
         Self {
             peers: HashMap::new(),
-            requests: HashMap::new(),
+            requests: Arc::new(DashMap::new()),
+            sender_requests: Arc::new(DashMap::new()),
+            receiver_requests: Arc::new(DashMap::new()),
             metrics,
             event_sender,
             system_notification_sender,
         }
     }
 
-    pub fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
+    fn cleanup_expired_requests(&self) {
+        let mut expired_keys = Vec::new();
+        for entry in self.requests.iter() {
+            if entry.value().is_expired(REQUEST_TTL_SECONDS) {
+                expired_keys.push(entry.key().clone());
+            }
+        }
+        for key in expired_keys {
+            self.requests.remove(&key);
+        }
+    }
+
+    fn cleanup_expired_sender_receiver_requests(&self) {
+        let mut expired_multi_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        
+        for entry in self.requests.iter() {
+            if entry.value().is_expired(REQUEST_TTL_SECONDS) {
+                expired_multi_ids.insert(entry.key().clone());
+            }
+        }
+
+        let sender_keys: Vec<String> = self.sender_requests.iter().map(|e| e.key().clone()).collect();
+        for key in sender_keys {
+            if let Some(mut entry) = self.sender_requests.get_mut(&key) {
+                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                    drop(entry);
+                    self.sender_requests.remove(&key);
+                    continue;
+                }
+                
+                if !expired_multi_ids.is_empty() {
+                    entry.multi_ids.retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                    if entry.multi_ids.is_empty() {
+                        drop(entry);
+                        self.sender_requests.remove(&key);
+                    }
+                }
+            }
+        }
+
+        let receiver_keys: Vec<String> = self.receiver_requests.iter().map(|e| e.key().clone()).collect();
+        for key in receiver_keys {
+            if let Some(mut entry) = self.receiver_requests.get_mut(&key) {
+                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                    drop(entry);
+                    self.receiver_requests.remove(&key);
+                    continue;
+                }
+                
+                if !expired_multi_ids.is_empty() {
+                    entry.multi_ids.retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                    if entry.multi_ids.is_empty() {
+                        drop(entry);
+                        self.receiver_requests.remove(&key);
+                    }
+                }
+            }
+        }
+    }
+
+    fn insert_request(&self, multi_id: String, data: Data) {
+        self.cleanup_expired_requests();
+        self.cleanup_expired_sender_receiver_requests();
+        self.requests.insert(multi_id, RequestEntry::new(data));
+    }
+
+    fn update_request(&self, multi_id: &str, data: Data) -> bool {
+        self.cleanup_expired_requests();
+        self.cleanup_expired_sender_receiver_requests();
+        
+        match self.requests.get_mut(multi_id) {
+            Some(mut entry) => {
+                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                    let expired_data = entry.data.clone();
+                    drop(entry);
+                    self.requests.remove(multi_id);
+                    let event = BackendEvent::DataExpired {
+                        multi_id: multi_id.to_string(),
+                        data: expired_data,
+                    };
+                    let _ = self.event_sender.send(event);
+                    false
+                } else {
+                    entry.update_data(data);
+                    true
+                }
+            }
+            None => {
+                let event = BackendEvent::DataExpired {
+                    multi_id: multi_id.to_string(),
+                    data: Vec::new(),
+                };
+                let _ = self.event_sender.send(event);
+                false
+            }
+        }
+    }
+
+    pub async fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
         info!("Received sender request from address: {}", address);
         
         let received_event = BackendEvent::SenderRequestReceived {
             address: address.clone(),
             data: data.clone(),
         };
-        let _ = self.event_sender.try_send(received_event);
+        let _ = self.event_sender.send(received_event);
 
         let tx_state: TxStateMachine = serde_json::from_slice(&data)
             .map_err(|e| {
@@ -117,6 +286,7 @@ impl VaneSwarmServer {
 
         let receiver_address = tx_state.receiver_address.clone();
         let receiver_network = tx_state.receiver_address_network;
+        let multi_id_hex = hex::encode(tx_state.multi_id);
 
         if !self.peers.contains_key(&address) {
             
@@ -128,8 +298,8 @@ impl VaneSwarmServer {
             };
             target_peers.insert(receiver_address.clone(), peer);
             self.peers.insert(address.clone(), target_peers);
-            self.metrics.record_peer_added();
-            self.update_metrics();
+            self.metrics.record_peer_added().await;
+            self.update_metrics().await;
 
             let notification = SystemNotification::PeerAdded {
                 address: address.clone(),
@@ -170,31 +340,48 @@ impl VaneSwarmServer {
         let _ = self.system_notification_sender.try_send(notification.clone());
         info!("succesfully queued request for receiver: {:?}", notification);
 
-        self.requests.insert(receiver_address.clone(), data.clone());
-        self.metrics.record_sender_request(&address);
-        self.update_metrics();
+        self.insert_request(multi_id_hex.clone(), data.clone());
+        self.sender_requests.entry(address.clone()).or_insert_with(RequestListEntry::new).push(multi_id_hex.clone());
+        self.receiver_requests.entry(receiver_address.clone()).or_insert_with(RequestListEntry::new).push(multi_id_hex);
+        self.cleanup_expired_sender_receiver_requests();
+        self.metrics.record_sender_request(&address).await;
+        self.update_metrics().await;
 
         let event = BackendEvent::SenderRequestHandled {
             address: receiver_address.clone(),
             data,
         };
-        let _ = self.event_sender.try_send(event.clone());
+        let _ = self.event_sender.send(event.clone());
         info!("succesfully handled sender request: {:?}", event);
         Ok(())
     }
 
-    pub fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
+    pub async fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
         info!("Received receiver response from address: {}", address);
+        
+        let tx_state: TxStateMachine = serde_json::from_slice(&data)
+            .map_err(|e| {
+                error!("Failed to decode TxStateMachine from receiver {}: {}", address, e);
+                anyhow!("Failed to decode TxStateMachine: {}", e)
+            })?;
+        
+        let multi_id_hex = hex::encode(tx_state.multi_id);
         
         let received_event = BackendEvent::ReceiverResponseReceived {
             address: address.clone(),
             data: data.clone(),
         };
-        let _ = self.event_sender.try_send(received_event);
+        let _ = self.event_sender.send(received_event);
 
-        self.requests.insert(address.clone(), data.clone());
-        self.metrics.record_receiver_response(&address);
-        self.update_metrics();
+        if self.update_request(&multi_id_hex, data.clone()) {
+            info!("Updated existing request with multi_id: {}", multi_id_hex);
+        } else {
+            self.insert_request(multi_id_hex.clone(), data.clone());
+            info!("Inserted new request with multi_id: {}", multi_id_hex);
+        }
+        
+        self.metrics.record_receiver_response(&address).await;
+        self.update_metrics().await;
 
         let notification = SystemNotification::RequestProcessed {
             address: address.clone(),
@@ -205,12 +392,12 @@ impl VaneSwarmServer {
             address: address.clone(),
             data,
         };
-        let _ = self.event_sender.try_send(event);
+        let _ = self.event_sender.send(event);
         info!("Receiver response handled successfully - address: {}", address);
         Ok(())
     }
 
-    pub fn disconnect_peer(&mut self, account_id: &str) -> Result<()> {
+    pub async fn disconnect_peer(&mut self, account_id: &str) -> Result<()> {
         info!("Disconnecting peer - account_id: {}", account_id);
         
         let mut sender_key_to_remove: Option<String> = None;
@@ -222,7 +409,7 @@ impl VaneSwarmServer {
                     if target_peers.is_empty() {
                         sender_key_to_remove = Some(sender_key.clone());
                     }
-                    self.metrics.record_peer_removed();
+                    self.metrics.record_peer_removed().await;
                     
                     let notification = SystemNotification::PeerRemoved {
                         address: sender_key.clone(),
@@ -232,13 +419,13 @@ impl VaneSwarmServer {
                     let event = BackendEvent::PeerDisconnected {
                         account_id: account_id.to_string(),
                     };
-                    let _ = self.event_sender.try_send(event.clone());
+                    let _ = self.event_sender.send(event.clone());
                     info!("succesfully disconnected peer: {:?}", event);
                     
                     if let Some(key) = sender_key_to_remove {
                         self.peers.remove(&key);
                     }
-                    self.update_metrics();
+                    self.update_metrics().await;
                     return Ok(());
                 } else {
                     info!("No-op: times_requested is {} (more than 1) for peer - sender: {}, account_id: {}", peer.times_requested, sender_key, account_id);
@@ -251,11 +438,13 @@ impl VaneSwarmServer {
         Err(anyhow!("Peer with account_id {} not found", account_id))
     }
 
-    fn update_metrics(&self) {
+    async fn update_metrics(&self) {
+        self.cleanup_expired_requests();
+        self.cleanup_expired_sender_receiver_requests();
         let peer_count = self.peers.len() as i64;
         let request_count = self.requests.len() as i64;
-        self.metrics.update_active_peers(peer_count);
-        self.metrics.update_pending_requests(request_count);
+        self.metrics.update_active_peers(peer_count).await;
+        self.metrics.update_pending_requests(request_count).await;
     }
 }
 
@@ -295,17 +484,17 @@ pub trait BackendRpc {
 #[derive(Clone)]
 pub struct BackendRpcHandler {
     swarm_server: Arc<Mutex<VaneSwarmServer>>,
-    event_receiver: Arc<TokioMutex<mpsc::Receiver<BackendEvent>>>,
+    event_sender: broadcast::Sender<BackendEvent>,
 }
 
 impl BackendRpcHandler {
     pub fn new(
         swarm_server: Arc<Mutex<VaneSwarmServer>>,
-        event_receiver: mpsc::Receiver<BackendEvent>,
+        event_sender: broadcast::Sender<BackendEvent>,
     ) -> Self {
         Self {
             swarm_server,
-            event_receiver: Arc::new(TokioMutex::new(event_receiver)),
+            event_sender,
         }
     }
 }
@@ -314,8 +503,8 @@ impl BackendRpcHandler {
 impl BackendRpcServer for BackendRpcHandler {
     async fn handle_sender_request(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
         info!("RPC: handle_sender_request called for address: {}", address);
-        let mut server = self.swarm_server.lock().unwrap();
-        server.handle_sender_request(address, data)
+        let mut server = self.swarm_server.lock().await;
+        server.handle_sender_request(address, data).await
             .map_err(|e| {
                 error!("RPC: Failed to handle sender request: {}", e);
                 jsonrpsee::core::Error::Custom(e.to_string())
@@ -325,8 +514,8 @@ impl BackendRpcServer for BackendRpcHandler {
 
     async fn handle_receiver_response(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
         info!("RPC: handle_receiver_response called for address: {}", address);
-        let mut server = self.swarm_server.lock().unwrap();
-        server.handle_receiver_response(address, data)
+        let mut server = self.swarm_server.lock().await;
+        server.handle_receiver_response(address, data).await
             .map_err(|e| {
                 error!("RPC: Failed to handle receiver response: {}", e);
                 jsonrpsee::core::Error::Custom(e.to_string())
@@ -336,8 +525,8 @@ impl BackendRpcServer for BackendRpcHandler {
 
     async fn disconnect_peer(&self, account_id: String) -> RpcResult<()> {
         info!("RPC: disconnect_peer called - account_id: {}", account_id);
-        let mut server = self.swarm_server.lock().unwrap();
-        server.disconnect_peer(&account_id)
+        let mut server = self.swarm_server.lock().await;
+        server.disconnect_peer(&account_id).await
             .map_err(|e| {
                 error!("RPC: Failed to disconnect peer: {}", e);
                 jsonrpsee::core::Error::Custom(e.to_string())
@@ -353,10 +542,10 @@ impl BackendRpcServer for BackendRpcHandler {
                 anyhow!("failed to accept subscription")
             })?;
 
-        let mut receiver = self.event_receiver.lock().await;
+        let mut receiver = self.event_sender.subscribe();
         info!("Subscription active for address: {}", address);
 
-        while let Some(event) = receiver.recv().await {
+        while let Ok(event) = receiver.recv().await {
             let should_send = match &event {
                 BackendEvent::SenderRequestReceived { address: event_address, data } => {
                     event_address == &address || serde_json::from_slice::<TxStateMachine>(data)
@@ -384,6 +573,12 @@ impl BackendRpcServer for BackendRpcHandler {
                 }
                 BackendEvent::PeerDisconnected { account_id } => {
                     account_id == &address
+                }
+                BackendEvent::DataExpired { multi_id: _, data } => {
+                    serde_json::from_slice::<TxStateMachine>(data)
+                        .ok()
+                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
+                        .unwrap_or(false)
                 }
             };
 
@@ -414,10 +609,10 @@ pub struct JsonRpcServer {
 impl JsonRpcServer {
     pub fn new(
         swarm_server: Arc<Mutex<VaneSwarmServer>>,
-        event_receiver: mpsc::Receiver<BackendEvent>,
+        event_sender: broadcast::Sender<BackendEvent>,
         port: u16,
     ) -> Result<Self> {
-        let rpc_handler = BackendRpcHandler::new(swarm_server, event_receiver);
+        let rpc_handler = BackendRpcHandler::new(swarm_server, event_sender);
         let url = format!("127.0.0.1:{}", port);
         Ok(Self { rpc_handler, url })
     }
@@ -449,6 +644,31 @@ pub struct BackendEventsSummary {
     receiver_not_found_total: u64,
     active_peers: usize,
     pending_requests: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ClientMetricsPayload {
+    pub peer_id: String,
+    pub client_type: String,
+    pub timestamp: u64,
+    pub storage_export: StorageExport,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClientSnapshot {
+    pub account_id: String,
+    pub success_txs: u64,
+    pub failed_txs: u64,
+    pub failed_transactions: Vec<DbTxStateMachine>,
+}
+
+pub struct ClientMetricsStore {
+    pub last_update_times: HashMap<String, SystemTime>,
+    pub last_totals: HashMap<String, (u64, u64)>,
+    pub total_success_txs: Counter,
+    pub total_failed_txs: Counter,
+    pub tx_success_rate_percent: Gauge,
+    pub per_client: HashMap<String, ClientSnapshot>,
 }
 
 pub struct BackendMetrics {
@@ -513,63 +733,174 @@ impl BackendMetrics {
     }
 }
 
+impl ClientMetricsStore {
+    pub fn new() -> Self {
+        Self {
+            last_update_times: HashMap::new(),
+            last_totals: HashMap::new(),
+            total_success_txs: Counter::default(),
+            total_failed_txs: Counter::default(),
+            tx_success_rate_percent: Gauge::default(),
+            per_client: HashMap::new(),
+        }
+    }
+
+    pub fn register(&self, registry: &mut Registry) {
+        registry.register(
+            "backend_total_success_txs",
+            "Total successful transactions",
+            self.total_success_txs.clone(),
+        );
+        registry.register(
+            "backend_total_failed_txs",
+            "Total failed transactions",
+            self.total_failed_txs.clone(),
+        );
+        registry.register(
+            "backend_tx_success_rate_percent",
+            "Transaction success rate (percent)",
+            self.tx_success_rate_percent.clone(),
+        );
+    }
+
+    pub fn update_from_exported_storage(&mut self, payload: ClientMetricsPayload) {
+        let peer_id = payload.peer_id.clone();
+        let client_type = payload.client_type.clone();
+        let storage = &payload.storage_export;
+
+        let account_id = storage
+            .user_account
+            .as_ref()
+            .and_then(|ua| ua.accounts.first())
+            .map(|(acc, _)| acc.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        self.last_update_times
+            .insert(account_id.clone(), SystemTime::now());
+
+        self.update_aggregated_metrics(&account_id, storage);
+
+        info!(
+            "Updated backend metrics for peer {} account {} ({}) - {} success txs, {} failed txs",
+            peer_id,
+            account_id,
+            client_type,
+            storage.success_transactions.len(),
+            storage.failed_transactions.len()
+        );
+    }
+
+    fn update_aggregated_metrics(&mut self, account_id: &str, storage: &StorageExport) {
+        let current = (
+            storage.success_transactions.len() as u64,
+            storage.failed_transactions.len() as u64,
+        );
+
+        let last = self.last_totals.get(account_id).cloned().unwrap_or((0, 0));
+        let delta_success = current.0.saturating_sub(last.0);
+        let delta_failed = current.1.saturating_sub(last.1);
+
+        if delta_success > 0 {
+            self.total_success_txs.inc_by(delta_success);
+        }
+        if delta_failed > 0 {
+            self.total_failed_txs.inc_by(delta_failed);
+        }
+
+        let total_tx = current.0 + current.1;
+        if total_tx > 0 {
+            let success_rate = (current.0 as f64 / total_tx as f64) * 100.0;
+            self.tx_success_rate_percent
+                .set(success_rate.round() as i64);
+        }
+
+        self.last_totals.insert(account_id.to_string(), current);
+
+        let existing_snapshot = self
+            .per_client
+            .entry(account_id.to_string())
+            .or_insert_with(|| ClientSnapshot {
+                account_id: account_id.to_string(),
+                success_txs: 0,
+                failed_txs: 0,
+                failed_transactions: Vec::new(),
+            });
+
+        existing_snapshot.success_txs = current.0;
+        existing_snapshot.failed_txs = current.1;
+
+        for new_tx in &storage.failed_transactions {
+            let is_duplicate = existing_snapshot
+                .failed_transactions
+                .iter()
+                .any(|existing_tx| existing_tx.tx_hash == new_tx.tx_hash);
+
+            if !is_duplicate {
+                existing_snapshot.failed_transactions.push(new_tx.clone());
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MetricService {
     backend_metrics: Arc<Mutex<BackendMetrics>>,
+    client_metrics: Arc<Mutex<ClientMetricsStore>>,
 }
 
 impl MetricService {
     pub fn new() -> Self {
         let mut registry = Registry::default();
         let backend_metrics = BackendMetrics::new();
+        let client_metrics = ClientMetricsStore::new();
 
         backend_metrics.register(&mut registry);
+        client_metrics.register(&mut registry);
 
         Self {
             backend_metrics: Arc::new(Mutex::new(backend_metrics)),
+            client_metrics: Arc::new(Mutex::new(client_metrics)),
         }
+    }
+
+    pub fn get_client_metrics(&self) -> Arc<Mutex<ClientMetricsStore>> {
+        Arc::clone(&self.client_metrics)
     }
 
     pub fn get_backend_metrics(&self) -> Arc<Mutex<BackendMetrics>> {
         Arc::clone(&self.backend_metrics)
     }
 
-    pub fn record_sender_request(&self, _address: &str) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.sender_requests_total.inc();
-        }
+    pub async fn record_sender_request(&self, _address: &str) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.sender_requests_total.inc();
     }
 
-    pub fn record_receiver_response(&self, _address: &str) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.receiver_responses_total.inc();
-        }
+    pub async fn record_receiver_response(&self, _address: &str) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.receiver_responses_total.inc();
     }
 
-    pub fn record_peer_added(&self) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.peers_added_total.inc();
-            metrics.active_peers.inc();
-        }
+    pub async fn record_peer_added(&self) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.peers_added_total.inc();
+        metrics.active_peers.inc();
     }
 
-    pub fn record_peer_removed(&self) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.peers_removed_total.inc();
-            metrics.active_peers.dec();
-        }
+    pub async fn record_peer_removed(&self) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.peers_removed_total.inc();
+        metrics.active_peers.dec();
     }
 
-    pub fn update_active_peers(&self, count: i64) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.active_peers.set(count);
-        }
+    pub async fn update_active_peers(&self, count: i64) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.active_peers.set(count);
     }
 
-    pub fn update_pending_requests(&self, count: i64) {
-        if let Ok(metrics) = self.backend_metrics.lock() {
-            metrics.pending_requests.set(count);
-        }
+    pub async fn update_pending_requests(&self, count: i64) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.pending_requests.set(count);
     }
 }
 
@@ -588,6 +919,8 @@ impl MetricsServer {
 
         let app = Router::new()
             .route("/metrics-summary", get(get_metrics_summary))
+            .route("/client-metrics", post(handle_client_metrics))
+            .route("/client-metrics-summary", get(get_client_metrics_summary))
             .with_state(self.service.clone());
 
         let tcp_listener = TcpListener::bind(addr).await?;
@@ -595,6 +928,8 @@ impl MetricsServer {
 
         info!("Backend metrics server listening on http://{}", local_addr);
         info!("Metrics summary endpoint (GET): http://{}/metrics-summary", local_addr);
+        info!("Client metrics endpoint (POST): http://{}/client-metrics", local_addr);
+        info!("Client metrics summary endpoint (GET): http://{}/client-metrics-summary", local_addr);
 
         axum::serve(tcp_listener, app.into_make_service()).await?;
         Ok(())
@@ -602,26 +937,55 @@ impl MetricsServer {
 }
 
 async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
-    match service.get_backend_metrics().lock() {
-        Ok(metrics) => {
-            let summary = BackendEventsSummary {
-                sender_requests_total: metrics.sender_requests_total.get(),
-                receiver_responses_total: metrics.receiver_responses_total.get(),
-                receiver_not_found_total: metrics.receiver_not_found_total.get(),
-                active_peers: metrics.active_peers.get() as usize,
-                pending_requests: metrics.pending_requests.get() as usize,
-            };
-            (
-                StatusCode::OK,
-                Json(serde_json::json!({ "backend": summary })),
-            )
-        }
-        Err(e) => {
-            error!("Failed to acquire backend metrics lock: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Failed to read backend metrics"})),
-            )
-        }
-    }
+    let metrics_arc = service.get_backend_metrics();
+    let metrics = metrics_arc.lock().await;
+    let summary = BackendEventsSummary {
+        sender_requests_total: metrics.sender_requests_total.get(),
+        receiver_responses_total: metrics.receiver_responses_total.get(),
+        receiver_not_found_total: metrics.receiver_not_found_total.get(),
+        active_peers: metrics.active_peers.get() as usize,
+        pending_requests: metrics.pending_requests.get() as usize,
+    };
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "backend": summary })),
+    )
+}
+
+async fn handle_client_metrics(
+    State(service): State<MetricService>,
+    Json(payload): Json<ClientMetricsPayload>,
+) -> impl IntoResponse {
+    let account_id = payload
+        .storage_export
+        .user_account
+        .as_ref()
+        .and_then(|ua| ua.accounts.first())
+        .map(|(acc, _)| acc.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    info!(
+        "Received storage export from client: {} account: {} ({})",
+        payload.peer_id, account_id, payload.client_type
+    );
+
+    let client_metrics_arc = service.get_client_metrics();
+    let mut client_metrics = client_metrics_arc.lock().await;
+    client_metrics.update_from_exported_storage(payload);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status": "success"})),
+    )
+}
+
+async fn get_client_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
+    let client_metrics_arc = service.get_client_metrics();
+    let client_metrics = client_metrics_arc.lock().await;
+    let list: Vec<ClientSnapshot> = client_metrics.per_client.values().cloned().collect();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "clients": list
+        })),
+    )
 }

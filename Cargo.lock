@@ -9094,6 +9094,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "dashmap",
+ "hex",
  "jsonrpsee",
  "jsonrpsee-wasm-client",
  "log",

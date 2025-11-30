@@ -105,7 +105,7 @@ impl WasmP2pWorker {
     pub async fn new(
         live: bool,
         db_worker: Rc<DbWorker>,
-        relay_node_multi_addr: String,
+        relay_node_url: String,
         user_account_id: String,
         command_recv_channel: tokio_with_wasm::alias::sync::mpsc::Receiver<NetworkCommand>,
         dht_query_result_tx: tokio_with_wasm::alias::sync::mpsc::Sender<(Option<Multiaddr>, u32)>,

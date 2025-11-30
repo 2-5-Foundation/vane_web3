@@ -3,8 +3,8 @@ mod server;
 use crate::server::{BackendEvent, JsonRpcServer, MetricService, MetricsServer, SystemNotification, VaneSwarmServer};
 use anyhow::Result;
 use log::{error, info};
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,16 +13,16 @@ async fn main() -> Result<()> {
     info!("🚀 Starting Vane Backend Server...");
 
     let metric_service = Arc::new(MetricService::new());
-    let (event_sender, event_receiver) = mpsc::channel::<BackendEvent>(100);
+    let (event_sender, _) = broadcast::channel::<BackendEvent>(100);
     let (system_notification_sender, _) = mpsc::channel::<SystemNotification>(100);
     let swarm_server = Arc::new(Mutex::new(VaneSwarmServer::new(
         metric_service.clone(),
-        event_sender,
+        event_sender.clone(),
         system_notification_sender,
     )));
 
     let metrics_server = MetricsServer::new((*metric_service).clone(), 9946);
-    let jsonrpc_server = JsonRpcServer::new(swarm_server, event_receiver, 9947)?;
+    let jsonrpc_server = JsonRpcServer::new(swarm_server, event_sender, 9947)?;
 
     let metrics_server_clone = metrics_server;
     let metrics_handle = tokio::spawn(async move {
