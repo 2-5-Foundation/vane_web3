@@ -73,7 +73,6 @@ describe('WASM NODE SELF TRANSACTIONS', () => {
 
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
     await addAccount(wasm_client_address2, ChainSupported.Ethereum);
-
     const storage = (await exportStorage()) as StorageExport;
     expect(storage.user_account?.accounts.length).toEqual(2);
 
@@ -162,7 +161,6 @@ describe('WASM NODE SELF TRANSACTIONS', () => {
     );
 
     const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-    await addAccount(wasm_client_address2, ChainSupported.Ethereum);
 
     const storage = (await exportStorage()) as StorageExport;
 

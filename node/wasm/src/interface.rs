@@ -12,7 +12,6 @@ use anyhow::anyhow;
 use async_stream::stream;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::StreamExt;
-use libp2p::{Multiaddr, PeerId};
 use log::{debug, error, info, trace};
 use lru::LruCache;
 use reqwasm::http::{Request, RequestMode};
@@ -32,9 +31,9 @@ use crate::{
 };
 
 use primitives::data_structure::{
-    AccountInfo, ChainSupported, ConnectionState, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, P2pEventResult, StorageExport, Token, TtlWrapper, TxStateMachine,
-    TxStatus, UserAccount, UserMetrics,
+    AccountInfo, BackendEvent, ChainSupported, DbTxStateMachine, DbWorkerInterface,
+    NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
+    UserMetrics,
 };
 
 #[derive(Clone)]
@@ -49,8 +48,6 @@ pub struct PublicInterfaceWorker {
     pub rpc_receiver_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
     /// sender channel when user updates the transaction state, propagating to main service worker
     pub user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
-    /// P2p peerId
-    pub peer_id: PeerId,
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     pub tx_integrity: Rc<RefCell<HashMap<u32, [u8; 32]>>>,
@@ -76,7 +73,6 @@ impl PublicInterfaceWorker {
         p2p_network_service: Rc<P2pNetworkService>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
         user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
-        peer_id: PeerId,
         lru_cache: Rc<RefCell<LruCache<u32, TtlWrapper<TxStateMachine>>>>,
     ) -> Result<Self, JsValue> {
         Ok(Self {
@@ -85,7 +81,6 @@ impl PublicInterfaceWorker {
             p2p_network_service,
             rpc_receiver_channel: rpc_recv_channel,
             user_rpc_update_sender_channel,
-            peer_id,
             lru_cache,
             tx_integrity: Rc::new(RefCell::new(HashMap::new())),
             watcher_active: Rc::new(RefCell::new(false)),
@@ -109,24 +104,6 @@ impl PublicInterfaceWorker {
 
         let integrity_hash = blake2_256(&data_to_hash);
         integrity_hash
-    }
-}
-
-impl PublicInterfaceWorker {
-    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsError> {
-        let network = network.as_str().into();
-
-        let user_account = self
-            .db_worker
-            .update_user_account(account_id.clone(), network)
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-
-        self.p2p_network_service
-            .add_account_to_dht(account_id, user_account.multi_addr)
-            .await
-            .map_err(|e| JsError::new(&format!("{:?}", e)))?;
-        Ok(())
     }
 
     pub async fn initiate_transaction(
@@ -495,6 +472,14 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
 
+    pub async fn add_account(&self, account_id: String, network: ChainSupported) -> Result<(), JsError> {
+        self.db_worker
+            .update_user_account(account_id, network)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to add account to database: {:?}", e)))?;
+        Ok(())
+    }
+
     pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
@@ -663,31 +648,12 @@ impl PublicInterfaceWorker {
 
     // this reports crucial p2p events
     pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
-        let connection_state = self.p2p_worker.relay_connection_state.borrow();
-
-        let (relay_connected, connection_uptime_seconds, last_connection_change) =
-            match &*connection_state {
-                ConnectionState::Connected(connect_timestamp) => {
-                    let now = (js_sys::Date::now() / 1000.0) as u64; // Current time in seconds
-                    let uptime = if now > *connect_timestamp {
-                        Some(now - *connect_timestamp)
-                    } else {
-                        Some(0)
-                    };
-
-                    (true, uptime, Some(*connect_timestamp))
-                }
-                ConnectionState::Disconnected(disconnect_timestamp) => {
-                    (false, None, Some(*disconnect_timestamp))
-                }
-            };
-
         let status = NodeConnectionStatus {
-            relay_connected,
-            peer_id: self.peer_id.to_string(),
-            relay_address: self.p2p_worker.relay_multi_addr.to_string(),
-            connection_uptime_seconds,
-            last_connection_change,
+            relay_connected: true,
+            peer_id: self.p2p_worker.user_account_id.clone(),
+            relay_address: self.p2p_worker.backend_url.clone(),
+            connection_uptime_seconds: None,
+            last_connection_change: None,
         };
 
         serde_wasm_bindgen::to_value(&status)
@@ -710,12 +676,6 @@ impl PublicInterfaceWorkerJs {
 
 #[wasm_bindgen]
 impl PublicInterfaceWorkerJs {
-    #[wasm_bindgen(js_name = "addAccount")]
-    pub async fn add_account(&self, account_id: String, network: String) -> Result<(), JsError> {
-        self.inner.borrow().add_account(account_id, network).await?;
-        Ok(())
-    }
-
     #[wasm_bindgen(js_name = "initiateTransaction")]
     pub async fn initiate_transaction(
         &self,
@@ -785,6 +745,13 @@ impl PublicInterfaceWorkerJs {
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
         let tx_updates = self.inner.borrow().fetch_pending_tx_updates().await?;
         Ok(tx_updates)
+    }
+
+    #[wasm_bindgen(js_name = "addAccount")]
+    pub async fn add_account(&self, account_id: String, network: JsValue) -> Result<(), JsError> {
+        let network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(network)?;
+        self.inner.borrow().add_account(account_id, network_chain).await?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "receiverConfirm")]

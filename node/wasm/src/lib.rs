@@ -1,3 +1,4 @@
+
 extern crate alloc;
 extern crate core;
 
@@ -11,22 +12,21 @@ use alloc::{format, rc::Rc, string::String, sync::Arc, vec};
 use core::{cell::RefCell, str::FromStr};
 use std::collections::HashMap;
 
-use crate::p2p::{host_get_dht, host_set_dht};
 use crate::{
     interface::{PublicInterfaceWorker, PublicInterfaceWorkerJs},
     p2p::{P2pEventNotifSubSystem, P2pNetworkService, WasmP2pWorker},
     tx_processing::WasmTxProcessingWorker,
 };
+
 use anyhow::{anyhow, Error};
 use codec::Decode;
 use db_wasm::{DbWorker, InMemoryDbWorker, OpfsRedbWorker};
 use futures::{future, FutureExt};
 use gloo_timers::future::TimeoutFuture;
-use libp2p::{kad::QueryId, multiaddr::Protocol, Multiaddr, PeerId};
 use log::{debug, error, info, warn};
 use lru::LruCache;
 use primitives::data_structure::{
-    ChainSupported, DbTxStateMachine, DbWorkerInterface, HashId, NetworkCommand, P2pEventResult,
+    BackendEvent, ChainSupported, DbTxStateMachine, DbWorkerInterface, NetworkCommand,
     StorageExport, SwarmMessage, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
@@ -47,12 +47,6 @@ pub struct WasmMainServiceWorker {
     /// receiver channel to handle the updates made by user from rpc
     pub user_rpc_update_recv_channel:
         Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<TxStateMachine>>>,
-    /// channel to handle dht query results
-    pub dht_query_result_channel:
-        Rc<RefCell<tokio_with_wasm::alias::sync::mpsc::Receiver<(Option<Multiaddr>, u32)>>>,
-    // query id -> (txn, target_id)
-    pub dht_query_context: Rc<RefCell<HashMap<u32, (Rc<RefCell<TxStateMachine>>, String)>>>,
-
     // moka cache
     pub lru_cache: Rc<RefCell<LruCache<u32, TtlWrapper<TxStateMachine>>>>,
 }
@@ -77,11 +71,8 @@ impl WasmMainServiceWorker {
         let (p2p_command_tx, p2p_command_recv) =
             tokio_with_wasm::alias::sync::mpsc::channel::<NetworkCommand>(10);
 
-        let (dht_query_result_tx, dht_query_result_recv) =
-            tokio_with_wasm::alias::sync::mpsc::channel::<(Option<Multiaddr>, u32)>(10);
-
         let (p2p_event_notif_tx, p2p_event_notif_recv) =
-            tokio_with_wasm::alias::sync::mpsc::channel::<P2pEventResult>(20);
+            tokio_with_wasm::alias::sync::mpsc::channel::<BackendEvent>(20);
 
         // DATABASE WORKER (LOCAL AND REMOTE )
         // ===================================================================================== //
@@ -103,29 +94,23 @@ impl WasmMainServiceWorker {
             Rc::new(RefCell::new(p2p_event_notif_recv)),
         ));
 
+        let backend_url = relay_node_multi_addr.clone();
+
         let p2p_worker = WasmP2pWorker::new(
             live,
-            db_worker.clone(),
-            relay_node_multi_addr,
+            relay_node_multi_addr.clone(),
             account.clone(),
             p2p_command_recv,
-            dht_query_result_tx,
             p2p_event_notif_sub_system.clone(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("P2P worker creation failed: {:?}", e))?;
 
-        let p2p_network_service =
-            P2pNetworkService::new(Rc::new(p2p_command_tx), p2p_worker.clone())?;
+        let p2p_network_service = P2pNetworkService::new(Rc::new(p2p_command_tx))?;
 
         let user_account = UserAccount {
-            multi_addr: p2p_worker
-                .user_circuit_multi_addr
-                .clone()
-                .with_p2p(p2p_worker.node_id)
-                .expect("failed to add p2p protocol")
-                .to_string(),
-            accounts: vec![(account, ChainSupported::from(network.as_str()))],
+            multi_addr: backend_url,
+            accounts: vec![(account.clone(), ChainSupported::from(network.as_str()))],
         };
         db_worker.set_user_account(user_account).await?;
 
@@ -144,7 +129,6 @@ impl WasmMainServiceWorker {
             Rc::new(p2p_network_service.clone()),
             Rc::new(RefCell::new(rpc_recv_channel)),
             Rc::new(RefCell::new(user_rpc_update_sender_channel)),
-            p2p_worker.node_id,
             lru_cache.clone(),
         )
         .await
@@ -165,23 +149,21 @@ impl WasmMainServiceWorker {
             rpc_sender_channel: Rc::new(RefCell::new(rpc_sender_channel)),
             user_rpc_update_recv_channel: Rc::new(RefCell::new(user_rpc_update_recv_channel)),
             lru_cache,
-            dht_query_result_channel: Rc::new(RefCell::new(dht_query_result_recv)),
-            dht_query_context: Rc::new(RefCell::new(HashMap::new())),
         })
     }
 
     pub fn start_swarm_handler(&self) -> Result<(), Error> {
         let (sender_channel, mut recv_channel) = tokio_with_wasm::alias::sync::mpsc::channel(256);
 
-        // Start swarm and get it ready to send messages
+        // Start network worker and get it ready to send messages
         let p2p_worker_clone = self.p2p_worker.clone();
         wasm_bindgen_futures::spawn_local(async move {
             if let Err(e) = p2p_worker_clone
-                .borrow_mut()
-                .start_swarm(Rc::new(RefCell::new(sender_channel)))
+                .borrow()
+                .start(Rc::new(RefCell::new(sender_channel)))
                 .await
             {
-                error!("start swarm failed: {}", e);
+                error!("start network worker failed: {}", e);
             }
         });
 
@@ -215,13 +197,10 @@ impl WasmMainServiceWorker {
         match swarm_msg_result {
             Ok(swarm_msg) => match swarm_msg {
                 // receiver incoming request
-                SwarmMessage::WasmRequest { data, inbound_id } => {
-                    let mut decoded_req: TxStateMachine = data;
-                    let inbound_req_id = inbound_id.get_hash_id();
-                    decoded_req.inbound_req_id = Some(inbound_req_id);
+                SwarmMessage::WasmRequest { data } => {
+                    let decoded_req: TxStateMachine = data;
 
-                    debug!(target: "MainServiceWorker",
-                          "decoded request: {:?}", &decoded_req);
+                    debug!(target: "MainServiceWorker", "decoded request: {:?}", &decoded_req);
                     // Use non-blocking try_send for WASM environment
                     if let Err(e) = self
                         .rpc_sender_channel
@@ -243,11 +222,9 @@ impl WasmMainServiceWorker {
                           "propagating txn msg as request");
                 }
 
-                SwarmMessage::WasmResponse { data, outbound_id } => {
+                SwarmMessage::WasmResponse { data } => {
                     // sender receives the response from the receiver
                     let mut decoded_resp: TxStateMachine = data;
-                    let outbound_req_id = outbound_id.get_hash_id();
-                    decoded_resp.outbound_req_id = Some(outbound_req_id);
 
                     // Drop updates if already reverted in cache (authoritative sender state)
                     if let Some(existing) = self
@@ -388,16 +365,10 @@ impl WasmMainServiceWorker {
         &mut self,
         txn: Rc<RefCell<TxStateMachine>>,
     ) -> Result<(), Error> {
-        let target_id = txn.borrow().receiver_address.clone();
-
-        // take handles out of `self` so we don't capture `self` in the spawned task
         let db = self.db_worker.clone();
-        let p2p_network_service = self.p2p_network_service.clone();
-        let p2p_worker = self.p2p_worker.clone();
         let rpc_sender_channel = self.rpc_sender_channel.clone();
         let lru_cache = self.lru_cache.clone();
 
-        // But first check if it is the same user, if it is then just send it to self no p2p
         let target_user_profile = db.get_user_account().await?;
         let (receiver_in_profile, sender_in_profile) = {
             let txn_borrow = txn.borrow();
@@ -413,7 +384,6 @@ impl WasmMainServiceWorker {
         };
 
         if receiver_in_profile && sender_in_profile {
-            // send to interface/rpc make the receiver confirm
             let mut ttl_wrapper = lru_cache
                 .borrow_mut()
                 .get(&txn.borrow().tx_nonce.into())
@@ -431,136 +401,14 @@ impl WasmMainServiceWorker {
             return Ok(());
         }
 
-        info!(target: "MainServiceWorker", "Checking PeerId in DHT");
+        info!(target: "MainServiceWorker", "Routing transaction through backend transport");
 
-        let p2p_network_service = p2p_network_service.clone();
-        let rpc_sender_channel = rpc_sender_channel.clone();
-        let lru_cache = lru_cache.clone();
-        let txn = txn.clone();
-        let target_id = target_id.clone();
-        let db_worker = db.clone();
+        self.p2p_network_service
+            .borrow_mut()
+            .wasm_send_request(txn.clone())
+            .await?;
 
-        wasm_bindgen_futures::spawn_local(async move {
-            info!(target: "MainServiceWorker", "🔍 Starting DHT lookup for target: {}", target_id);
-
-            // Exponential backoff retry: 3 attempts (0.5s, 1.5s, 3.0s) between attempts
-            let mut attempt: u8 = 1;
-            let max_attempts: u8 = 3;
-            loop {
-                let dht = host_get_dht(target_id.clone()).fuse();
-                let timeout = TimeoutFuture::new(60_000).fuse();
-                futures::pin_mut!(dht, timeout);
-
-                match future::select(dht, timeout).await {
-                    // DHT returned
-                    future::Either::Left((Ok(resp), _)) => {
-                        if let Some(err) = resp.error {
-                            warn!(target: "MainServiceWorker", "DHT get returned error (attempt {}/{}): {}", attempt, max_attempts, err);
-                        } else {
-                            let maybe_addr = resp
-                                .value
-                                .and_then(|s| (!s.is_empty()).then(|| Multiaddr::try_from(s).ok()))
-                                .flatten();
-
-                            if let Some(multi_addr) = maybe_addr {
-                                let peer_id = match multi_addr.clone().pop() {
-                                    Some(libp2p::multiaddr::Protocol::P2p(id)) => id,
-                                    _ => {
-                                        error!("peer id missing in multiaddr");
-                                        return;
-                                    }
-                                };
-
-                                // record to db
-                                if let Err(e) = db_worker
-                                    .record_saved_user_peers(
-                                        target_id.clone(),
-                                        multi_addr.to_string(),
-                                    )
-                                    .await
-                                {
-                                    error!("record_saved_user_peers failed: {target_id}: {e:?}");
-                                    return;
-                                }
-
-                                if let Err(e) = p2p_network_service
-                                    .borrow_mut()
-                                    .wasm_send_request(txn.clone(), peer_id, multi_addr)
-                                    .await
-                                {
-                                    error!("wasm_send_request failed: {e:?}");
-                                    let mut tx = txn.borrow_mut().clone();
-                                    tx.status =
-                                        TxStatus::TxError("Failed to reach receiver".to_string());
-                                    let _ = rpc_sender_channel.borrow_mut().send(tx.clone()).await;
-
-                                    // error worker handler
-                                    let mut ttl_wrapper = lru_cache
-                                        .borrow_mut()
-                                        .get(&tx.tx_nonce.into())
-                                        .expect("Failed to get transaction from cache; panic")
-                                        .clone();
-
-                                    ttl_wrapper.update_value(tx.clone());
-
-                                    lru_cache
-                                        .borrow_mut()
-                                        .push(tx.tx_nonce.into(), ttl_wrapper.clone());
-                                    return;
-                                }
-
-                                return;
-                            } else {
-                                warn!(target: "MainServiceWorker", "DHT returned empty value (attempt {}/{})", attempt, max_attempts);
-                            }
-                        }
-                    }
-
-                    // here we should have the error worker
-                    // DHT internal error
-                    future::Either::Left((Err(e), _)) => {
-                        warn!(target: "MainServiceWorker", "host_get_dht internal error (attempt {}/{}): {e:?}", attempt, max_attempts);
-                    }
-
-                    // timeout
-                    future::Either::Right((_elapsed, _)) => {
-                        warn!(target: "MainServiceWorker", "⏳ DHT timed out for {} (attempt {}/{})", target_id, attempt, max_attempts);
-                    }
-                }
-
-                if attempt >= max_attempts {
-                    // give up and notify not registered
-                    info!(target: "MainServiceWorker", "DHT: receiver did not register");
-                    let mut t = txn.borrow_mut().clone();
-                    t.recv_not_registered();
-
-                    let _ = rpc_sender_channel.borrow_mut().send(t.clone()).await;
-
-                    let mut ttl_wrapper = lru_cache
-                        .borrow_mut()
-                        .get(&t.tx_nonce.into())
-                        .expect("Failed to get transaction from cache; panic")
-                        .clone();
-                    ttl_wrapper.update_value(t.clone());
-                    lru_cache
-                        .borrow_mut()
-                        .push(t.tx_nonce.into(), ttl_wrapper.clone());
-                    return;
-                }
-
-                // backoff before next attempt
-                let backoff_ms: u32 = match attempt {
-                    1 => 500,
-                    2 => 1500,
-                    _ => 3000,
-                };
-                attempt += 1;
-                TimeoutFuture::new(backoff_ms).await;
-            }
-        });
-
-        return Ok(());
- 
+        Ok(())
     }
 
     pub async fn handle_recv_addr_confirmed_tx_state(
@@ -966,55 +814,7 @@ impl WasmMainServiceWorker {
                 .iter()
                 .any(|(a, _)| *a == txn_inner.sender_address);
 
-        // If not, best-effort disconnect + cleanup
-        if !both_in_profile {
-            // 1) Try DB
-            let mut multi_addr = self
-                .db_worker
-                .get_saved_user_peers(txn_inner.receiver_address.clone())
-                .await
-                .ok()
-                .and_then(|s| Multiaddr::try_from(s).ok());
-
-            // 2) If DB miss, do short DHT lookup (async, with timeout)
-            if multi_addr.is_none() {
-                let dht = host_get_dht(txn_inner.receiver_address.clone()).fuse();
-                let timeout = TimeoutFuture::new(3_000).fuse();
-                futures::pin_mut!(dht, timeout);
-
-                let addr_opt: Option<String> = match future::select(dht, timeout).await {
-                    future::Either::Left((Ok(r), _)) => r.value,
-                    future::Either::Right((_elapsed, _)) => {
-                        warn!(target:"MainServiceWorker","revert: DHT lookup timed out for {}", txn_inner.receiver_address);
-                        None
-                    }
-                    future::Either::Left((Err(e), _)) => {
-                        warn!(target:"MainServiceWorker","revert: DHT lookup error for {}: {:?}", txn_inner.receiver_address, e);
-                        None
-                    }
-                };
-
-                multi_addr = addr_opt.and_then(|s| Multiaddr::try_from(s).ok());
-            }
-
-            // 3) Disconnect + delete (best-effort)
-            if let Some(mut ma) = multi_addr.clone() {
-                let ma_str = ma.to_string();
-                if let Some(Protocol::P2p(id)) = ma.pop() {
-                    if let Err(e) = self
-                        .p2p_network_service
-                        .borrow_mut()
-                        .disconnect_from_peer_id(&id)
-                        .await
-                    {
-                        warn!(target:"MainServiceWorker","disconnect failed: {e}");
-                    }
-                }
-                if let Err(e) = self.db_worker.delete_saved_peer(&ma_str).await {
-                    warn!(target:"MainServiceWorker","peer delete failed {}: {e}", ma_str);
-                }
-            }
-        }
+        // Backend transport handles cleanup for remote peers now, so nothing to do here.
 
         // Record failed + notify + cache
         self.db_worker
@@ -1121,9 +921,6 @@ impl WasmMainServiceWorker {
         let user_rpc_update_recv_channel = main_worker.user_rpc_update_recv_channel.clone();
         let rpc_sender_channel = main_worker.rpc_sender_channel.clone();
 
-        let dht_query_result_channel = main_worker.dht_query_result_channel.clone();
-
-        let dht_query_context = main_worker.dht_query_context.clone();
         let lru_cache = main_worker.lru_cache.clone();
         let db_worker = main_worker.db_worker.clone();
         let wasm_tx_processing_worker = main_worker.wasm_tx_processing_worker.clone();
@@ -1136,8 +933,6 @@ impl WasmMainServiceWorker {
             let mut temp_worker = WasmMainServiceWorker {
                 user_rpc_update_recv_channel,
                 rpc_sender_channel,
-                dht_query_result_channel,
-                dht_query_context,
                 lru_cache,
                 db_worker,
                 wasm_tx_processing_worker,

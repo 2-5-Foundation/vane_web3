@@ -15,7 +15,7 @@ serde                               = { workspace = true}
 anyhow                              = { workspace = true}
 tokio                               = { workspace = true}
 log                                 = { workspace = true}
-jsonrpsee                           = { workspace = true}
+jsonrpsee                           = { workspace = true, features = ["server", "client-core", "http-client", "ws-client"] }
 futures                             = { version = "0.3.31", features = ["async-await"]}
 openssl-sys = { version = "0.9", features = ["vendored"] }
 hex = "0.4"

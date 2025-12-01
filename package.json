@@ -10,7 +10,7 @@
     "start-relay": "bun run scripts/start-relay.ts",
     "test:e2e": "scripts/run_e2e.sh",
     "test:db": "scripts/db_tests.sh",
-    "clean": "cargo clean && rm -rf node/wasm/pkg && rm -rf integration-test/wasm-e2e-ts/relay-info.json"
+    "clean": "cargo clean && rm -rf node/wasm/pkg"
   },
   "devDependencies": {
     "bun-types": "latest"

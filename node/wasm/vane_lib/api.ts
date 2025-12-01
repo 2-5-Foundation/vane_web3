@@ -6,7 +6,7 @@ import type {
   StorageExport,
   UserMetrics,
   AccountProfile,
-  P2pEventResult,
+  BackendEvent,
 } from "./primitives";
 
 // WASM bindings (ESM)
@@ -65,8 +65,8 @@ export function onLog(callback: LogCallback): void {
 // Type for transaction update callback
 export type TxUpdateCallback = (tx: TxStateMachine) => void;
 
-// Type for p2p notification callback
-export type P2pNotificationCallback = (event: P2pEventResult) => void;
+// Type for backend event notification callback
+export type BackendEventCallback = (event: BackendEvent) => void;
 
 // Type for revert transaction reason
 export type RevertReason = string | null | undefined;
@@ -83,10 +83,6 @@ function requireWorker(): PublicInterfaceWorkerJs {
 
 export function isInitialized(): boolean {
   return nodeWorker !== null;
-}
-
-export async function addAccount(accountId: string, network: string): Promise<void> {
-  return await requireWorker().addAccount(accountId, network);
 }
 
 /**
@@ -138,7 +134,7 @@ export async function watchTxUpdates(callback: TxUpdateCallback): Promise<void> 
   await requireWorker().watchTxUpdates(callback);
 }
 
-export async function watchP2pNotifications(callback: P2pNotificationCallback): Promise<void> {
+export async function watchP2pNotifications(callback: BackendEventCallback): Promise<void> {
   await requireWorker().watchP2pNotifications(callback);
 }
 
@@ -169,6 +165,16 @@ export async function getNodeConnection(): Promise<NodeConnectionStatus> {
   return res as NodeConnectionStatus;
 }
 
+/**
+ * Add an account to the node
+ * @param accountId - Account address/identifier
+ * @param network - Network/chain the account belongs to
+ * @returns Promise that resolves when the account is added
+ */
+export async function addAccount(accountId: string, network: ChainSupported): Promise<void> {
+  await requireWorker().addAccount(accountId, network);
+}
+
 export function clearRevertedFromCache(): void {
   requireWorker().clearRevertedFromCache();
 }
@@ -192,7 +198,6 @@ const VaneWeb3 = {
   setLogLevel,
   onLog,
   LogLevel,
-  addAccount,
   initiateTransaction,
   senderConfirm,
   receiverConfirm,
@@ -204,6 +209,7 @@ const VaneWeb3 = {
   fetchPendingTxUpdates,
   exportStorage,
   getNodeConnection,
+  addAccount,
   clearRevertedFromCache,
   clearFinalizedFromCache,
   deleteTxInCache,

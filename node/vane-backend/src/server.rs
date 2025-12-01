@@ -1,11 +1,11 @@
+use dashmap::DashMap;
+use hex;
 use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use hex;
-use dashmap::DashMap;
 
 use anyhow::{anyhow, Result};
 use axum::{
@@ -17,12 +17,15 @@ use axum::{
 };
 use jsonrpsee::{
     core::{async_trait, RpcResult, SubscriptionResult},
-    PendingSubscriptionSink, SubscriptionMessage,
     proc_macros::rpc,
     server::ServerBuilder,
+    PendingSubscriptionSink, SubscriptionMessage,
 };
 use log::{error, info, warn};
-use primitives::data_structure::{ChainSupported, DbTxStateMachine, StorageExport, TxStateMachine};
+use primitives::data_structure::{
+    BackendEvent, ChainSupported, DbTxStateMachine, StorageExport, SystemNotification,
+    TxStateMachine,
+};
 use prometheus_client::{
     metrics::{counter::Counter, gauge::Gauge},
     registry::Registry,
@@ -103,51 +106,6 @@ pub struct TargetPeer {
 }
 pub type TargetPeers = HashMap<String, TargetPeer>;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum BackendEvent {
-    SenderRequestReceived {
-        address: String,
-        data: Data,
-    },
-    SenderRequestHandled {
-        address: String,
-        data: Data,
-    },
-    ReceiverResponseReceived {
-        address: String,
-        data: Data,
-    },
-    ReceiverResponseHandled {
-        address: String,
-        data: Data,
-    },
-    PeerDisconnected {
-        account_id: String,
-    },
-    DataExpired {
-        multi_id: String,
-        data: Data,
-    },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum SystemNotification {
-    PeerAdded {
-        address: String,
-        account_id: String,
-        network: ChainSupported,
-    },
-    PeerRemoved {
-        address: String,
-    },
-    RequestQueued {
-        address: String,
-    },
-    RequestProcessed {
-        address: String,
-    },
-}
-
 pub struct VaneSwarmServer {
     peers: HashMap<String, TargetPeers>,
     requests: Arc<DashMap<String, RequestEntry>>,
@@ -159,7 +117,11 @@ pub struct VaneSwarmServer {
 }
 
 impl VaneSwarmServer {
-    pub fn new(metrics: Arc<MetricService>, event_sender: broadcast::Sender<BackendEvent>, system_notification_sender: mpsc::Sender<SystemNotification>) -> Self {
+    pub fn new(
+        metrics: Arc<MetricService>,
+        event_sender: broadcast::Sender<BackendEvent>,
+        system_notification_sender: mpsc::Sender<SystemNotification>,
+    ) -> Self {
         Self {
             peers: HashMap::new(),
             requests: Arc::new(DashMap::new()),
@@ -184,15 +146,20 @@ impl VaneSwarmServer {
     }
 
     fn cleanup_expired_sender_receiver_requests(&self) {
-        let mut expired_multi_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-        
+        let mut expired_multi_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
         for entry in self.requests.iter() {
             if entry.value().is_expired(REQUEST_TTL_SECONDS) {
                 expired_multi_ids.insert(entry.key().clone());
             }
         }
 
-        let sender_keys: Vec<String> = self.sender_requests.iter().map(|e| e.key().clone()).collect();
+        let sender_keys: Vec<String> = self
+            .sender_requests
+            .iter()
+            .map(|e| e.key().clone())
+            .collect();
         for key in sender_keys {
             if let Some(mut entry) = self.sender_requests.get_mut(&key) {
                 if entry.is_expired(REQUEST_TTL_SECONDS) {
@@ -200,9 +167,11 @@ impl VaneSwarmServer {
                     self.sender_requests.remove(&key);
                     continue;
                 }
-                
+
                 if !expired_multi_ids.is_empty() {
-                    entry.multi_ids.retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                    entry
+                        .multi_ids
+                        .retain(|multi_id| !expired_multi_ids.contains(multi_id));
                     if entry.multi_ids.is_empty() {
                         drop(entry);
                         self.sender_requests.remove(&key);
@@ -211,7 +180,11 @@ impl VaneSwarmServer {
             }
         }
 
-        let receiver_keys: Vec<String> = self.receiver_requests.iter().map(|e| e.key().clone()).collect();
+        let receiver_keys: Vec<String> = self
+            .receiver_requests
+            .iter()
+            .map(|e| e.key().clone())
+            .collect();
         for key in receiver_keys {
             if let Some(mut entry) = self.receiver_requests.get_mut(&key) {
                 if entry.is_expired(REQUEST_TTL_SECONDS) {
@@ -219,9 +192,11 @@ impl VaneSwarmServer {
                     self.receiver_requests.remove(&key);
                     continue;
                 }
-                
+
                 if !expired_multi_ids.is_empty() {
-                    entry.multi_ids.retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                    entry
+                        .multi_ids
+                        .retain(|multi_id| !expired_multi_ids.contains(multi_id));
                     if entry.multi_ids.is_empty() {
                         drop(entry);
                         self.receiver_requests.remove(&key);
@@ -240,7 +215,7 @@ impl VaneSwarmServer {
     fn update_request(&self, multi_id: &str, data: Data) -> bool {
         self.cleanup_expired_requests();
         self.cleanup_expired_sender_receiver_requests();
-        
+
         match self.requests.get_mut(multi_id) {
             Some(mut entry) => {
                 if entry.is_expired(REQUEST_TTL_SECONDS) {
@@ -271,25 +246,26 @@ impl VaneSwarmServer {
 
     pub async fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
         info!("Received sender request from address: {}", address);
-        
+
         let received_event = BackendEvent::SenderRequestReceived {
             address: address.clone(),
             data: data.clone(),
         };
         let _ = self.event_sender.send(received_event);
 
-        let tx_state: TxStateMachine = serde_json::from_slice(&data)
-            .map_err(|e| {
-                error!("Failed to decode TxStateMachine from sender {}: {}", address, e);
-                anyhow!("Failed to decode TxStateMachine: {}", e)
-            })?;
+        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
+            error!(
+                "Failed to decode TxStateMachine from sender {}: {}",
+                address, e
+            );
+            anyhow!("Failed to decode TxStateMachine: {}", e)
+        })?;
 
         let receiver_address = tx_state.receiver_address.clone();
         let receiver_network = tx_state.receiver_address_network;
         let multi_id_hex = hex::encode(tx_state.multi_id);
 
         if !self.peers.contains_key(&address) {
-            
             let mut target_peers = HashMap::new();
             let peer = TargetPeer {
                 account_id: receiver_address.clone(),
@@ -321,14 +297,14 @@ impl VaneSwarmServer {
                         network: receiver_network,
                         times_requested: 1,
                     };
-                    
+
                     target_peers.insert(receiver_address.clone(), new_peer);
                     let notification = SystemNotification::PeerAdded {
                         address: address.clone(),
                         account_id: receiver_address.clone(),
                         network: receiver_network,
                     };
-        
+
                     info!("succesfully added new peer: {:?}", notification);
                 }
             }
@@ -337,12 +313,23 @@ impl VaneSwarmServer {
         let notification = SystemNotification::RequestQueued {
             address: receiver_address.clone(),
         };
-        let _ = self.system_notification_sender.try_send(notification.clone());
-        info!("succesfully queued request for receiver: {:?}", notification);
+        let _ = self
+            .system_notification_sender
+            .try_send(notification.clone());
+        info!(
+            "succesfully queued request for receiver: {:?}",
+            notification
+        );
 
         self.insert_request(multi_id_hex.clone(), data.clone());
-        self.sender_requests.entry(address.clone()).or_insert_with(RequestListEntry::new).push(multi_id_hex.clone());
-        self.receiver_requests.entry(receiver_address.clone()).or_insert_with(RequestListEntry::new).push(multi_id_hex);
+        self.sender_requests
+            .entry(address.clone())
+            .or_insert_with(RequestListEntry::new)
+            .push(multi_id_hex.clone());
+        self.receiver_requests
+            .entry(receiver_address.clone())
+            .or_insert_with(RequestListEntry::new)
+            .push(multi_id_hex);
         self.cleanup_expired_sender_receiver_requests();
         self.metrics.record_sender_request(&address).await;
         self.update_metrics().await;
@@ -358,15 +345,17 @@ impl VaneSwarmServer {
 
     pub async fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
         info!("Received receiver response from address: {}", address);
-        
-        let tx_state: TxStateMachine = serde_json::from_slice(&data)
-            .map_err(|e| {
-                error!("Failed to decode TxStateMachine from receiver {}: {}", address, e);
-                anyhow!("Failed to decode TxStateMachine: {}", e)
-            })?;
-        
+
+        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
+            error!(
+                "Failed to decode TxStateMachine from receiver {}: {}",
+                address, e
+            );
+            anyhow!("Failed to decode TxStateMachine: {}", e)
+        })?;
+
         let multi_id_hex = hex::encode(tx_state.multi_id);
-        
+
         let received_event = BackendEvent::ReceiverResponseReceived {
             address: address.clone(),
             data: data.clone(),
@@ -379,7 +368,7 @@ impl VaneSwarmServer {
             self.insert_request(multi_id_hex.clone(), data.clone());
             info!("Inserted new request with multi_id: {}", multi_id_hex);
         }
-        
+
         self.metrics.record_receiver_response(&address).await;
         self.update_metrics().await;
 
@@ -393,15 +382,18 @@ impl VaneSwarmServer {
             data,
         };
         let _ = self.event_sender.send(event);
-        info!("Receiver response handled successfully - address: {}", address);
+        info!(
+            "Receiver response handled successfully - address: {}",
+            address
+        );
         Ok(())
     }
 
     pub async fn disconnect_peer(&mut self, account_id: &str) -> Result<()> {
         info!("Disconnecting peer - account_id: {}", account_id);
-        
+
         let mut sender_key_to_remove: Option<String> = None;
-        
+
         for (sender_key, target_peers) in self.peers.iter_mut() {
             if let Some(peer) = target_peers.get(account_id) {
                 if peer.times_requested == 1 {
@@ -410,7 +402,7 @@ impl VaneSwarmServer {
                         sender_key_to_remove = Some(sender_key.clone());
                     }
                     self.metrics.record_peer_removed().await;
-                    
+
                     let notification = SystemNotification::PeerRemoved {
                         address: sender_key.clone(),
                     };
@@ -421,7 +413,7 @@ impl VaneSwarmServer {
                     };
                     let _ = self.event_sender.send(event.clone());
                     info!("succesfully disconnected peer: {:?}", event);
-                    
+
                     if let Some(key) = sender_key_to_remove {
                         self.peers.remove(&key);
                     }
@@ -504,7 +496,9 @@ impl BackendRpcServer for BackendRpcHandler {
     async fn handle_sender_request(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
         info!("RPC: handle_sender_request called for address: {}", address);
         let mut server = self.swarm_server.lock().await;
-        server.handle_sender_request(address, data).await
+        server
+            .handle_sender_request(address, data)
+            .await
             .map_err(|e| {
                 error!("RPC: Failed to handle sender request: {}", e);
                 jsonrpsee::core::Error::Custom(e.to_string())
@@ -513,9 +507,14 @@ impl BackendRpcServer for BackendRpcHandler {
     }
 
     async fn handle_receiver_response(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
-        info!("RPC: handle_receiver_response called for address: {}", address);
+        info!(
+            "RPC: handle_receiver_response called for address: {}",
+            address
+        );
         let mut server = self.swarm_server.lock().await;
-        server.handle_receiver_response(address, data).await
+        server
+            .handle_receiver_response(address, data)
+            .await
             .map_err(|e| {
                 error!("RPC: Failed to handle receiver response: {}", e);
                 jsonrpsee::core::Error::Custom(e.to_string())
@@ -526,54 +525,81 @@ impl BackendRpcServer for BackendRpcHandler {
     async fn disconnect_peer(&self, account_id: String) -> RpcResult<()> {
         info!("RPC: disconnect_peer called - account_id: {}", account_id);
         let mut server = self.swarm_server.lock().await;
-        server.disconnect_peer(&account_id).await
-            .map_err(|e| {
-                error!("RPC: Failed to disconnect peer: {}", e);
-                jsonrpsee::core::Error::Custom(e.to_string())
-            })?;
+        server.disconnect_peer(&account_id).await.map_err(|e| {
+            error!("RPC: Failed to disconnect peer: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
         Ok(())
     }
 
-    async fn subscribe_to_events(&self, pending: PendingSubscriptionSink, address: String,) -> SubscriptionResult {
+    async fn subscribe_to_events(
+        &self,
+        pending: PendingSubscriptionSink,
+        address: String,
+    ) -> SubscriptionResult {
         info!("RPC: subscribe_to_events called for address: {}", address);
-        let sink = pending.accept().await
-            .map_err(|e| {
-                error!("RPC: Failed to accept subscription for address {}: {:?}", address, e);
-                anyhow!("failed to accept subscription")
-            })?;
+        let sink = pending.accept().await.map_err(|e| {
+            error!(
+                "RPC: Failed to accept subscription for address {}: {:?}",
+                address, e
+            );
+            anyhow!("failed to accept subscription")
+        })?;
 
         let mut receiver = self.event_sender.subscribe();
         info!("Subscription active for address: {}", address);
 
         while let Ok(event) = receiver.recv().await {
             let should_send = match &event {
-                BackendEvent::SenderRequestReceived { address: event_address, data } => {
-                    event_address == &address || serde_json::from_slice::<TxStateMachine>(data)
-                        .ok()
-                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
-                        .unwrap_or(false)
+                BackendEvent::SenderRequestReceived {
+                    address: event_address,
+                    data,
+                } => {
+                    event_address == &address
+                        || serde_json::from_slice::<TxStateMachine>(data)
+                            .ok()
+                            .map(|tx| {
+                                tx.sender_address == address || tx.receiver_address == address
+                            })
+                            .unwrap_or(false)
                 }
-                BackendEvent::SenderRequestHandled { address: event_address, data } => {
-                    event_address == &address || serde_json::from_slice::<TxStateMachine>(data)
-                        .ok()
-                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
-                        .unwrap_or(false)
+                BackendEvent::SenderRequestHandled {
+                    address: event_address,
+                    data,
+                } => {
+                    event_address == &address
+                        || serde_json::from_slice::<TxStateMachine>(data)
+                            .ok()
+                            .map(|tx| {
+                                tx.sender_address == address || tx.receiver_address == address
+                            })
+                            .unwrap_or(false)
                 }
-                BackendEvent::ReceiverResponseReceived { address: event_address, data } => {
-                    event_address == &address || serde_json::from_slice::<TxStateMachine>(data)
-                        .ok()
-                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
-                        .unwrap_or(false)
+                BackendEvent::ReceiverResponseReceived {
+                    address: event_address,
+                    data,
+                } => {
+                    event_address == &address
+                        || serde_json::from_slice::<TxStateMachine>(data)
+                            .ok()
+                            .map(|tx| {
+                                tx.sender_address == address || tx.receiver_address == address
+                            })
+                            .unwrap_or(false)
                 }
-                BackendEvent::ReceiverResponseHandled { address: event_address, data } => {
-                    event_address == &address || serde_json::from_slice::<TxStateMachine>(data)
-                        .ok()
-                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
-                        .unwrap_or(false)
+                BackendEvent::ReceiverResponseHandled {
+                    address: event_address,
+                    data,
+                } => {
+                    event_address == &address
+                        || serde_json::from_slice::<TxStateMachine>(data)
+                            .ok()
+                            .map(|tx| {
+                                tx.sender_address == address || tx.receiver_address == address
+                            })
+                            .unwrap_or(false)
                 }
-                BackendEvent::PeerDisconnected { account_id } => {
-                    account_id == &address
-                }
+                BackendEvent::PeerDisconnected { account_id } => account_id == &address,
                 BackendEvent::DataExpired { multi_id: _, data } => {
                     serde_json::from_slice::<TxStateMachine>(data)
                         .ok()
@@ -583,14 +609,16 @@ impl BackendRpcServer for BackendRpcHandler {
             };
 
             if should_send {
-                let subscription_msg = SubscriptionMessage::from_json(&event)
-                    .map_err(|e| {
-                        error!("Failed to serialize event for subscription: {}", e);
-                        anyhow!("failed to serialize event: {}", e)
-                    })?;
+                let subscription_msg = SubscriptionMessage::from_json(&event).map_err(|e| {
+                    error!("Failed to serialize event for subscription: {}", e);
+                    anyhow!("failed to serialize event: {}", e)
+                })?;
 
                 if let Err(e) = sink.send(subscription_msg).await {
-                    error!("Failed to send event to subscription for address {}: {}", address, e);
+                    error!(
+                        "Failed to send event to subscription for address {}: {}",
+                        address, e
+                    );
                     break;
                 }
             }
@@ -631,7 +659,7 @@ impl JsonRpcServer {
             .map_err(|err| anyhow!("rpc handler error: {}", err))?;
 
         info!("Backend JSON-RPC server listening on ws://{}", address);
-    
+
         handle.stopped().await;
         Ok(address)
     }
@@ -927,9 +955,18 @@ impl MetricsServer {
         let local_addr = tcp_listener.local_addr()?;
 
         info!("Backend metrics server listening on http://{}", local_addr);
-        info!("Metrics summary endpoint (GET): http://{}/metrics-summary", local_addr);
-        info!("Client metrics endpoint (POST): http://{}/client-metrics", local_addr);
-        info!("Client metrics summary endpoint (GET): http://{}/client-metrics-summary", local_addr);
+        info!(
+            "Metrics summary endpoint (GET): http://{}/metrics-summary",
+            local_addr
+        );
+        info!(
+            "Client metrics endpoint (POST): http://{}/client-metrics",
+            local_addr
+        );
+        info!(
+            "Client metrics summary endpoint (GET): http://{}/client-metrics-summary",
+            local_addr
+        );
 
         axum::serve(tcp_listener, app.into_make_service()).await?;
         Ok(())

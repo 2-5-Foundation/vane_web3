@@ -28,7 +28,7 @@ db                                          = { workspace = true}
 moka                                        = { workspace = true}
 rcgen                                       = { workspace = true}
 reconnecting-jsonrpsee-ws-client            = { workspace = true}
-jsonrpsee                                   = { workspace = true}
+jsonrpsee                                   = { workspace = true, features = ["server", "client-core", "http-client", "ws-client"] }
 reqwest                                     = { workspace = true, features = ["json"] }
 tokio                                       = { workspace = true}
 tokio-stream                                = "0.1.15"

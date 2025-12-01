@@ -7,7 +7,6 @@ import {
   receiverConfirm,
   watchTxUpdates,
   fetchPendingTxUpdates,
-  addAccount
 } from '../../node/wasm/vane_lib/api.js';
 import {
   TxStateMachine,
@@ -157,8 +156,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
   test("should successfully receive SOLANA token transaction", async () => {
     console.log(" \n \n TEST CASE 2: should successfully receive SOLANA token transaction and confirm it (RECEIVER_NODE)");
-    await addAccount(solWasmWalletAddress2, ChainSupported.Solana);
-
     await nodeCoordinator.waitForEvent(
       NODE_EVENTS.TRANSACTION_RECEIVED,
       async () => {

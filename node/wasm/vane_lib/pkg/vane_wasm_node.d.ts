@@ -4,7 +4,6 @@ export function start_vane_web3(relay_node_multi_addr: string, account: string, 
 export class PublicInterfaceWorkerJs {
   private constructor();
   free(): void;
-  addAccount(account_id: string, network: string): Promise<void>;
   initiateTransaction(sender: string, receiver: string, amount: bigint, token: any, code_word: string, sender_network: any, receiver_network: any): Promise<any>;
   senderConfirm(tx: any): Promise<void>;
   watchTxUpdates(callback: Function): Promise<void>;
@@ -12,6 +11,7 @@ export class PublicInterfaceWorkerJs {
   watchP2pNotifications(callback: Function): Promise<void>;
   unsubscribeWatchP2pNotifications(): void;
   fetchPendingTxUpdates(): Promise<any>;
+  addAccount(account_id: string, network: any): Promise<void>;
   receiverConfirm(tx: any): Promise<void>;
   revertTransaction(tx: any, reason?: string | null): Promise<void>;
   exportStorage(): Promise<any>;
@@ -31,8 +31,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any) => any;
   readonly __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
-  readonly publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: any, i: number, j: number, k: any, l: any) => any;
   readonly publicinterfaceworkerjs_senderConfirm: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_watchTxUpdates: (a: number, b: any) => any;
@@ -40,6 +40,7 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_watchP2pNotifications: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_unsubscribeWatchP2pNotifications: (a: number) => void;
   readonly publicinterfaceworkerjs_fetchPendingTxUpdates: (a: number) => any;
+  readonly publicinterfaceworkerjs_addAccount: (a: number, b: number, c: number, d: any) => any;
   readonly publicinterfaceworkerjs_receiverConfirm: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_revertTransaction: (a: number, b: any, c: number, d: number) => any;
   readonly publicinterfaceworkerjs_exportStorage: (a: number) => any;
@@ -47,7 +48,6 @@ export interface InitOutput {
   readonly publicinterfaceworkerjs_deleteTxInCache: (a: number, b: any) => void;
   readonly publicinterfaceworkerjs_clearRevertedFromCache: (a: number) => void;
   readonly publicinterfaceworkerjs_clearFinalizedFromCache: (a: number) => void;
-  readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any) => any;
   readonly __wbg_requestarguments_free: (a: number, b: number) => void;
   readonly requestarguments_method: (a: number) => [number, number];
   readonly requestarguments_params: (a: number) => any;
@@ -59,11 +59,12 @@ export interface InitOutput {
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_export_6: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
+  readonly closure557_externref_shim: (a: number, b: number, c: any) => void;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1a79a3c1169870fb: (a: number, b: number) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc: (a: number, b: number) => void;
-  readonly closure1194_externref_shim: (a: number, b: number, c: any) => void;
-  readonly closure1552_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure759_externref_shim: (a: number, b: number, c: any) => void;
   readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2: (a: number, b: number) => void;
-  readonly closure1950_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure840_externref_shim: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

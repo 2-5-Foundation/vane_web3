@@ -24,7 +24,7 @@ libp2p-relay                            = { version = "0.21.0", default-features
 alloy                                   = { version = "0.3"}
 alloy-primitives                        = "0.8.11"
 sp-runtime                              = { version = "39.0.0", default-features = false}
-jsonrpsee                               = { version = "0.17", features = ["server", "client-core", "http-client", "ws-client", "macros"] }
+jsonrpsee                               = { version = "0.17", default-features = false, features = ["macros"] }
 notion                                  = "0.6.0"
 reconnecting-jsonrpsee-ws-client        = "0.4.3"
 unsigned-varint                         = { version = "0.8.0", features = ["asynchronous-codec", "codec", "tokio-util", "futures-io", "futures"] }

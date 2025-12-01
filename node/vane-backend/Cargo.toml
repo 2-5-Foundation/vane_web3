@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 jsonrpsee-wasm-client                   = { version = "0.26.0"}
-jsonrpsee                               = { workspace = true}
+jsonrpsee                               = { workspace = true, features = ["server", "client-core", "http-client", "ws-client"] }
 serde_json                              = { workspace = true}
 primitives                              = { workspace = true}
 sp-runtime                              = { workspace = true, features = ["std"] }

@@ -111,7 +111,6 @@ export function setupWasmLogging() {
 
 
 export interface RelayNodeInfo {
-  peerId: string;
   multiAddr: string;
 }
 
@@ -121,52 +120,10 @@ export interface WasmNodeInstance {
   stop: () => void;
 }
 
-/**
- * Reads relay node info from the file created by the start-relay.js script
- * This allows browser tests to get the real multiaddr without using child_process
- */
-export async function loadRelayNodeInfo(timeoutMs: number = 10000): Promise<RelayNodeInfo> {
-  console.log(`🔍 Loading relay node info from relay-info.json`);
-  
-  return new Promise<RelayNodeInfo>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Relay info not available within ${timeoutMs}ms. Make sure to start the relay node first using: bun run start-relay`));
-    }, timeoutMs);
-
-    const checkRelayInfo = async () => {
-      try {
-        // In browser environment, we'll fetch the file via HTTP
-        const response = await fetch('/relay-info.json');
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const relayInfo = await response.json();
-        
-        // Proceed as soon as essential fields are present; don't require ready: true
-        if (relayInfo.peerId && relayInfo.multiAddr) {
-          clearTimeout(timeoutId);
-          console.log(`✅ Loaded relay node info`);
-          console.log(`🎯 Peer ID: ${relayInfo.peerId}`);
-          console.log(`🔗 MultiAddr: ${relayInfo.multiAddr}`);
-          
-          resolve({
-            peerId: relayInfo.peerId,
-            multiAddr: relayInfo.multiAddr
-          });
-        } else {
-          // Relay not ready yet, check again
-          setTimeout(checkRelayInfo, 500);
-        }
-      } catch (error) {
-        // File not found or not ready, check again
-        setTimeout(checkRelayInfo, 500);
-      }
-    };
-
-    // Start checking immediately
-    checkRelayInfo();
-  });
+export async function loadRelayNodeInfo(): Promise<RelayNodeInfo> {
+  return {
+    multiAddr: "ws://127.0.0.1:9947"
+  };
 }
 
 export async function getSplTokenBalance(

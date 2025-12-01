@@ -14,7 +14,6 @@ import {
   revertTransaction,
   fetchPendingTxUpdates,
   exportStorage,
-  addAccount,
   receiverConfirm,
   watchP2pNotifications
 } from '../../node/wasm/vane_lib/api.js';
@@ -25,7 +24,8 @@ import {
   StorageExport,
   StorageExportManager,
   TokenManager,
-  ChainSupported
+  ChainSupported,
+  BackendEvent,
 } from '../../node/wasm/vane_lib/primitives.js';
 import {
   loadRelayNodeInfo,
@@ -156,9 +156,9 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
       throw error;
     }
 
-    // Register P2P notifications watcher early to catch all connection events
-    watchP2pNotifications((event) => {
-      console.log('🔑 P2P EVENT NOTIFICATION', event);
+    // Register backend event watcher early to observe JSON-RPC backend events
+    watchP2pNotifications((event: BackendEvent) => {
+      console.log('🔑 BACKEND EVENT', event);
     });
 
     await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
@@ -697,8 +697,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
 test("should successfully send to Solana chain and confirm", async () => {
   console.log(" \n \n TEST CASE 9: should successfully send to Solana chain and confirm");
-
-  await addAccount(solWasmWalletAddress, ChainSupported.Solana);
 
   const solanaToken = TokenManager.createNativeToken(ChainSupported.Solana);
   const lamports = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');

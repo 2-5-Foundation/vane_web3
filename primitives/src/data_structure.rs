@@ -6,7 +6,7 @@ use anyhow::Error;
 use codec::{Decode, Encode};
 use core::hash::{Hash, Hasher};
 use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
-use libp2p::{ Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId};
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -505,12 +505,9 @@ pub enum NetworkCommand {
     },
     WasmSendRequest {
         request: TxStateMachine,
-        peer_id: PeerId,
-        target_multi_addr: Multiaddr,
     },
     WasmSendResponse {
         response: Result<TxStateMachine, String>,
-        channel: ResponseChannel<Result<TxStateMachine, String>>,
     },
     Dial {
         target_multi_addr: Multiaddr,
@@ -542,11 +539,9 @@ pub enum SwarmMessage {
     },
     WasmRequest {
         data: TxStateMachine,
-        inbound_id: InboundRequestId,
     },
     WasmResponse {
         data: TxStateMachine,
-        outbound_id: OutboundRequestId,
     },
 }
 
@@ -994,43 +989,31 @@ pub struct StorageExport {
     pub failed_transactions: Vec<DbTxStateMachine>,
 }
 
-// Events tracking on p2p networking
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum P2pEventResult {
-    // Connection and dialing events
-    RelayerConnectionClosed,
-    PeerConnectionClosed {
-        peer_id: String,
+// Backend events for JSON-RPC communication
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Encode, Decode)]
+pub enum BackendEvent {
+    SenderRequestReceived { address: String, data: Vec<u8> },
+    SenderRequestHandled { address: String, data: Vec<u8> },
+    ReceiverResponseReceived { address: String, data: Vec<u8> },
+    ReceiverResponseHandled { address: String, data: Vec<u8> },
+    PeerDisconnected { account_id: String },
+    DataExpired { multi_id: String, data: Vec<u8> },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Encode, Decode)]
+pub enum SystemNotification {
+    PeerAdded {
+        address: String,
+        account_id: String,
+        network: ChainSupported,
+    },
+    PeerRemoved {
         address: String,
     },
-    PeerIsOnline,
-    Dialing {
-        peer_id: Option<String>,
-        address: Option<String>,
-    },
-    RecvIncomingConnectionError {
-        error: String,
-    },
-    SenderOutgoingConnectionError {
-        error: String,
-        address: Option<String>,
-    },
-    PeerIsOffline,
-
-    // relay circuits events
-    SenderCircuitEstablished,
-    ReceiverConnected {
-        peer_id: String,
+    RequestQueued {
         address: String,
     },
-    // reservation events
-    ReservationAccepted,
-
-    // adding account
-    AccountAddedSuccessfully {
-        account_id: String,
-    },
-    AccountAdditionFailed {
-        account_id: String,
+    RequestProcessed {
+        address: String,
     },
 }

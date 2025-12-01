@@ -1,8 +1,9 @@
 mod server;
 
-use crate::server::{BackendEvent, JsonRpcServer, MetricService, MetricsServer, SystemNotification, VaneSwarmServer};
+use crate::server::{JsonRpcServer, MetricService, MetricsServer, VaneSwarmServer};
 use anyhow::Result;
 use log::{error, info};
+use primitives::data_structure::{BackendEvent, SystemNotification};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
