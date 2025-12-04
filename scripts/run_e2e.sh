@@ -175,28 +175,6 @@ EOF
     fi
 }
 
-# Check if relay node is running and start if needed
-if [[ "$LIVE" == "true" ]]; then
-    echo -e "${GREEN}✅ LIVE MODE: Using production relay${NC}"
-else
-    echo -e "${YELLOW}🏠 LOCAL MODE: Checking if local relay node is running...${NC}"
-    if ! pgrep -f "start-relay" > /dev/null; then
-        echo -e "${RED}⚠️  Local relay node is not running!${NC}"
-        echo -e "${YELLOW}🏠 Starting local relay node...${NC}"
-        
-        # Start local relay node in background (using defaults)
-        bun run start-relay &
-        RELAY_PID=$!
-        
-        # Give relay time to start
-        echo -e "${YELLOW}Giving local relay node time to start...${NC}"
-        sleep 5
-        
-        echo -e "${GREEN}✅ Local relay node started (PID: $RELAY_PID)${NC}"
-    else
-        echo -e "${GREEN}✅ Local relay node is already running${NC}"
-    fi
-fi
 
 # Step 2: Fund Solana accounts
 echo -e "${YELLOW}Step 2: Funding Solana accounts...${NC}"
@@ -271,7 +249,7 @@ echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 
 # Start Node 2
-# start_node "WASM Node 2" "$BLUE"
+start_node "WASM Node 2" "$BLUE"
 
 # # Add delay between node starts
 # echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
@@ -285,10 +263,10 @@ echo -e "${BLUE}Starting WASM nodes...${NC}"
 # sleep 5
 
 # Start Self Node
-start_node "WASM Node Self" "$PINK"
+# start_node "WASM Node Self" "$PINK"
 
 # Start Node 1
-# start_node "WASM Node 1" "$GREEN"
+start_node "WASM Node 1" "$GREEN"
 
 echo ""
 echo -e "${GREEN}✅ All WASM nodes have been started in separate terminals!${NC}"
@@ -297,16 +275,11 @@ echo ""
 echo -e "${BLUE}To stop all nodes:${NC}"
 echo -e "1. Close the terminal windows manually"
 echo -e "2. Or run: pkill -f 'vitest run'"
-echo -e "3. To stop relay node: pkill -f 'start-relay'"
 echo ""
 
 # Cleanup function
 cleanup() {
     echo -e "${YELLOW}Cleaning up...${NC}"
-    if [ ! -z "$RELAY_PID" ]; then
-        echo -e "${YELLOW}Stopping relay node (PID: $RELAY_PID)...${NC}"
-        kill $RELAY_PID 2>/dev/null
-    fi
     echo -e "${GREEN}✅ Cleanup completed${NC}"
     exit 0
 }

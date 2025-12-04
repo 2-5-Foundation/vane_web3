@@ -33,7 +33,7 @@ use crate::{
 use primitives::data_structure::{
     AccountInfo, BackendEvent, ChainSupported, DbTxStateMachine, DbWorkerInterface,
     NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
-    UserMetrics,
+    UserMetrics, NetworkCommand,
 };
 
 #[derive(Clone)]
@@ -429,43 +429,51 @@ impl PublicInterfaceWorker {
     }
 
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
+
+        // call fetch_pending_tx_updates from backend
+        let account_id = self.p2p_worker.user_account_id.clone();
+        let command_tx = self.p2p_network_service.p2p_command_tx.clone();
+        command_tx.send(NetworkCommand::FetchPendingTransactions { account_id }).await?;
         // flush out valyues that have been expired
         let now = (js_sys::Date::now() / 1000.0) as u32;
         info!("🔑 NOW: {:?}", now);
         let time_to_live = 60 * 40; // 40 minutes
-        let expired_keys = self
-            .lru_cache
-            .borrow()
-            .iter()
-            .filter_map(|(k, v)| {
-                info!("🔑 TTL: {:?}", v.ttl);
-                if v.is_expired(now, time_to_live) {
-                    Some(*k)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<u32>>();
+        let expired_keys = {
+            let cache = self.lru_cache.borrow();
+            cache
+                .iter()
+                .filter_map(|(k, v)| {
+                    info!("🔑 TTL: {:?}", v.ttl);
+                    if v.is_expired(now, time_to_live) {
+                        Some(*k)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<u32>>()
+        };
 
         info!("🔑 EXPIRED KEYS: {:?}", expired_keys);
 
-        for key in expired_keys {
-            self.lru_cache.borrow_mut().pop(&key);
+        {
+            let mut cache = self.lru_cache.borrow_mut();
+            for key in expired_keys {
+                cache.pop(&key);
+            }
         }
 
-        let tx_updates = self
-            .lru_cache
-            .borrow()
-            .iter()
-            .map(|(_k, v)| {
-                let tx_integrity_hash = Self::compute_tx_integrity_hash(v.get_value());
-                self.tx_integrity
-                    .borrow_mut()
-                    .insert(v.get_value().tx_nonce.into(), tx_integrity_hash);
-
-                v.get_value().clone()
-            })
-            .collect::<Vec<TxStateMachine>>();
+        let tx_updates = {
+            let cache = self.lru_cache.borrow();
+            let mut tx_integrity = self.tx_integrity.borrow_mut();
+            cache
+                .iter()
+                .map(|(_k, v)| {
+                    let tx_integrity_hash = Self::compute_tx_integrity_hash(v.get_value());
+                    tx_integrity.insert(v.get_value().tx_nonce.into(), tx_integrity_hash);
+                    v.get_value().clone()
+                })
+                .collect::<Vec<TxStateMachine>>()
+        };
         debug!("lru: {tx_updates:#?}");
 
         serde_wasm_bindgen::to_value(&tx_updates)

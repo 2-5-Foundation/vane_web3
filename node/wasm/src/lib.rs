@@ -267,6 +267,9 @@ impl WasmMainServiceWorker {
                                     .get_mut(&decoded_resp.tx_nonce.into())
                                 {
                                     ttl_wrapper.update_value(decoded_resp.clone());
+                                    self.lru_cache
+                                        .borrow_mut()
+                                        .push(decoded_resp.tx_nonce.into(), ttl_wrapper.clone());
 
                                     self.rpc_sender_channel
                                         .borrow_mut()
@@ -323,14 +326,18 @@ impl WasmMainServiceWorker {
                         return Err(e.into());
                     }
 
+
                     {
-                        if let Some(ttl_wrapper) = self
-                            .lru_cache
-                            .borrow_mut()
-                            .get_mut(&decoded_resp.tx_nonce.into())
-                        {
+                        let mut cache = self.lru_cache.borrow_mut();
+                        if let Some(ttl_wrapper) = cache.get_mut(&decoded_resp.tx_nonce.into()) {
                             ttl_wrapper.update_value(decoded_resp.clone());
+                            let ttl_wrapper_clone = ttl_wrapper.clone();
+                            drop(cache);
+                            self.lru_cache
+                                .borrow_mut()
+                                .push(decoded_resp.tx_nonce.into(), ttl_wrapper_clone);
                         } else {
+                            drop(cache);
                             decoded_resp.status =
                                 TxStatus::TxError("Transaction expired".to_string());
 
@@ -351,6 +358,30 @@ impl WasmMainServiceWorker {
 
                     debug!(target: "MainServiceWorker",
                           "propagating txn msg as response to rpc layer for user interaction: {decoded_resp:?}");
+                }
+
+                SwarmMessage::PendingTransactionsFetched {address, transactions } => {
+                    info!(target: "MainServiceWorker", "received pending transactions: {}",transactions.len());
+                    // update lru cache with the pending transactions
+                    for tx in transactions {
+                        let mut cache = self.lru_cache.borrow_mut();
+                        if let Some(ttl_wrapper) = cache.get_mut(&tx.tx_nonce.into()) {
+                            ttl_wrapper.update_value(tx.clone());
+                            let ttl_wrapper_clone = ttl_wrapper.clone();
+                            drop(cache);
+                            self.lru_cache
+                                .borrow_mut()
+                                .push(tx.tx_nonce.into(), ttl_wrapper_clone);
+                        } else {
+                            drop(cache);
+                            let now = (js_sys::Date::now() / 1000.0) as u32;
+                            self.lru_cache.borrow_mut().push(
+                                tx.tx_nonce.into(),
+                                TtlWrapper::new(tx.clone(), now),
+                            );
+                        }
+                    }
+                    return Ok(());
                 }
                 _ => {}
             },
@@ -816,6 +847,11 @@ impl WasmMainServiceWorker {
 
         // Backend transport handles cleanup for remote peers now, so nothing to do here.
 
+        if !both_in_profile {
+            let close_command = NetworkCommand::Close { account_id: txn_inner.receiver_address.clone(), data: txn_inner.clone() };
+            let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+            command_tx.send(close_command).await?;
+        }
         // Record failed + notify + cache
         self.db_worker
             .update_failed_tx(DbTxStateMachine {

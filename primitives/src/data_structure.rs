@@ -522,8 +522,12 @@ pub enum NetworkCommand {
         account_id: String,
         value: String,
     },
+    FetchPendingTransactions {
+        account_id: String,
+    },
     Close {
-        peer_id: PeerId,
+        account_id: String,
+        data: TxStateMachine
     },
 }
 
@@ -543,6 +547,10 @@ pub enum SwarmMessage {
     WasmResponse {
         data: TxStateMachine,
     },
+    PendingTransactionsFetched {
+        address: String,
+        transactions: Vec<TxStateMachine>,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -998,6 +1006,32 @@ pub enum BackendEvent {
     ReceiverResponseHandled { address: String, data: Vec<u8> },
     PeerDisconnected { account_id: String },
     DataExpired { multi_id: String, data: Vec<u8> },
+    PendingTransactionsFetched { address: String, transactions: Vec<TxStateMachine> },
+}
+
+impl BackendEvent {
+    pub fn get_address(&self) -> String {
+        match self {
+            BackendEvent::SenderRequestReceived { address, .. } => address.clone(),
+            BackendEvent::SenderRequestHandled { address, .. } => address.clone(),
+            BackendEvent::ReceiverResponseReceived { address, .. } => address.clone(),
+            BackendEvent::ReceiverResponseHandled { address, .. } => address.clone(),
+            BackendEvent::PeerDisconnected { account_id, .. } => account_id.clone(),
+            BackendEvent::DataExpired { multi_id, .. } => multi_id.clone(),
+            BackendEvent::PendingTransactionsFetched { address, .. } => address.clone(),
+        }
+    }
+
+    pub fn get_data(&self) -> Vec<u8> {
+        match self {
+            BackendEvent::SenderRequestReceived { data, .. } => data.clone(),
+            BackendEvent::SenderRequestHandled { data, .. } => data.clone(),
+            BackendEvent::ReceiverResponseReceived { data, .. } => data.clone(),
+            BackendEvent::ReceiverResponseHandled { data, .. } => data.clone(),
+            BackendEvent::DataExpired { data, .. } => data.clone(),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Encode, Decode)]

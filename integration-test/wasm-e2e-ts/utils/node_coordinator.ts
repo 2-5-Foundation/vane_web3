@@ -9,27 +9,13 @@ export enum NODE_EVENTS {
   NODE_STARTED = 'node_started',
   NODE_READY = 'node_ready',
   PEER_CONNECTED = 'peer_connected',
-  PEER_DISCONNECTED = 'Connection closed with peer',
-  PEER_DISCONNECTED_MALICIOUS_NODE = 'peer disconnected',
-  P2P_SENT_TO_EVENT = 'response sent to', // this can be used to indicate the receiver node that your job is done after sending a reposne
-  RESERVATION_ACCEPTED = 'reservation_accepted',
-  LISTENING_ESTABLISHED = 'listening_established',
-  TRANSACTION_INITIATED = 'initiated sending transaction',
-  SENDER_CONFIRMED = 'successfully initially verified sender and receiver',
-  TRANSACTION_SUBMITTED = 'propagated initiated transaction',
-  TRANSACTION_SUBMITTED_FAILED = 'tx submission failed',
-  TRANSACTION_SUBMITTED_PASSED = 'tx submission passed',
-  TRANSACTION_SENT = 'request sent to peer',
-  TRANSACTION_RECEIVED = 'received message',
-  RECEIVER_CONFIRMED = 'receiver confirmation passed',
-  SENDER_RECEIVED_RESPONSE = 'propagating txn msg as response',
-  RECEIVER_CONFIRMATION_FAILED = 'receiver confirmation failed',
-  RECEIVER_NOT_REGISTERED = 'DHT: receiver did not register',
-  SENDER_CONFIRMATION_FAILED = 'non original sender signed',
-  TRANSACTION_SUCCESS = 'tx submission passed',
-  TRANSACTION_FAILED = 'tx submission failed',
+  PEER_DISCONNECTED = 'peer_disconnected',
+  TRANSACTION_SENT = 'transaction_sent',
+  TRANSACTION_RECEIVED = 'transaction_received',
+  TRANSACTION_SUBMITTED_FAILED = 'transaction_submitted_failed',
+  SENDER_RECEIVED_RESPONSE = 'sender_received_response',
+  P2P_SENT_TO_EVENT = 'response_sent_to',
   ERROR = 'error',
-  MALICIOUS_NODE_RESPONSE = 'code_word: "Wrong"',
 }
 
 export interface LogEntry {
@@ -53,14 +39,14 @@ export class NodeCoordinator {
 
   private nodeReadinessStatus: Map<
     string,
-    { peerConnected: boolean; reservationAccepted: boolean; listeningEstablished: boolean }
+    { backendConnected: boolean; backendSubscribed: boolean }
   > = new Map();
 
   private nodeId: string | null = null;
+  private nodeAccountAddress: string | null = null;
   private pendingReadiness = {
-    peerConnected: false,
-    reservationAccepted: false,
-    listeningEstablished: false,
+    backendConnected: false,
+    backendSubscribed: false,
   };
 
   // Event bus
@@ -97,31 +83,28 @@ export class NodeCoordinator {
     } catch {}
   }
 
-  registerNode(nodeId: string): void {
+  registerNode(nodeId: string, accountAddress: string): void {
     this.ensureLogger();
     this.nodeId = nodeId;
+    this.nodeAccountAddress = accountAddress;
     this.registeredNodes.add(nodeId);
     this.nodeReadinessStatus.set(nodeId, {
-      peerConnected: false,
-      reservationAccepted: false,
-      listeningEstablished: false,
+      backendConnected: false,
+      backendSubscribed: false,
     });
 
     // Apply pending readiness
-    if (this.pendingReadiness.peerConnected) {
-      this.updateNodeReadiness(nodeId, 'peerConnected');
+    if (this.pendingReadiness.backendConnected) {
+      this.updateNodeReadiness(nodeId, 'backendConnected');
     }
-    if (this.pendingReadiness.reservationAccepted) {
-      this.updateNodeReadiness(nodeId, 'reservationAccepted');
-    }
-    if (this.pendingReadiness.listeningEstablished) {
-      this.updateNodeReadiness(nodeId, 'listeningEstablished');
+    if (this.pendingReadiness.backendSubscribed) {
+      this.updateNodeReadiness(nodeId, 'backendSubscribed');
     }
 
     // Process backlog
     this.processNewLogs();
 
-    this.emitEvent(NODE_EVENTS.NODE_STARTED, { nodeId });
+    this.emitEvent(NODE_EVENTS.NODE_STARTED, { nodeId, accountAddress });
   }
 
   markNodeReady(nodeId: string): void {
@@ -132,14 +115,6 @@ export class NodeCoordinator {
     if (this.isMonitoring || !this.wasmLogger) return;
     this.isMonitoring = true;
     console.log('🔄 Starting log monitoring...');
-
-    setTimeout(() => {
-      if (this.nodeId) {
-        this.updateNodeReadiness(this.nodeId, 'peerConnected');
-        this.updateNodeReadiness(this.nodeId, 'reservationAccepted');
-        this.updateNodeReadiness(this.nodeId, 'listeningEstablished');
-      }
-    }, 3000);
 
     this.processNewLogs();
     this.pollHandle = (globalThis as any).setInterval(() => this.processNewLogs(), 200) as unknown as number;
@@ -167,51 +142,80 @@ export class NodeCoordinator {
   }
 
   private convertLogToEvent(log: LogEntry): void {
-    // Map log messages to events
-    if (log.message.includes('Connected to peer')) {
-      this.emitEvent(NODE_EVENTS.PEER_CONNECTED, { log });
-    } else if (log.message.includes('Connection closed with peer') || 
-               log.message.includes('peer disconnected') ||
-               log.message.includes('connection closed') ||
-               log.message.includes('disconnected from peer')) {
+    // Helper to check if log matches the node's account address
+    const matchesAddress = (message: string): boolean => {
+      if (!this.nodeAccountAddress) return false;
+      return message.includes(this.nodeAccountAddress);
+    };
+
+    // Backend connection and subscription logs
+    if (log.message.includes('Connected to backend at:')) {
+      if (this.nodeId) {
+        this.updateNodeReadiness(this.nodeId, 'backendConnected');
+      } else {
+        this.pendingReadiness.backendConnected = true;
+      }
+    } else if (log.message.includes('Subscribed to backend events for address:')) {
+      if (matchesAddress(log.message)) {
+        if (this.nodeId) {
+          this.updateNodeReadiness(this.nodeId, 'backendSubscribed');
+          this.emitEvent(NODE_EVENTS.PEER_CONNECTED, { log, address: this.nodeAccountAddress });
+        } else {
+          this.pendingReadiness.backendSubscribed = true;
+        }
+      }
+    } else if (log.message.includes('Event subscription ended')) {
       this.emitEvent(NODE_EVENTS.PEER_DISCONNECTED, { log });
-    } else if (log.message.includes('reservation request accepted')) {
-      this.emitEvent(NODE_EVENTS.RESERVATION_ACCEPTED, { log });
-    } else if (log.message.includes('response sent to')) {
-      this.emitEvent(NODE_EVENTS.P2P_SENT_TO_EVENT, { log });
-    } else if (log.message.includes('Listening on:')) {
-      this.emitEvent(NODE_EVENTS.LISTENING_ESTABLISHED, { log });
-    } else if (log.message.includes('initiated sending transaction')) {
-      this.emitEvent(NODE_EVENTS.TRANSACTION_INITIATED, { log });
-    } else if (log.message.includes('received message')) {
-      this.emitEvent(NODE_EVENTS.TRANSACTION_RECEIVED, { log });
-    } else if (log.message.includes('propagating txn msg as response')) {
-      this.emitEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, { log });
-    } else if (log.message.includes('tx submission failed')) {
-      this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, { log });
-    } else if (log.message.includes('tx submission passed')) {
-      this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_PASSED, { log });
-    } else if (
-      log.message.includes('DHT returned no address') ||
-      log.message.includes('DHT: receiver did not register') ||
-      log.message.toLowerCase().includes('receiver not registered')
-    ) {
-      this.emitEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, { log });
-    } else if (log.message.includes('error')) {
-      this.emitEvent(NODE_EVENTS.ERROR, { log });
-    } else if (log.message.includes('code_word: "Wrong"')) {
-      this.emitEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, { log });
+    } else if (log.message.includes('Received backend event:')) {
+      // Check backend event types and match by address
+      const eventStr = log.message.toLowerCase();
+      if (eventStr.includes('senderrequestreceived') || eventStr.includes('senderrequesthandled')) {
+        if (matchesAddress(log.message)) {
+          this.emitEvent(NODE_EVENTS.TRANSACTION_RECEIVED, { log, address: this.nodeAccountAddress });
+        }
+      } else if (eventStr.includes('receiverresponsereceived') || eventStr.includes('receiverresponsehandled')) {
+        if (matchesAddress(log.message)) {
+          this.emitEvent(NODE_EVENTS.TRANSACTION_RECEIVED, { log, address: this.nodeAccountAddress });
+          this.emitEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, { log, address: this.nodeAccountAddress });
+        }
+      } else if (eventStr.includes('peerdisconnected')) {
+        if (matchesAddress(log.message)) {
+          this.emitEvent(NODE_EVENTS.PEER_DISCONNECTED, { log, address: this.nodeAccountAddress });
+        }
+      } else {
+        // Generic backend event
+        if (matchesAddress(log.message)) {
+          this.emitEvent(NODE_EVENTS.TRANSACTION_RECEIVED, { log, address: this.nodeAccountAddress });
+        }
+      }
+    } else if (log.message.includes('Successfully sent sender request for address:')) {
+      if (matchesAddress(log.message)) {
+        this.emitEvent(NODE_EVENTS.TRANSACTION_SENT, { log, address: this.nodeAccountAddress });
+      }
+    } else if (log.message.includes('Successfully sent receiver response for address:')) {
+      if (matchesAddress(log.message)) {
+        this.emitEvent(NODE_EVENTS.P2P_SENT_TO_EVENT, { log, address: this.nodeAccountAddress });
+        this.emitEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, { log, address: this.nodeAccountAddress });
+      }
+    } else if (log.message.includes('Failed to send sender request') || log.message.includes('Failed to send receiver response')) {
+      if (matchesAddress(log.message)) {
+        this.emitEvent(NODE_EVENTS.TRANSACTION_SUBMITTED_FAILED, { log, address: this.nodeAccountAddress });
+      }
+    } else if (log.message.includes('error') || log.message.includes('Error')) {
+      if (matchesAddress(log.message)) {
+        this.emitEvent(NODE_EVENTS.ERROR, { log, address: this.nodeAccountAddress });
+      }
     }
   }
 
-  private updateNodeReadiness(nodeId: string, status: 'peerConnected' | 'reservationAccepted' | 'listeningEstablished'): void {
+  private updateNodeReadiness(nodeId: string, status: 'backendConnected' | 'backendSubscribed'): void {
     const current = this.nodeReadinessStatus.get(nodeId);
     if (current) {
       current[status] = true;
       this.nodeReadinessStatus.set(nodeId, current);
       
-      // Check if all conditions are met
-      if (current.peerConnected && current.reservationAccepted && current.listeningEstablished) {
+      // Check if all conditions are met - node is ready when backend is connected and subscribed
+      if (current.backendConnected && current.backendSubscribed) {
         this.markNodeReady(nodeId);
       }
     }
@@ -255,7 +259,8 @@ export class NodeCoordinator {
     this.processedLogs.clear();
     this.nodeReadinessStatus.clear();
     this.nodeId = null;
-    this.pendingReadiness = { peerConnected: false, reservationAccepted: false, listeningEstablished: false };
+    this.nodeAccountAddress = null;
+    this.pendingReadiness = { backendConnected: false, backendSubscribed: false };
     this.handlers.clear();
     this.history.clear();
   }

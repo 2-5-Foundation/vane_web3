@@ -62,7 +62,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
       // Coordinator bound to MALICIOUS_NODE
       nodeCoordinator = NodeCoordinator.getInstance();
-      nodeCoordinator.registerNode('MALICIOUS_NODE');
+      nodeCoordinator.registerNode('MALICIOUS_NODE', wasm_client_address!);
 
       // generate a libp2p key
       const mnemonic = mnemonicGenerate();
@@ -92,7 +92,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
     
 
     await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.MALICIOUS_NODE_RESPONSE,
+        NODE_EVENTS.TRANSACTION_RECEIVED,
         async () => {
          console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
          // fetch pending transactions

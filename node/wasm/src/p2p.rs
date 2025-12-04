@@ -89,7 +89,7 @@ impl WasmP2pWorker {
             .subscribe(
                 "subscribeToEvents",
                 rpc_params![user_account_id.clone()],
-                "subscribeToEvents",
+                "unsubscribe_subscribeToEvents",
             )
             .await
             .map_err(|e| anyhow!("Failed to subscribe to events: {}", e))?;
@@ -107,14 +107,13 @@ impl WasmP2pWorker {
                     event_result = subscription.next().fuse() => {
                         match event_result {
                             Some(Ok(event)) => {
-                                info!(target: "p2p", "Received backend event: {:?}", event);
 
                                 if let Err(e) = p2p_event_notif.sender.borrow_mut().send(event.clone()).await {
                                     error!(target: "p2p", "Failed to send backend event: {}", e);
                                 }
 
                                 match event {
-                                    BackendEvent::SenderRequestReceived { address: _, data } => {
+                                    BackendEvent::SenderRequestHandled { address: _, data } => {
                                         if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
                                             if tx_state.receiver_address == user_account_id {
                                                 let req_msg = SwarmMessage::WasmRequest { data: tx_state };
@@ -124,7 +123,7 @@ impl WasmP2pWorker {
                                             }
                                         }
                                     }
-                                    BackendEvent::ReceiverResponseReceived { address: _, data } => {
+                                    BackendEvent::ReceiverResponseHandled { address: _, data } => {
                                         if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
                                             if tx_state.sender_address == user_account_id {
                                                 let resp_msg = SwarmMessage::WasmResponse { data: tx_state };
@@ -132,6 +131,12 @@ impl WasmP2pWorker {
                                                     error!(target: "p2p", "Failed to send response message: {}", e);
                                                 }
                                             }
+                                        }
+                                    }
+                                    BackendEvent::PendingTransactionsFetched { address, transactions } => {
+                                        let pending_txs_msg = SwarmMessage::PendingTransactionsFetched { address,transactions };
+                                        if let Err(e) = sender.borrow_mut().send(Ok(pending_txs_msg)).await {
+                                            error!(target: "p2p", "Failed to send pending transactions message: {}", e);
                                         }
                                     }
                                     _ => {}
@@ -212,12 +217,31 @@ impl WasmP2pWorker {
                                     }
                                 }
                             }
-                            Some(NetworkCommand::Close { peer_id: _ }) => {
+                            Some(NetworkCommand::FetchPendingTransactions { account_id }) => {
                                 let client = client_clone.clone();
-                                let account_id = self_clone.user_account_id.clone();
+                                let account_id_clone = account_id.clone();
                                 wasm_bindgen_futures::spawn_local(async move {
                                     match client
-                                        .request::<(), _>("disconnectPeer", rpc_params![account_id])
+                                        .request::<(), _>("fetchPendingTransactions", rpc_params![account_id_clone])
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!(target: "p2p", "Successfully fetched pending transactions");
+                                        }
+                                        Err(e) => {
+                                            error!(target: "p2p", "Failed to fetch pending transactions: {}", e);
+                                        }   
+                                    }
+                                });
+                            }   
+                            Some(NetworkCommand::Close { account_id, data }) => {
+                                let client = client_clone.clone();
+                                let account_id_clone = account_id.clone();
+                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+                                
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    match client
+                                        .request::<(), _>("disconnectPeer", rpc_params![account_id_clone, data_bytes])
                                         .await
                                     {
                                         Ok(_) => {

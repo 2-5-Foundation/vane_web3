@@ -7,6 +7,7 @@ import {
   receiverConfirm,
   watchTxUpdates,
   fetchPendingTxUpdates,
+  addAccount,
 } from '../../node/wasm/vane_lib/api.js';
 import {
   TxStateMachine,
@@ -73,23 +74,19 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
       // Coordinator bound to RECEIVER_NODE
       nodeCoordinator = NodeCoordinator.getInstance();
-      nodeCoordinator.registerNode('RECEIVER_NODE');
+      nodeCoordinator.registerNode('RECEIVER_NODE', wasm_client_address!);
 
       // Initialize WASM node using vane_lib
       await initializeNode({
         relayMultiAddr: relayInfo!.multiAddr,
-        account: wasm_client_address!,
-        network: "Ethereum",
+        account: solWasmWalletAddress2,
+        network: ChainSupported.Solana,
         self_node: false,
         live: false,
         logLevel: LogLevel.Debug
       });
 
-      // Wait until receiver node is connected to a peer
-      await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.PEER_CONNECTED,
-        async () => { console.log('👂 RECEIVER_NODE READY'); }
-      );
+  
   })
 
   // it("it should receive a ETH transaction and confirm it successfully",async() => {
@@ -156,21 +153,21 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
 
   test("should successfully receive SOLANA token transaction", async () => {
     console.log(" \n \n TEST CASE 2: should successfully receive SOLANA token transaction and confirm it (RECEIVER_NODE)");
-    await nodeCoordinator.waitForEvent(
-      NODE_EVENTS.TRANSACTION_RECEIVED,
-      async () => {
-        console.log('👂 TRANSACTION_RECEIVED SOLANA TOKEN');
-          const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
-          const latestTx = receiverReceivedTx[0];
-          const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
-          const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
+   
 
-          const recvTxManager = new TxStateMachineManager(latestTx);
-          recvTxManager.setReceiverSignature(Array.from(signature));
-          const recvUpdatedTx = recvTxManager.getTx();
-          await receiverConfirm(recvUpdatedTx);
-      }
-    );
+  
+    await new Promise(resolve => setTimeout(resolve, 30000));
+
+    console.log('👂 TRANSACTION_RECEIVED SOLANA TOKEN');
+      const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();
+      const latestTx = receiverReceivedTx[0];
+      const msgBytes = new TextEncoder().encode(latestTx.receiverAddress);
+      const signature = nacl.sign.detached(msgBytes, solWasmWallet2.secretKey);
+
+      const recvTxManager = new TxStateMachineManager(latestTx);
+      recvTxManager.setReceiverSignature(Array.from(signature));
+      const recvUpdatedTx = recvTxManager.getTx();
+      await receiverConfirm(recvUpdatedTx);
     
   })
 

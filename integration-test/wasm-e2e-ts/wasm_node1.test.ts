@@ -15,7 +15,9 @@ import {
   fetchPendingTxUpdates,
   exportStorage,
   receiverConfirm,
-  watchP2pNotifications
+  watchP2pNotifications,
+  unsubscribeWatchP2pNotifications,
+  addAccount
 } from '../../node/wasm/vane_lib/api.js';
 import {
   TxStateMachine,
@@ -57,6 +59,23 @@ import bs58 from 'bs58'
 
 // using vane_lib as a library
 
+
+// Helper function to remove data field from BackendEvent for cleaner logging
+const logBackendEventWithoutData = (event: BackendEvent) => {
+  if ('SenderRequestReceived' in event) {
+    console.log('🔑 BACKEND EVENT', { SenderRequestReceived: { address: event.SenderRequestReceived.address } });
+  } else if ('SenderRequestHandled' in event) {
+    console.log('🔑 BACKEND EVENT', { SenderRequestHandled: { address: event.SenderRequestHandled.address } });
+  } else if ('ReceiverResponseReceived' in event) {
+    console.log('🔑 BACKEND EVENT', { ReceiverResponseReceived: { address: event.ReceiverResponseReceived.address } });
+  } else if ('ReceiverResponseHandled' in event) {
+    console.log('🔑 BACKEND EVENT', { ReceiverResponseHandled: { address: event.ReceiverResponseHandled.address } });
+  } else if ('PeerDisconnected' in event) {
+    console.log('🔑 BACKEND EVENT', event);
+  } else if ('DataExpired' in event) {
+    console.log('🔑 BACKEND EVENT', { DataExpired: { multi_id: event.DataExpired.multi_id } });
+  }
+};
 
 describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   let relayInfo: any | null = null;
@@ -137,7 +156,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     // Coordinator bound to SENDER_NODE
     nodeCoordinator = NodeCoordinator.getInstance();
-    nodeCoordinator.registerNode('SENDER_NODE');
+    nodeCoordinator.registerNode('SENDER_NODE', wasm_client_address);
 
     
 
@@ -145,8 +164,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     try {
       await initializeNode({
         relayMultiAddr: relayInfo.multiAddr,
-        account: wasm_client_address,
-        network: "Ethereum",
+        account: solWasmWalletAddress,
+        network: ChainSupported.Solana,
         live: false,
         self_node: false,
         logLevel: LogLevel.Debug,
@@ -158,12 +177,11 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
     // Register backend event watcher early to observe JSON-RPC backend events
     watchP2pNotifications((event: BackendEvent) => {
-      console.log('🔑 BACKEND EVENT', event);
+      logBackendEventWithoutData(event);
     });
 
-    await nodeCoordinator.waitForEvent(NODE_EVENTS.PEER_CONNECTED, async () => {
-      console.log('✅ SENDER_NODE READY');
-    });
+   
+
     // arbitrary wait for receiver node to be ready ( we dont do cross test events yet)
     await new Promise(resolve => setTimeout(resolve, 5000));
   });
@@ -698,6 +716,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 test("should successfully send to Solana chain and confirm", async () => {
   console.log(" \n \n TEST CASE 9: should successfully send to Solana chain and confirm");
 
+
   const solanaToken = TokenManager.createNativeToken(ChainSupported.Solana);
   const lamports = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
   const solBalanceBefore = lamports / LAMPORTS_PER_SOL;
@@ -714,26 +733,58 @@ test("should successfully send to Solana chain and confirm", async () => {
     ChainSupported.Solana
   )
 
+  // Wait for ReceiverResponseHandled backend event with matching address
+  await new Promise<void>((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Timeout waiting for ReceiverResponseHandled event'));
+      }
+    }, 60000);
 
-  await nodeCoordinator.waitForEvent(NODE_EVENTS.SENDER_RECEIVED_RESPONSE, async () => {
-    console.log('👂 SENDER_RECEIVED_RESPONSE');
-    const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
-    const senderPendinglatestTx = senderPendingTx[0];
-    if (!senderPendinglatestTx.callPayload || !('solana' in senderPendinglatestTx.callPayload)) {
-      throw new Error('No Solana call payload found');
-    }
-    const callPayload = senderPendinglatestTx.callPayload.solana.callPayload;
-    const txSignature = nacl.sign.detached(new Uint8Array(callPayload), solWasmWallet.secretKey);
-    if(txSignature.length !== 64) {
-      throw new Error('txSignature length is not 64');
-    }
-    
-    const txManager = new TxStateMachineManager(senderPendinglatestTx);
-    txManager.setSignedCallPayload(Array.from(txSignature));
-    const updatedTx = txManager.getTx();
-    await senderConfirm(updatedTx);
+    // Save the original handler and chain it with our specific handler
+    const originalHandler = (event: BackendEvent) => {
+      logBackendEventWithoutData(event);
+    };
+
+    const eventHandler = (event: BackendEvent) => {
+      // Call original handler first
+      originalHandler(event);
+      
+      // Check for our specific event
+      if (!resolved && 'ReceiverResponseHandled' in event && event.ReceiverResponseHandled) {
+        const { address } = event.ReceiverResponseHandled;
+        if (address === solWasmWalletAddress2) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve();
+        }
+      }
+    };
+
+    watchP2pNotifications(eventHandler);
+  });
+
+  // Wait a bit for the cache to be updated with call_payload after the backend event
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
+  const senderPendinglatestTx = senderPendingTx[0];
   
-  },60000)
+  if (!senderPendinglatestTx.callPayload || !('solana' in senderPendinglatestTx.callPayload)) {
+    throw new Error('No Solana call payload found');
+  }
+  const callPayload = senderPendinglatestTx.callPayload.solana.callPayload;
+  const txSignature = nacl.sign.detached(new Uint8Array(callPayload), solWasmWallet.secretKey);
+  if(txSignature.length !== 64) {
+    throw new Error('txSignature length is not 64');
+  }
+  
+  const txManager = new TxStateMachineManager(senderPendinglatestTx);
+  txManager.setSignedCallPayload(Array.from(txSignature));
+  const updatedTx = txManager.getTx();
+  await senderConfirm(updatedTx);
 
   await new Promise(resolve => setTimeout(resolve, 10000));
   
