@@ -790,7 +790,8 @@ export type BackendEvent =
     | { ReceiverResponseReceived: { address: string; data: number[] } }
     | { ReceiverResponseHandled: { address: string; data: number[] } }
     | { PeerDisconnected: { account_id: string } }
-    | { DataExpired: { multi_id: string; data: number[] } };
+    | { DataExpired: { multi_id: string; data: number[] } }
+    | { PendingTransactionsFetched: { address: string; transactions: TxStateMachine[] } };
 
 /** User metrics structure */
 export interface UserMetrics {
