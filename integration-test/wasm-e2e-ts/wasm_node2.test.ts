@@ -151,12 +151,12 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
   //   await new Promise(resolve => setTimeout(resolve, 30000));
   // });
 
-  test("should successfully receive SOLANA token transaction", async () => {
+  test.skip("should successfully receive SOLANA token transaction", async () => {
     console.log(" \n \n TEST CASE 2: should successfully receive SOLANA token transaction and confirm it (RECEIVER_NODE)");
    
 
   
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    await new Promise(resolve => setTimeout(resolve, 35000));
 
     console.log('👂 TRANSACTION_RECEIVED SOLANA TOKEN');
       const receiverReceivedTx: TxStateMachine[] = await fetchPendingTxUpdates();

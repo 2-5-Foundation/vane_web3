@@ -12,6 +12,8 @@ import {
   Keypair,
   PublicKey,
 } from "@solana/web3.js";
+import { BackendEvent } from '../../../node/wasm/vane_lib/primitives.js';
+import { watchP2pNotifications } from '../../../node/wasm/vane_lib/api.js';
 
 export function logWasmExports() {
     console.log('📦 WASM Module Exports:');
@@ -109,6 +111,56 @@ export function setupWasmLogging() {
     });
   }
 
+  const logBackendEventWithoutData = (event: BackendEvent) => {
+    if ('SenderRequestReceived' in event) {
+      console.log('🔑 BACKEND EVENT', { SenderRequestReceived: { address: event.SenderRequestReceived.address } });
+    } else if ('SenderRequestHandled' in event) {
+      console.log('🔑 BACKEND EVENT', { SenderRequestHandled: { address: event.SenderRequestHandled.address } });
+    } else if ('ReceiverResponseReceived' in event) {
+      console.log('🔑 BACKEND EVENT', { ReceiverResponseReceived: { address: event.ReceiverResponseReceived.address } });
+    } else if ('ReceiverResponseHandled' in event) {
+      console.log('🔑 BACKEND EVENT', { ReceiverResponseHandled: { address: event.ReceiverResponseHandled.address } });
+    } else if ('PeerDisconnected' in event) {
+      console.log('🔑 BACKEND EVENT', event);
+    } else if ('DataExpired' in event) {
+      console.log('🔑 BACKEND EVENT', { DataExpired: { multi_id: event.DataExpired.multi_id } });
+    }
+  };
+
+export async function waitForReceiverHandledEvent(receiverAddress: string) {
+  await new Promise<void>((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Timeout waiting for ReceiverResponseHandled event'));
+      }
+    }, 60000);
+
+    // Save the original handler and chain it with our specific handler
+    const originalHandler = (event: BackendEvent) => {
+      logBackendEventWithoutData(event);
+    };
+
+    const eventHandler = (event: BackendEvent) => {
+      // Call original handler first
+      originalHandler(event);
+      
+      // Check for our specific event
+      if (!resolved && 'ReceiverResponseHandled' in event && event.ReceiverResponseHandled) {
+        const { address } = event.ReceiverResponseHandled;
+        if (address === receiverAddress) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve();
+        }
+      }
+    };
+
+    watchP2pNotifications(eventHandler);
+  });
+  
+}  
 
 export interface RelayNodeInfo {
   multiAddr: string;

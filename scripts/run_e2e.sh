@@ -249,7 +249,7 @@ echo -e "${BLUE}Starting WASM nodes...${NC}"
 
 
 # Start Node 2
-start_node "WASM Node 2" "$BLUE"
+# start_node "WASM Node 2" "$BLUE"
 
 # # Add delay between node starts
 # echo -e "${YELLOW}Waiting 3 seconds before starting next node...${NC}"
@@ -263,10 +263,10 @@ start_node "WASM Node 2" "$BLUE"
 # sleep 5
 
 # Start Self Node
-# start_node "WASM Node Self" "$PINK"
+start_node "WASM Node Self" "$PINK"
 
 # Start Node 1
-start_node "WASM Node 1" "$GREEN"
+# start_node "WASM Node 1" "$GREEN"
 
 echo ""
 echo -e "${GREEN}✅ All WASM nodes have been started in separate terminals!${NC}"

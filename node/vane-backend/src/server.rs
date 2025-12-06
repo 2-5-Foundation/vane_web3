@@ -358,6 +358,257 @@ impl VaneSwarmServer {
         Ok(())
     }
 
+    pub async fn handle_sender_confirmation(&mut self, address: String, data: Data) -> Result<()> {
+        info!("Received sender confirmation from address: {}", address);
+
+        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
+            error!(
+                "Failed to decode TxStateMachine from sender confirmation {}: {}",
+                address, e
+            );
+            anyhow!("Failed to decode TxStateMachine: {}", e)
+        })?;
+
+        let multi_id_hex = hex::encode(tx_state.multi_id);
+
+        // Ensure the peer relationship exists (sender -> receiver)
+        let receiver_address = tx_state.receiver_address.clone();
+        if !self
+            .peers
+            .get(&address)
+            .map(|targets| targets.contains_key(&receiver_address))
+            .unwrap_or(false)
+        {
+            warn!(
+                "Peer not found for sender {} and receiver {} during sender confirmation",
+                address, receiver_address
+            );
+            return Err(anyhow!(
+                "Peer not found for sender {} and receiver {}",
+                address,
+                receiver_address
+            ));
+        }
+
+        // Ensure the transaction exists
+        if !self.requests.contains_key(&multi_id_hex) {
+            warn!(
+                "Transaction with multi_id {} not found for sender confirmation from {}",
+                multi_id_hex, address
+            );
+            return Err(anyhow!(
+                "Transaction with multi_id {} not found",
+                multi_id_hex
+            ));
+        }
+
+        // Update the stored transaction data
+        if self.update_request(&multi_id_hex, data.clone()) {
+            info!(
+                "Updated transaction (sender confirmation) with multi_id {}",
+                multi_id_hex
+            );
+        } else {
+            warn!(
+                "Failed to update transaction with multi_id {} for sender confirmation",
+                multi_id_hex
+            );
+            return Err(anyhow!(
+                "Failed to update transaction with multi_id {}",
+                multi_id_hex
+            ));
+        }
+
+        // Emit backend event for sender confirmation
+        let event = BackendEvent::SenderConfirmed {
+            address: address.clone(),
+            data,
+        };
+        let _ = self.event_sender.send(event.clone());
+
+        let trimmed_data = if event.get_data().len() > 100 {
+            format!("{:?}...", &event.get_data()[..97])
+        } else {
+            format!("{:?}", event.get_data())
+        };
+
+        info!(
+            "Successfully handled sender confirmation: address: {}, data: {}",
+            event.get_address(),
+            trimmed_data
+        );
+
+        Ok(())
+    }
+
+    pub async fn handle_sender_revertation(&mut self, address: String, data: Data) -> Result<()> {
+        info!("Received sender revertation from address: {}", address);
+
+        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
+            error!(
+                "Failed to decode TxStateMachine from sender revertation {}: {}",
+                address, e
+            );
+            anyhow!("Failed to decode TxStateMachine: {}", e)
+        })?;
+
+        info!("IN SERVER TX REVERTATION STATUS: {:?}",tx_state.status);
+
+        let multi_id_hex = hex::encode(tx_state.multi_id);
+        let receiver_address = tx_state.receiver_address.clone();
+
+        // Ensure the peer relationship exists (sender -> receiver)
+        if !self
+            .peers
+            .get(&address)
+            .map(|targets| targets.contains_key(&receiver_address))
+            .unwrap_or(false)
+        {
+            warn!(
+                "Peer not found for sender {} and receiver {} during sender revertation",
+                address, receiver_address
+            );
+            return Err(anyhow!(
+                "Peer not found for sender {} and receiver {}",
+                address,
+                receiver_address
+            ));
+        }
+
+        // Ensure the transaction exists
+        if !self.requests.contains_key(&multi_id_hex) {
+            warn!(
+                "Transaction with multi_id {} not found for sender revertation from {}",
+                multi_id_hex, address
+            );
+            return Err(anyhow!(
+                "Transaction with multi_id {} not found",
+                multi_id_hex
+            ));
+        }
+
+        // Update the stored transaction data
+        if self.update_request(&multi_id_hex, data.clone()) {
+            info!(
+                "Updated transaction (sender revertation) with multi_id {}",
+                multi_id_hex
+            );
+        } else {
+            warn!(
+                "Failed to update transaction with multi_id {} for sender revertation",
+                multi_id_hex
+            );
+            return Err(anyhow!(
+                "Failed to update transaction with multi_id {}",
+                multi_id_hex
+            ));
+        }
+
+        // Emit backend event for sender revertation
+        let event = BackendEvent::SenderReverted {
+            address: address.clone(),
+            data,
+        };
+        let _ = self.event_sender.send(event.clone());
+
+        let trimmed_data = if event.get_data().len() > 100 {
+            format!("{:?}...", &event.get_data()[..97])
+        } else {
+            format!("{:?}", event.get_data())
+        };
+
+        info!(
+            "Successfully handled sender revertation: address: {}, data: {}",
+            event.get_address(),
+            trimmed_data
+        );
+
+        Ok(())
+    }
+
+    pub async fn handle_tx_submission_updates(&mut self, address: String, data: Data) -> Result<()> {
+        info!("Received tx submission update from address: {}", address);
+
+        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
+            error!(
+                "Failed to decode TxStateMachine from tx submission update {}: {}",
+                address, e
+            );
+            anyhow!("Failed to decode TxStateMachine: {}", e)
+        })?;
+
+        let multi_id_hex = hex::encode(tx_state.multi_id);
+        let receiver_address = tx_state.receiver_address.clone();
+
+        // Ensure the peer relationship exists (sender -> receiver)
+        if !self
+            .peers
+            .get(&address)
+            .map(|targets| targets.contains_key(&receiver_address))
+            .unwrap_or(false)
+        {
+            warn!(
+                "Peer not found for sender {} and receiver {} during tx submission update",
+                address, receiver_address
+            );
+            return Err(anyhow!(
+                "Peer not found for sender {} and receiver {}",
+                address,
+                receiver_address
+            ));
+        }
+
+        // Ensure the transaction exists
+        if !self.requests.contains_key(&multi_id_hex) {
+            warn!(
+                "Transaction with multi_id {} not found for tx submission update from {}",
+                multi_id_hex, address
+            );
+            return Err(anyhow!(
+                "Transaction with multi_id {} not found",
+                multi_id_hex
+            ));
+        }
+
+        // Update the stored transaction data
+        if self.update_request(&multi_id_hex, data.clone()) {
+            info!(
+                "Updated transaction (tx submission update) with multi_id {}",
+                multi_id_hex
+            );
+        } else {
+            warn!(
+                "Failed to update transaction with multi_id {} for tx submission update",
+                multi_id_hex
+            );
+            return Err(anyhow!(
+                "Failed to update transaction with multi_id {}",
+                multi_id_hex
+            ));
+        }
+
+        // Emit backend event for tx submission update
+        let event = BackendEvent::TxSubmitted {
+            address: address.clone(),
+            data,
+        };
+        let _ = self.event_sender.send(event.clone());
+
+        let trimmed_data = if event.get_data().len() > 100 {
+            format!("{:?}...", &event.get_data()[..97])
+        } else {
+            format!("{:?}", event.get_data())
+        };
+
+        info!(
+            "Successfully handled tx submission update: address: {}, data: {}",
+            event.get_address(),
+            trimmed_data
+        );
+
+        Ok(())
+    }
+
     pub async fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
         info!("Received receiver response from address: {}", address);
 
@@ -423,6 +674,8 @@ impl VaneSwarmServer {
                         );
                         anyhow!("Failed to decode TxStateMachine: {}", e)
                     })?;
+
+                    info!("FETCHING TX UPDATES STATUS: {:?}",tx_state.status);
                     pending_transactions.push(tx_state);
                 }
             }
@@ -538,6 +791,30 @@ pub trait BackendRpc {
     #[method(name = "handleReceiverResponse")]
     async fn handle_receiver_response(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
 
+    /// Handle sender confirmation
+    ///  params:
+    /// 
+    /// - `address`: The sender address
+    /// - `data`: updated TxStateMachine
+    #[method(name = "handleSenderConfirmation")]
+    async fn handle_sender_confirmation(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+
+    /// Handle sender reveration
+    ///  params:
+    /// 
+    /// - `address`: The sender address
+    /// - `data`: updated TxStateMachine
+    #[method(name = "handleSenderRevertation")]
+    async fn handle_sender_revertation(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+
+    /// Handle tx submission updates
+    /// params:
+    ///
+    /// - `address`: The sender address
+    /// - `data`: updated TxStateMachinexf
+    #[method(name = "handleTxSubmissionUpdates")]
+    async fn handle_tx_submission_updates(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+
     /// Disconnect a peer from target peers
     /// params:
     ///
@@ -609,6 +886,54 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
+    async fn handle_sender_confirmation(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+        info!(
+            "RPC: handle_sender_confirmation called for address: {}",
+            address
+        );
+        let mut server = self.swarm_server.lock().await;
+        server
+            .handle_sender_confirmation(address, data)
+            .await
+            .map_err(|e| {
+                error!("RPC: Failed to handle sender confirmation: {}", e);
+                jsonrpsee::core::Error::Custom(e.to_string())
+            })?;
+        Ok(())
+    }
+
+    async fn handle_sender_revertation(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+        info!(
+            "RPC: handle_sender_revertation called for address: {}",
+            address
+        );
+        let mut server = self.swarm_server.lock().await;
+        server
+            .handle_sender_revertation(address, data)
+            .await
+            .map_err(|e| {
+                error!("RPC: Failed to handle sender revertation: {}", e);
+                jsonrpsee::core::Error::Custom(e.to_string())
+            })?;
+        Ok(())
+    }
+
+    async fn handle_tx_submission_updates(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+        info!(
+            "RPC: handle_tx_submission_updates called for address: {}",
+            address
+        );
+        let mut server = self.swarm_server.lock().await;
+        server
+            .handle_tx_submission_updates(address, data)
+            .await
+            .map_err(|e| {
+                error!("RPC: Failed to handle tx submission updates: {}", e);
+                jsonrpsee::core::Error::Custom(e.to_string())
+            })?;
+        Ok(())
+    }
+
     async fn fetch_pending_transactions(&self, address: String) -> RpcResult<()> {
         info!("RPC: fetch_pending_transactions called for address: {}", address);
         let server = self.swarm_server.lock().await;
@@ -659,11 +984,15 @@ impl BackendRpcServer for BackendRpcHandler {
             let event_type = match &event {
                 BackendEvent::SenderRequestReceived { .. } => "SenderRequestReceived",
                 BackendEvent::SenderRequestHandled { .. } => "SenderRequestHandled",
+                BackendEvent::SenderConfirmed { .. } => "SenderConfirmed",
+                BackendEvent::SenderReverted { .. } => "SenderReverted",
+                // SenderConfirmed reused for tx submission updates too
                 BackendEvent::ReceiverResponseReceived { .. } => "ReceiverResponseReceived",
                 BackendEvent::ReceiverResponseHandled { .. } => "ReceiverResponseHandled",
                 BackendEvent::PeerDisconnected { .. } => "PeerDisconnected",
                 BackendEvent::DataExpired { .. } => "DataExpired",
                 BackendEvent::PendingTransactionsFetched { .. } => "PendingTransactionsFetched",
+                BackendEvent::TxSubmitted { .. } => "TxSubmitted",
             };
             let event_addr = event.get_address();
             trace!("Subscription received event - type: {}, event_address: {}, subscription_address: {}", 
@@ -713,6 +1042,54 @@ impl BackendRpcServer for BackendRpcHandler {
                         }
                         Err(e) => {
                             warn!("Failed to parse TxStateMachine in SenderRequestHandled for subscription {}: {}", address, e);
+                            false
+                        }
+                    };
+                    matches_direct || matches_tx
+                }
+                BackendEvent::SenderConfirmed {
+                    address: event_address,
+                    data,
+                } => {
+                    let matches_direct = event_address == &address;
+                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                        Ok(tx) => {
+                            let matches = tx.sender_address == address || tx.receiver_address == address;
+                            if !matches {
+                                trace!("Event SenderConfirmed filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                      address, event_address, tx.sender_address, tx.receiver_address);
+                            } else {
+                                trace!("Event SenderConfirmed matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                      address, event_address, tx.sender_address, tx.receiver_address);
+                            }
+                            matches
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse TxStateMachine in SenderConfirmed for subscription {}: {}", address, e);
+                            false
+                        }
+                    };
+                    matches_direct || matches_tx
+                }
+                BackendEvent::SenderReverted {
+                    address: event_address,
+                    data,
+                } => {
+                    let matches_direct = event_address == &address;
+                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                        Ok(tx) => {
+                            let matches = tx.sender_address == address || tx.receiver_address == address;
+                            if !matches {
+                                trace!("Event SenderReverted filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                      address, event_address, tx.sender_address, tx.receiver_address);
+                            } else {
+                                trace!("Event SenderReverted matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                      address, event_address, tx.sender_address, tx.receiver_address);
+                            }
+                            matches
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse TxStateMachine in SenderReverted for subscription {}: {}", address, e);
                             false
                         }
                     };
@@ -776,6 +1153,17 @@ impl BackendRpcServer for BackendRpcHandler {
                 BackendEvent::PendingTransactionsFetched { address: event_address, .. } => {
                     event_address == &address
                 }
+                BackendEvent::TxSubmitted { address: event_address, data } => {
+                    let matches_direct = event_address == &address;
+                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                        Ok(tx) => tx.sender_address == address || tx.receiver_address == address,
+                        Err(e) => {
+                            warn!("Failed to parse TxStateMachine in TxSubmitted for subscription {}: {}", address, e);
+                            false
+                        }
+                    };
+                    matches_direct || matches_tx
+                }
             };
 
                     if should_send {
@@ -786,7 +1174,7 @@ impl BackendRpcServer for BackendRpcHandler {
                         })?;
 
                         if let Err(e) = sink.send(subscription_msg).await {
-                            error!(
+                            warn!(
                                 "Failed to send event to subscription for address {}: {}",
                                 address, e
                             );

@@ -12,6 +12,7 @@ use anyhow::anyhow;
 use async_stream::stream;
 use db_wasm::{DbWorker, OpfsRedbWorker};
 use futures::StreamExt;
+use gloo_timers::future::TimeoutFuture;
 use log::{debug, error, info, trace};
 use lru::LruCache;
 use reqwasm::http::{Request, RequestMode};
@@ -434,6 +435,9 @@ impl PublicInterfaceWorker {
         let account_id = self.p2p_worker.user_account_id.clone();
         let command_tx = self.p2p_network_service.p2p_command_tx.clone();
         command_tx.send(NetworkCommand::FetchPendingTransactions { account_id }).await?;
+        
+        TimeoutFuture::new(2000).await;
+        
         // flush out valyues that have been expired
         let now = (js_sys::Date::now() / 1000.0) as u32;
         info!("🔑 NOW: {:?}", now);
@@ -543,11 +547,11 @@ impl PublicInterfaceWorker {
         tx: JsValue,
         reason: Option<String>,
     ) -> Result<(), JsError> {
-        if tx.is_null() || tx.is_undefined() {
-            return Err(JsError::new(
-                "revertTransaction: missing TxStateMachine (got null/undefined)",
-            ));
-        }
+        // if tx.is_null() || tx.is_undefined() {
+        //     return Err(JsError::new(
+        //         "revertTransaction: missing TxStateMachine (got null/undefined)",
+        //     ));
+        // }
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
 
         match tx.status {
@@ -568,13 +572,27 @@ impl PublicInterfaceWorker {
                 Ok(())
             }
             _ => {
-                info!("revertTransaction: reverting transaction");
+
                 tx.status =
                     TxStatus::Reverted(reason.unwrap_or("Intended receiver not met".to_string()));
                 // Immediately reflect in local cache for UI/state reads
-                self.lru_cache
-                    .borrow_mut()
-                    .push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), 600));
+                {
+                    let mut cache = self.lru_cache.borrow_mut();
+                    if let Some(ttl_wrapper) = cache.get_mut(&tx.tx_nonce.into()) {
+                        ttl_wrapper.update_value(tx.clone());
+                        let ttl_wrapper_clone = ttl_wrapper.clone();
+                        drop(cache);
+                        self.lru_cache
+                            .borrow_mut()
+                            .push(tx.tx_nonce.into(), ttl_wrapper_clone);
+                    } else {
+                        drop(cache);
+                        let now = (js_sys::Date::now() / 1000.0) as u32;
+                        self.lru_cache
+                            .borrow_mut()
+                            .push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), now));
+                    }
+                }
 
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
                 sender

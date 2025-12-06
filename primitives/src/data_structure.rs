@@ -525,10 +525,22 @@ pub enum NetworkCommand {
     FetchPendingTransactions {
         account_id: String,
     },
-    Close {
+    RevertTransaction {
         account_id: String,
         data: TxStateMachine
     },
+    ConfirmTransaction {
+        account_id: String,
+        data: TxStateMachine
+    },
+    TxSubmissionUpdate {
+        account_id: String,
+        data: TxStateMachine
+    },
+    Close {
+        account_id: String,
+        data: TxStateMachine
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1002,11 +1014,14 @@ pub struct StorageExport {
 pub enum BackendEvent {
     SenderRequestReceived { address: String, data: Vec<u8> },
     SenderRequestHandled { address: String, data: Vec<u8> },
+    SenderConfirmed { address: String, data: Vec<u8> },
+    SenderReverted { address: String, data: Vec<u8> },
     ReceiverResponseReceived { address: String, data: Vec<u8> },
     ReceiverResponseHandled { address: String, data: Vec<u8> },
     PeerDisconnected { account_id: String },
     DataExpired { multi_id: String, data: Vec<u8> },
     PendingTransactionsFetched { address: String, transactions: Vec<TxStateMachine> },
+    TxSubmitted { address: String, data: Vec<u8> },
 }
 
 impl BackendEvent {
@@ -1014,11 +1029,14 @@ impl BackendEvent {
         match self {
             BackendEvent::SenderRequestReceived { address, .. } => address.clone(),
             BackendEvent::SenderRequestHandled { address, .. } => address.clone(),
+            BackendEvent::SenderConfirmed { address, .. } => address.clone(),
+            BackendEvent::SenderReverted { address, .. } => address.clone(),
             BackendEvent::ReceiverResponseReceived { address, .. } => address.clone(),
             BackendEvent::ReceiverResponseHandled { address, .. } => address.clone(),
             BackendEvent::PeerDisconnected { account_id, .. } => account_id.clone(),
             BackendEvent::DataExpired { multi_id, .. } => multi_id.clone(),
             BackendEvent::PendingTransactionsFetched { address, .. } => address.clone(),
+            BackendEvent::TxSubmitted { address, .. } => address.clone(),
         }
     }
 
@@ -1026,9 +1044,12 @@ impl BackendEvent {
         match self {
             BackendEvent::SenderRequestReceived { data, .. } => data.clone(),
             BackendEvent::SenderRequestHandled { data, .. } => data.clone(),
+            BackendEvent::SenderConfirmed { data, .. } => data.clone(),
+            BackendEvent::SenderReverted { data, .. } => data.clone(),
             BackendEvent::ReceiverResponseReceived { data, .. } => data.clone(),
             BackendEvent::ReceiverResponseHandled { data, .. } => data.clone(),
             BackendEvent::DataExpired { data, .. } => data.clone(),
+            BackendEvent::TxSubmitted { data, .. } => data.clone(),
             _ => unimplemented!(),
         }
     }

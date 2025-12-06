@@ -86,35 +86,29 @@ describe('WASM NODE & RELAY NODE INTERACTIONS', () => {
       );
   })
 
-  it("it should receive a transaction and confirm it successfully",async() => {
+  test("it should receive a transaction and confirm it successfully",async() => {
     console.log(" \n \n TEST CASE: it should receive a transaction and confirm it successfully (MALICIOUS_NODE)");
+    
+    await new Promise(resolve => setTimeout(resolve, 30000));
+
     const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
     
-
-    await nodeCoordinator.waitForEvent(
-        NODE_EVENTS.TRANSACTION_RECEIVED,
-        async () => {
-         console.log('👂 TRANSACTION_RECEIVED ON MALICIOUS_NODE');
-         // fetch pending transactions
-         const pendingTx = await fetchPendingTxUpdates();
-         if (pendingTx.length === 0) {
-          console.log('🔑 No pending transactions found');
-          return;
-         }
-         const tx = pendingTx[0];
-         if (!walletClient) throw new Error('walletClient not initialized');
-         const account = walletClient.account!;
-         // @ts-ignore
-         const signature = await account.signMessage({ message: tx.receiverAddress });
-         const txManager = new TxStateMachineManager(tx);
-         txManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
-         const updatedTx = txManager.getTx();
-         console.log('🔑 Malicious node confirmed the transaction');
-         await receiverConfirm(updatedTx);
-       },
-        350000
-      );
-
+    // fetch pending transactions
+    const pendingTx = await fetchPendingTxUpdates();
+    if (pendingTx.length === 0) {
+    console.log('🔑 No pending transactions found');
+    return;
+    }
+    const tx = pendingTx[0];
+    if (!walletClient) throw new Error('walletClient not initialized');
+    const account = walletClient.account!;
+    // @ts-ignore
+    const signature = await account.signMessage({ message: tx.receiverAddress });
+    const txManager = new TxStateMachineManager(tx);
+    txManager.setReceiverSignature(Array.from(hexToBytes(signature as `0x${string}`)));
+    const updatedTx = txManager.getTx();
+    console.log('🔑 Malicious node confirmed the transaction');
+    await receiverConfirm(updatedTx);
       
   })
 

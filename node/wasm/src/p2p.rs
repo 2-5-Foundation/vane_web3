@@ -234,21 +234,90 @@ impl WasmP2pWorker {
                                     }
                                 });
                             }   
+                            Some(NetworkCommand::ConfirmTransaction { account_id, data }) => {
+                                let client = client_clone.clone();
+                                let account_id_clone = account_id.clone();
+                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    match client
+                                        .request::<(), _>(
+                                            "handleSenderConfirmation",
+                                            rpc_params![account_id_clone, data_bytes],
+                                        )
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!(target: "p2p", "Successfully sent sender confirmation");
+                                        }
+                                        Err(e) => {
+                                            error!(target: "p2p", "Failed to send sender confirmation: {}", e);
+                                        }
+                                    }
+                                });
+                            }
+                            Some(NetworkCommand::TxSubmissionUpdate { account_id, data }) => {
+                                let client = client_clone.clone();
+                                let account_id_clone = account_id.clone();
+                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    match client
+                                        .request::<(), _>(
+                                            "handleTxSubmissionUpdates",
+                                            rpc_params![account_id_clone, data_bytes],
+                                        )
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!(target: "p2p", "Successfully tx submission update");
+                                        }
+                                        Err(e) => {
+                                            error!(target: "p2p", "Failed tx submission update: {}", e);
+                                        }
+                                    }
+                                });
+                            }
                             Some(NetworkCommand::Close { account_id, data }) => {
                                 let client = client_clone.clone();
                                 let account_id_clone = account_id.clone();
                                 let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
-                                
+
                                 wasm_bindgen_futures::spawn_local(async move {
                                     match client
-                                        .request::<(), _>("disconnectPeer", rpc_params![account_id_clone, data_bytes])
+                                        .request::<(), _>(
+                                            "disconnectPeer",
+                                            rpc_params![account_id_clone, data_bytes],
+                                        )
                                         .await
                                     {
                                         Ok(_) => {
-                                            info!(target: "p2p", "Successfully disconnected peer");
+                                            info!(target: "p2p", "Successfully disconnected from peer");
                                         }
                                         Err(e) => {
-                                            error!(target: "p2p", "Failed to disconnect peer: {}", e);
+                                            error!(target: "p2p", "Failed to disconnect from peer: {}", e);
+                                        }
+                                    }
+                                });
+                            }
+                            Some(NetworkCommand::RevertTransaction { account_id, data }) => {
+                                let client = client_clone.clone();
+                                let account_id_clone = account_id.clone();
+                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    match client
+                                        .request::<(), _>(
+                                            "handleSenderRevertation",
+                                            rpc_params![account_id_clone, data_bytes],
+                                        )
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!(target: "p2p", "Successfully updating sender revertation");
+                                        }
+                                        Err(e) => {
+                                            error!(target: "p2p", "Failed to sender revertation: {}", e);
                                         }
                                     }
                                 });

@@ -358,27 +358,31 @@ impl WasmMainServiceWorker {
 
                     debug!(target: "MainServiceWorker",
                           "propagating txn msg as response to rpc layer for user interaction: {decoded_resp:?}");
+
+                   
                 }
 
                 SwarmMessage::PendingTransactionsFetched {address, transactions } => {
                     info!(target: "MainServiceWorker", "received pending transactions: {}",transactions.len());
                     // update lru cache with the pending transactions
+                    let mut cache = self.lru_cache.borrow_mut();
                     for tx in transactions {
-                        let mut cache = self.lru_cache.borrow_mut();
                         if let Some(ttl_wrapper) = cache.get_mut(&tx.tx_nonce.into()) {
-                            ttl_wrapper.update_value(tx.clone());
-                            let ttl_wrapper_clone = ttl_wrapper.clone();
-                            drop(cache);
-                            self.lru_cache
-                                .borrow_mut()
-                                .push(tx.tx_nonce.into(), ttl_wrapper_clone);
+                            let existing_tx = ttl_wrapper.get_value();
+                            // Don't overwrite call_payload if the existing transaction already has it
+                            let tx_to_use = if existing_tx.call_payload.is_some() && tx.call_payload.is_none() {
+                                let mut updated_tx = tx.clone();
+                                updated_tx.call_payload = existing_tx.call_payload.clone();
+                                updated_tx
+                            } else {
+                                tx
+                            };
+                            ttl_wrapper.update_value(tx_to_use.clone());
+                            let updated_wrapper = ttl_wrapper.clone();
+                            cache.push(tx_to_use.tx_nonce.into(), updated_wrapper);
                         } else {
-                            drop(cache);
                             let now = (js_sys::Date::now() / 1000.0) as u32;
-                            self.lru_cache.borrow_mut().push(
-                                tx.tx_nonce.into(),
-                                TtlWrapper::new(tx.clone(), now),
-                            );
+                            cache.push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), now));
                         }
                     }
                     return Ok(());
@@ -571,6 +575,17 @@ impl WasmMainServiceWorker {
         let mut txn_inner = txn.borrow_mut().clone();
         info!(target: "MainServiceWorker","sender confirmed tx state: {txn_inner:?}");
 
+        // If the receiver is remote, notify backend to handle confirmation
+        let prof = self.db_worker.get_user_account().await?;
+        let both_in_profile = prof
+            .accounts
+            .iter()
+            .any(|(a, _)| *a == txn_inner.receiver_address)
+            && prof
+                .accounts
+                .iter()
+                .any(|(a, _)| *a == txn_inner.sender_address);
+
         // here there should be 2 paths (mitigating the case where we cant just sign the raw tx on client side)
         // 1. When the tx is already been sent
         // 2. when the tx will be submitted on vane wasm app
@@ -605,11 +620,15 @@ impl WasmMainServiceWorker {
             {
                 ttl_wrapper.update_value(txn_inner.clone());
 
+                self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
+
                 self.rpc_sender_channel
                     .borrow_mut()
                     .send(txn_inner.clone())
                     .await?;
+
             } else {
+
                 let now = (js_sys::Date::now() / 1000.0) as u32;
                 self.lru_cache.borrow_mut().push(
                     txn_inner.tx_nonce.into(),
@@ -646,6 +665,7 @@ impl WasmMainServiceWorker {
             {
                 ttl_wrapper.update_value(txn_inner.clone());
 
+                self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), ttl_wrapper.clone());
                 self.rpc_sender_channel
                     .borrow_mut()
                     .send(txn_inner.clone())
@@ -683,11 +703,21 @@ impl WasmMainServiceWorker {
         {
             error!(target: "MainServiceWorker","sender confirmation failed: {e}");
             txn_inner.sender_confirmation_failed();
+
+            
+            let confirm_command = NetworkCommand::ConfirmTransaction {
+                account_id: txn_inner.sender_address.clone(),
+                data: txn_inner.clone(),
+            };
+            let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+            command_tx.send(confirm_command).await?;
+            
             let now = (js_sys::Date::now() / 1000.0) as u32;
             self.lru_cache.borrow_mut().push(
                 txn_inner.tx_nonce.into(),
                 TtlWrapper::new(txn_inner.clone(), now),
             );
+
             self.rpc_sender_channel
                 .borrow_mut()
                 .send(txn_inner.clone())
@@ -727,6 +757,15 @@ impl WasmMainServiceWorker {
                         success: true,
                     };
                     self.db_worker.update_success_tx(db_tx).await?;
+
+                  
+                    let submission_update_cmd = NetworkCommand::TxSubmissionUpdate {
+                        account_id: txn_inner.sender_address.clone(),
+                        data: txn_inner.clone(),
+                    };
+                    let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+                    command_tx.send(submission_update_cmd).await?;
+                    
                     info!(target: "MainServiceWorker","Db recorded success tx");
 
                     if let Some(ttl_wrapper) = self
@@ -757,6 +796,13 @@ impl WasmMainServiceWorker {
                     error!(target: "MainServiceWorker","tx submission failed: {err:?}");
                     txn_inner.tx_submission_failed("Failed to submit transaction".to_string());
 
+                    let submission_update_cmd = NetworkCommand::TxSubmissionUpdate {
+                        account_id: txn_inner.sender_address.clone(),
+                        data: txn_inner.clone(),
+                    };
+                    let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+                    command_tx.send(submission_update_cmd).await?;
+
                     if let Some(ttl_wrapper) = self
                         .lru_cache
                         .borrow_mut()
@@ -768,6 +814,7 @@ impl WasmMainServiceWorker {
                             .borrow_mut()
                             .send(txn_inner.clone())
                             .await?;
+
                     } else {
                         let now = (js_sys::Date::now() / 1000.0) as u32;
                         self.lru_cache.borrow_mut().push(
@@ -781,11 +828,19 @@ impl WasmMainServiceWorker {
                     }
                 }
             }
+           
         } else {
             // non original sender confirmed, return error, send to rpc
             txn_inner.status =
                 TxStatus::TxError("failed to match original sender and receiver".to_string());
             error!(target: "MainServiceWorker","Non original sender or receiver signed");
+
+            let confirm_command = NetworkCommand::ConfirmTransaction {
+                account_id: txn_inner.sender_address.clone(),
+                data: txn_inner.clone(),
+            };
+            let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+            command_tx.send(confirm_command).await?;
 
             if let Some(ttl_wrapper) = self
                 .lru_cache
@@ -848,6 +903,10 @@ impl WasmMainServiceWorker {
         // Backend transport handles cleanup for remote peers now, so nothing to do here.
 
         if !both_in_profile {
+            let revert_command = NetworkCommand::RevertTransaction { account_id: txn_inner.sender_address.clone(), data: txn_inner.clone() };
+            let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
+            command_tx.send(revert_command).await?;
+
             let close_command = NetworkCommand::Close { account_id: txn_inner.receiver_address.clone(), data: txn_inner.clone() };
             let command_tx = self.p2p_network_service.borrow().p2p_command_tx.clone();
             command_tx.send(close_command).await?;
@@ -868,21 +927,25 @@ impl WasmMainServiceWorker {
 
         info!(target: "MainServiceWorker", "revert: sending txn to rpc layer");
 
-        if let Some(ttl_wrapper) = self
-            .lru_cache
-            .borrow_mut()
-            .get_mut(&txn_inner.tx_nonce.into())
         {
-            ttl_wrapper.update_value(txn_inner.clone());
-
-            self.rpc_sender_channel
-                .borrow_mut()
-                .send(txn_inner.clone())
-                .await?;
-        } else {
-            error!("Failed to get transaction from cache; expired");
-            return Err(anyhow::anyhow!("Failed to get transaction from cache; expired").into());
+            let mut cache = self.lru_cache.borrow_mut();
+            if let Some(ttl_wrapper) = cache.get_mut(&txn_inner.tx_nonce.into()) {
+                ttl_wrapper.update_value(txn_inner.clone());
+                let updated_wrapper = ttl_wrapper.clone();
+                drop(cache);
+                self.lru_cache
+                    .borrow_mut()
+                    .push(txn_inner.tx_nonce.into(), updated_wrapper);
+            } else {
+                let now = (js_sys::Date::now() / 1000.0) as u32;
+                self.lru_cache.borrow_mut().push(txn_inner.tx_nonce.into(), TtlWrapper::new(txn_inner.clone(), now));
+            }
         }
+
+        self.rpc_sender_channel
+            .borrow_mut()
+            .send(txn_inner.clone())
+            .await?;
 
         Ok(())
     }

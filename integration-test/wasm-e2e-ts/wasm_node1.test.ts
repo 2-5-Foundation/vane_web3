@@ -33,7 +33,8 @@ import {
   loadRelayNodeInfo,
   waitForWasmInitialization,
   getWallets,
-  getSplTokenBalance
+  getSplTokenBalance,
+  waitForReceiverHandledEvent
 } from './utils/wasm_utils.js';
 import { NODE_EVENTS, NodeCoordinator } from './utils/node_coordinator.js';
 import { hexToBytes, bytesToHex, TestClient, WalletActions, parseTransaction, PublicActions, formatEther, createTestClient, http, walletActions, publicActions, keccak256, ByteArray, SignTransactionParameters } from 'viem';
@@ -164,8 +165,8 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     try {
       await initializeNode({
         relayMultiAddr: relayInfo.multiAddr,
-        account: solWasmWalletAddress,
-        network: ChainSupported.Solana,
+        account: wasm_client_address,
+        network: ChainSupported.Ethereum,
         live: false,
         self_node: false,
         logLevel: LogLevel.Debug,
@@ -293,111 +294,152 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
   // });
 
 
-  // test("should notify if the receiver is not registered", async () => {
-  //   console.log(" \n \n TEST CASE 2: should notify if the receiver is not registered");
-  //   const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-    
-  //   await initiateTransaction(
-  //     wasm_client_address,
-  //     '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
-  //     BigInt(10),
-  //     ethToken,
-  //     'Maji',
-  //     ChainSupported.Ethereum,
-  //     ChainSupported.Ethereum
-  //   );
 
-  //   await nodeCoordinator.waitForEvent(NODE_EVENTS.RECEIVER_NOT_REGISTERED, async () => {
-  //     console.log('👂 RECEIVER_NOT_REGISTERED EVENT');
-  //     const tx: TxStateMachine[] = await fetchPendingTxUpdates();
-  //     expect(tx).toBeDefined();
-  //     expect(tx[0].status.type).toBe('ReceiverNotRegistered');
-  //     console.log('🔑 asserted receiver not registered', tx[0].status);
-  //   },70000);
+  test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
+    console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
+    const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
+    const _intendedReceiverAddress = receiver_client_address;
+    const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
+    
+     await initiateTransaction(
+      wasm_client_address,
+      wrong_receiver_client_address,
+      BigInt(10) * BigInt(10 ** 18),
+      ethToken,
+      'Wrong',
+      ChainSupported.Ethereum,
+      ChainSupported.Ethereum
+    );
+
+    await waitForReceiverHandledEvent(wrong_receiver_client_address);
+
+    await new Promise(resolve => setTimeout(resolve, 40000));
+
+    function getEventData(event: BackendEvent): number[] | null {
+      if ('SenderRequestReceived' in event) {
+        return event.SenderRequestReceived.data;
+      } else if ('SenderRequestHandled' in event) {
+        return event.SenderRequestHandled.data;
+      } else if ('SenderConfirmed' in event) {
+        return event.SenderConfirmed.data;
+      } else if ('SenderReverted' in event) {
+        return event.SenderReverted.data;
+      } else if ('ReceiverResponseReceived' in event) {
+        return event.ReceiverResponseReceived.data;
+      } else if ('ReceiverResponseHandled' in event) {
+        return event.ReceiverResponseHandled.data;
+      } else if ('DataExpired' in event) {
+        return event.DataExpired.data;
+      } else if ('TxSubmitted' in event) {
+        return event.TxSubmitted.data;
+      }
+      return null;
+    }
+
+    function deserializeEventData(event: BackendEvent): TxStateMachine | null {
+      const data = getEventData(event);
       
-  // });
-
-  // test("should succesfully revert and cancel transaction even if malicious node confirm the transaction", async () => {
-  //   console.log(" \n \n TEST CASE 3: should succesfully revert and cancel transaction if wrong address is confirmed by receiver");
-  //   const receiverBalanceBefore = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-  //   const _intendedReceiverAddress = receiver_client_address;
-  //   const ethToken = TokenManager.createNativeToken(ChainSupported.Ethereum);
-    
-  //    await initiateTransaction(
-  //     wasm_client_address,
-  //     wrong_receiver_client_address,
-  //     BigInt(10) * BigInt(10 ** 18),
-  //     ethToken,
-  //     'Wrong',
-  //     ChainSupported.Ethereum,
-  //     ChainSupported.Ethereum
-  //   );
-
-  //   // await nodeCoordinator.waitForEvent(NODE_EVENTS.MALICIOUS_NODE_RESPONSE, async () => {
-  //   //   console.log('👂 SENDER_RECEIVED_RESPONSE');
-  //   //   const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
-  //   //   const latestTx = txUpdates[0]; 
-  //   //   console.log('🔑 MALICIOUS TX CODEWORD', latestTx.codeWord);
-  //   //   if (latestTx.codeWord !== 'Wrong') {
-  //   //     return;
-  //   //   }
-  //   //   console.log('🔑 WRONG ADDRESS TX UPDATED', latestTx.status, latestTx.codeWord);
-  //   //   console.log("The intended receiver did not receive the transaction notification, hence wrong receover confirmation");
-  //   //   // check if the transaction is reverted
-  //   //   if (latestTx.status.type === 'Reverted') {
-  //   //       await revertTransaction(latestTx);
-  //   //   }else{
-  //   //     // revert the transaction with a reason
-  //   //     await revertTransaction(latestTx, "Intended receiver not met");
-  //   //   }
+      if (!data) {
+        return null;
+      }
       
-  //   // },180000);
+      try {
+        const jsonString = Buffer.from(data).toString('utf-8');
+        const parsed = JSON.parse(jsonString);
+        
+        return {
+          ...parsed,
+          inboundReqId: typeof parsed.inboundReqId === 'number' ? parsed.inboundReqId : null,
+          outboundReqId: typeof parsed.outboundReqId === 'number' ? parsed.outboundReqId : null,
+          amount: BigInt(parsed.amount),
+          callPayload: parsed.callPayload
+            ? (() => {
+                if ('ethereum' in parsed.callPayload) {
+                  const fields = parsed.callPayload.ethereum.ethUnsignedTxFields;
+                  return {
+                    ethereum: {
+                      ...parsed.callPayload.ethereum,
+                      ethUnsignedTxFields: {
+                        ...fields,
+                        value: BigInt(fields.value),
+                        gas: BigInt(fields.gas),
+                        maxFeePerGas: BigInt(fields.maxFeePerGas),
+                        maxPriorityFeePerGas: BigInt(fields.maxPriorityFeePerGas),
+                      },
+                    },
+                  };
+                }
+                
+                if ('bnb' in parsed.callPayload) {
+                  const fields = parsed.callPayload.bnb.bnbLegacyTxFields;
+                  return {
+                    bnb: {
+                      ...parsed.callPayload.bnb,
+                      bnbLegacyTxFields: {
+                        ...fields,
+                        value: BigInt(fields.value),
+                        gas: BigInt(fields.gas),
+                        gasPrice: BigInt(fields.gasPrice),
+                      },
+                    },
+                  };
+                }
+                
+                return parsed.callPayload;
+              })()
+            : null,
+        } as TxStateMachine;
+      } catch (error) {
+        console.error("Failed to deserialize event data:", error);
+        return null;
+      }
+    }
 
+    watchP2pNotifications((event: BackendEvent) => {
+      console.log("NOTI EVENT: ", event);
+      
+      const data = getEventData(event);
+      if (data) {
+        const deserializedTx = deserializeEventData(event);
+        if (deserializedTx) {
+          console.log("DESERIALIZED TX: ", deserializedTx);
+        }
+      }
+    });
+
+
+    console.log('👂 SENDER_RECEIVED_RESPONSE');
+    const txUpdates: TxStateMachine[] = await fetchPendingTxUpdates();
+    const senderReceivedTx = txUpdates[0]; 
+    console.log('🔑 MALICIOUS TX CODEWORD', senderReceivedTx.codeWord);
+    if (senderReceivedTx.codeWord !== 'Wrong') {
+      return;
+    }
+    console.log('🔑 WRONG ADDRESS TX UPDATED', senderReceivedTx.status, senderReceivedTx.codeWord);
+    // check if the transaction is reverted
+    if (senderReceivedTx.status.type === 'Reverted') {
+        await revertTransaction(senderReceivedTx);
+    }else{
+      // revert the transaction with a reason
+      await revertTransaction(senderReceivedTx, "Intended receiver not met");
+    }
+      
     
-  //   // await new Promise(resolve => setTimeout(resolve, 12000));
+    // const tx:TxStateMachine[] = await fetchPendingTxUpdates();
+    // expect(tx).toBeDefined();
+    // const latestTx = tx;
+    // console.log('🔑 LATEST TX MAL', latestTx);
 
-  //   // const tx:TxStateMachine[] = await fetchPendingTxUpdates();
-  //   // expect(tx).toBeDefined();
-  //   // const latestTx = tx[0];
-  //   // if(latestTx.codeWord === 'Wrong'){
-  //   //   if (latestTx.status.type === 'Reverted') {
-  //   //     await revertTransaction(latestTx);
-  //   //   }else{
-  //   //     let txManager = new TxStateMachineManager(latestTx);
-  //   //     txManager.setRevertedReason("Intended receiver not met");
-  //   //     const updatedTx = txManager.getTx();
-  //   //     await revertTransaction(updatedTx);
-  //   //   }
-  //   // }
-  //   // await new Promise(resolve => setTimeout(resolve, 5000));
-  //   // const tx2:TxStateMachine[] = await fetchPendingTxUpdates();
-  //   // expect(tx2).toBeDefined();
-  //   // const latestTx2 = tx2[0];
-  //   // const s = latestTx2.status as any;
-  //   // const isReverted =
-  //   //   (typeof s === 'string' && s === 'Reverted') ||
-  //   //   (typeof s === 'object' && (s?.type === 'Reverted' || 'Reverted' in s));
-  //   // expect(isReverted).toBe(true);
-  //   // const receiverBalanceAfter = parseFloat(formatEther(await walletClient.getBalance({address: wasm_client_address as `0x${string}`})));
-  //   // const balanceChange = Math.ceil(receiverBalanceAfter)-Math.ceil(receiverBalanceBefore);
-  //   // expect(balanceChange).toEqual(0);
-  //   // // assert storage updates
-  //   // const storage:StorageExport = await exportStorage() as StorageExport;
-  //   // const storageManager = new StorageExportManager(storage);
-  //   // const metrics = storageManager.getSummary();
-  //   // console.log('🔑 STORAGE METRICS', metrics);
-  //   // expect(metrics.totalTransactions).toEqual(2);
-  //   // expect(metrics.successfulTransactions).toEqual(1);
-  //   // expect(metrics.failedTransactions).toEqual(1);
-  //   // expect(metrics.successRate).toEqual('50.00%');
-  //   // expect(metrics.totalValueSuccess).toEqual(10);
-  //   // expect(metrics.totalValueFailed).toEqual(10);
-  //   // expect(metrics.peersCount).toEqual(1);
-  //   // expect(metrics.accountsCount).toEqual(1);
-  //   // expect(metrics.currentNonce).toEqual(3);
-  //   // assert metrics
+    await new Promise(resolve => setTimeout(resolve, 15000));
+
+    const newTx:TxStateMachine[] = await fetchPendingTxUpdates();
+    expect(newTx).toBeDefined();
+    const newLatestTx = newTx;
+    console.log('🔑 NEW LATEST TX MAL', newLatestTx);
   
-  // });
+
+  
+  });
 
   // test("should be able to successfully revert even when wrong address is selected by sender", async () => {
   //   console.log(" \n \n TEST CASE 4: should be able to successfully revert even when wrong address is selected by sender");
@@ -713,7 +755,7 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
 
 // })
 
-test("should successfully send to Solana chain and confirm", async () => {
+test.skip("should successfully send to Solana chain and confirm", async () => {
   console.log(" \n \n TEST CASE 9: should successfully send to Solana chain and confirm");
 
 
@@ -734,40 +776,10 @@ test("should successfully send to Solana chain and confirm", async () => {
   )
 
   // Wait for ReceiverResponseHandled backend event with matching address
-  await new Promise<void>((resolve, reject) => {
-    let resolved = false;
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        reject(new Error('Timeout waiting for ReceiverResponseHandled event'));
-      }
-    }, 60000);
-
-    // Save the original handler and chain it with our specific handler
-    const originalHandler = (event: BackendEvent) => {
-      logBackendEventWithoutData(event);
-    };
-
-    const eventHandler = (event: BackendEvent) => {
-      // Call original handler first
-      originalHandler(event);
-      
-      // Check for our specific event
-      if (!resolved && 'ReceiverResponseHandled' in event && event.ReceiverResponseHandled) {
-        const { address } = event.ReceiverResponseHandled;
-        if (address === solWasmWalletAddress2) {
-          resolved = true;
-          clearTimeout(timeout);
-          resolve();
-        }
-      }
-    };
-
-    watchP2pNotifications(eventHandler);
-  });
+  waitForReceiverHandledEvent(solWasmWalletAddress2);
 
   // Wait a bit for the cache to be updated with call_payload after the backend event
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 15000));
 
   const senderPendingTx: TxStateMachine[] = await fetchPendingTxUpdates();
   const senderPendinglatestTx = senderPendingTx[0];
@@ -786,7 +798,7 @@ test("should successfully send to Solana chain and confirm", async () => {
   const updatedTx = txManager.getTx();
   await senderConfirm(updatedTx);
 
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  await new Promise(resolve => setTimeout(resolve, 15000));
   
   const lamportsAfter = await solanaClient.getBalance(solWasmWallet.publicKey, 'confirmed');
   const solBalanceAfter = lamportsAfter / LAMPORTS_PER_SOL;

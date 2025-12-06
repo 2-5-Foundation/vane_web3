@@ -73,9 +73,9 @@ impl MainServiceWorker {
         // CHANNELS
         // ===================================================================================== //
         // for rpc messages back and forth propagation
-        let (rpc_sender_channel, rpc_recv_channel) = tokio::sync::mpsc::channel(10);
+        let (rpc_sender_channel, rpc_recv_channel) = tokio::sync::mpsc::channel(u8::MAX);
         let (user_rpc_update_sender_channel, user_rpc_update_recv_channel) =
-            tokio::sync::mpsc::channel(10);
+            tokio::sync::mpsc::channel(u8::MAX);
 
         // for p2p network commands
         let (p2p_command_tx, p2p_command_recv) = tokio::sync::mpsc::channel::<NetworkCommand>(10);
