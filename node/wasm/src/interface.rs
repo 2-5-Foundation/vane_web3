@@ -33,7 +33,7 @@ use crate::{
 
 use primitives::data_structure::{
     AccountInfo, BackendEvent, ChainSupported, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
+    StorageExport, Token, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
     UserMetrics, NetworkCommand,
 };
 
@@ -672,19 +672,6 @@ impl PublicInterfaceWorker {
         info!("Cleared finalized (reverted/submitted) transactions from cache");
     }
 
-    // this reports crucial p2p events
-    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
-        let status = NodeConnectionStatus {
-            relay_connected: true,
-            peer_id: self.p2p_worker.user_account_id.clone(),
-            relay_address: self.p2p_worker.backend_url.clone(),
-            connection_uptime_seconds: None,
-            last_connection_change: None,
-        };
-
-        serde_wasm_bindgen::to_value(&status)
-            .map_err(|e| JsError::new(&format!("Failed to serialize node status: {}", e)))
-    }
 }
 
 // =================== The interface =================== //
@@ -802,11 +789,6 @@ impl PublicInterfaceWorkerJs {
         Ok(storage_export)
     }
 
-    #[wasm_bindgen(js_name = "getNodeConnectionStatus")]
-    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
-        let status = self.inner.borrow().get_node_connection_status()?;
-        Ok(status)
-    }
     #[wasm_bindgen(js_name = "deleteTxInCache")]
     pub fn delete_tx_in_cache(&self, tx: JsValue) {
         self.inner.borrow().delete_tx_in_cache(tx);

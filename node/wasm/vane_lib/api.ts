@@ -2,7 +2,6 @@ import type {
   TxStateMachine,
   Token,
   ChainSupported,
-  NodeConnectionStatus,
   StorageExport,
   UserMetrics,
   AccountProfile,
@@ -157,15 +156,6 @@ export async function exportStorage(): Promise<StorageExport> {
 }
 
 /**
- * Get the current node connection status
- * @returns Promise that resolves to the node connection status
- */
-export async function getNodeConnection(): Promise<NodeConnectionStatus> {
-  const res = await requireWorker().getNodeConnectionStatus();
-  return res as NodeConnectionStatus;
-}
-
-/**
  * Add an account to the node
  * @param accountId - Account address/identifier
  * @param network - Network/chain the account belongs to
@@ -208,7 +198,6 @@ const VaneWeb3 = {
   unsubscribeWatchP2pNotifications,
   fetchPendingTxUpdates,
   exportStorage,
-  getNodeConnection,
   addAccount,
   clearRevertedFromCache,
   clearFinalizedFromCache,
