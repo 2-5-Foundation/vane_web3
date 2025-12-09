@@ -63,6 +63,7 @@ integration-test                        = { path = "integration-test" }
 #native-node                             = { path = "node/native" }
 wasm-node                               = { path = "node/wasm" }
 vane-relay-node                         = { path = "node/relay" }
+vane-backend                            = { path = "node/vane-backend" }
 primitives                              = { path = "primitives" }
 tokio_with_wasm                         = { version = "0.8.7",features = ["sync"]}
 # ========================================== Patch =======================================

@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 #native-node                                 = { workspace = true}
 vane-relay-node                             = { workspace = true}
+vane-backend                                = { workspace = true }
 tokio                                       = { workspace = true}
 anyhow                                      = { workspace = true}
 log                                         = { workspace = true}

@@ -9198,6 +9198,7 @@ dependencies = [
  "simple_logger",
  "simplelog",
  "tokio",
+ "vane-backend",
  "vane-relay-node",
 ]
 

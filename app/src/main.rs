@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
+use vane_backend::VaneSwarmServer;
 
 fn log_setup(live: bool) -> Result<(), anyhow::Error> {
     if live {
@@ -70,6 +71,8 @@ enum Commands {
         #[arg(long = "private-key", visible_alias = "private_key")]
         private_key: Option<String>,
     },
+    /// Run the Vane backend server
+    VaneBackend,
 }
 
 #[tokio::main]
@@ -109,6 +112,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 None
             };
             vane_relay_node::MainRelayServerService::run(dns, port, live, private_key_opt).await?;
+        }
+        Commands::VaneBackend => {
+            VaneSwarmServer::run().await?;
         }
     }
     Ok(())
