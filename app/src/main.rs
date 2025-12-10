@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 use simplelog::*;
@@ -96,7 +96,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 cli_key: &Option<String>,
                 cli_file: &Option<std::path::PathBuf>,
             ) -> anyhow::Result<String> {
-                use std::{fs, path::Path};
+                use std::fs;
                 if let Some(p) = cli_file {
                     return Ok(fs::read_to_string(p)?.trim().to_owned());
                 }

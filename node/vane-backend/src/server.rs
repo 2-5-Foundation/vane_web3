@@ -1024,6 +1024,10 @@ impl BackendRpcServer for BackendRpcHandler {
             anyhow!("failed to accept subscription")
         })?;
 
+        let server = self.swarm_server.lock().await;
+        server.metrics.record_new_client_joined().await;
+        drop(server);
+
         let mut receiver = self.event_sender.subscribe();
         info!("Subscription active for address: {}", address);
 
@@ -1291,6 +1295,7 @@ pub struct BackendEventsSummary {
     receiver_not_found_total: u64,
     active_peers: usize,
     pending_requests: usize,
+    new_clients_joined: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1326,6 +1331,7 @@ pub struct BackendMetrics {
     pub peers_removed_total: Counter,
     pub active_peers: Gauge,
     pub pending_requests: Gauge,
+    pub new_clients_joined: Counter,
 }
 
 impl BackendMetrics {
@@ -1338,6 +1344,7 @@ impl BackendMetrics {
             peers_removed_total: Counter::default(),
             active_peers: Gauge::default(),
             pending_requests: Gauge::default(),
+            new_clients_joined: Counter::default(),
         }
     }
 
@@ -1376,6 +1383,11 @@ impl BackendMetrics {
             "backend_pending_requests",
             "Current number of pending requests",
             self.pending_requests.clone(),
+        );
+        registry.register(
+            "backend_new_clients_joined",
+            "Total number of new clients that have joined",
+            self.new_clients_joined.clone(),
         );
     }
 }
@@ -1549,6 +1561,11 @@ impl MetricService {
         let metrics = self.backend_metrics.lock().await;
         metrics.pending_requests.set(count);
     }
+
+    pub async fn record_new_client_joined(&self) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.new_clients_joined.inc();
+    }
 }
 
 pub struct MetricsServer {
@@ -1595,16 +1612,18 @@ impl MetricsServer {
 async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
     let metrics_arc = service.get_backend_metrics();
     let metrics = metrics_arc.lock().await;
-    let summary = BackendEventsSummary {
-        sender_requests_total: metrics.sender_requests_total.get(),
-        receiver_responses_total: metrics.receiver_responses_total.get(),
-        receiver_not_found_total: metrics.receiver_not_found_total.get(),
-        active_peers: metrics.active_peers.get() as usize,
-        pending_requests: metrics.pending_requests.get() as usize,
-    };
     (
         StatusCode::OK,
-        Json(serde_json::json!({ "backend": summary })),
+        Json(serde_json::json!({
+            "backend": {
+                "sender_requests_total": metrics.sender_requests_total.get(),
+                "receiver_responses_total": metrics.receiver_responses_total.get(),
+                "receiver_not_found_total": metrics.receiver_not_found_total.get(),
+                "active_peers": metrics.active_peers.get() as usize,
+                "pending_requests": metrics.pending_requests.get() as usize,
+                "new_clients_joined": metrics.new_clients_joined.get(),
+            }
+        })),
     )
 }
 
