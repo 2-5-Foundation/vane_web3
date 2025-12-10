@@ -1,8 +1,9 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
+use vane_backend::VaneSwarmServer;
 
 fn log_setup(live: bool) -> Result<(), anyhow::Error> {
     if live {
@@ -70,6 +71,8 @@ enum Commands {
         #[arg(long = "private-key", visible_alias = "private_key")]
         private_key: Option<String>,
     },
+    /// Run the Vane backend server
+    VaneBackend,
 }
 
 #[tokio::main]
@@ -93,7 +96,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 cli_key: &Option<String>,
                 cli_file: &Option<std::path::PathBuf>,
             ) -> anyhow::Result<String> {
-                use std::{fs, path::Path};
+                use std::fs;
                 if let Some(p) = cli_file {
                     return Ok(fs::read_to_string(p)?.trim().to_owned());
                 }
@@ -109,6 +112,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 None
             };
             vane_relay_node::MainRelayServerService::run(dns, port, live, private_key_opt).await?;
+        }
+        Commands::VaneBackend => {
+            VaneSwarmServer::run().await?;
         }
     }
     Ok(())
