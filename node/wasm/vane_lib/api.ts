@@ -137,12 +137,12 @@ export async function watchP2pNotifications(callback: BackendEventCallback): Pro
   await requireWorker().watchP2pNotifications(callback);
 }
 
-export function unsubscribeWatchTxUpdates(): void {
-  requireWorker().unsubscribeWatchTxUpdates();
+export async function unsubscribeWatchTxUpdates(): Promise<void> {
+  await requireWorker().unsubscribeWatchTxUpdates();
 }
 
-export function unsubscribeWatchP2pNotifications(): void {
-  requireWorker().unsubscribeWatchP2pNotifications();
+export async function unsubscribeWatchP2pNotifications(): Promise<void> {
+  await requireWorker().unsubscribeWatchP2pNotifications();
 }
 
 export async function fetchPendingTxUpdates(): Promise<TxStateMachine[]> {
@@ -165,16 +165,16 @@ export async function addAccount(accountId: string, network: ChainSupported): Pr
   await requireWorker().addAccount(accountId, network);
 }
 
-export function clearRevertedFromCache(): void {
-  requireWorker().clearRevertedFromCache();
+export async function clearRevertedFromCache(): Promise<void> {
+  await requireWorker().clearRevertedFromCache();
 }
 
-export function clearFinalizedFromCache(): void {
-  requireWorker().clearFinalizedFromCache();
+export async function clearFinalizedFromCache(): Promise<void> {
+  await requireWorker().clearFinalizedFromCache();
 }
 
-export function deleteTxInCache(tx: TxStateMachine): void {
-  requireWorker().deleteTxInCache(tx);
+export async function deleteTxInCache(tx: TxStateMachine): Promise<void> {
+  await requireWorker().deleteTxInCache(tx);
 }
 
 export function getWorker(): PublicInterfaceWorkerJs | null {
