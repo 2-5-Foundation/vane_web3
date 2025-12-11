@@ -710,6 +710,7 @@ impl VaneSwarmServer {
     }
 
     pub async fn fetch_pending_transactions(&self, address: String) -> Result<Vec<TxStateMachine>> {
+        info!("Fetching pending transactions for address: {}", address);
         // try fetching from both sender and receiver requests and get the multi_ids and fetch the data from the requests
         let mut pending_transactions = Vec::new();
         if let Some(sender_requests) = self.sender_requests.get(&address) {
