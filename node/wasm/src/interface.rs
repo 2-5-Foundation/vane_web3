@@ -416,17 +416,19 @@ impl PublicInterfaceWorker {
     }
 
     /// Unsubscribe from all transaction updates (stops watcher and clears all callbacks)
-    pub fn unsubscribe_watch_tx_updates(&self) {
+    pub fn unsubscribe_watch_tx_updates(&self) -> Result<(), JsError> {
         *self.watcher_active.borrow_mut() = false;
         self.tx_callbacks.borrow_mut().clear();
         info!("Unsubscribed from all transaction updates");
+        Ok(())
     }
 
     /// Unsubscribe from all p2p notifications (stops watcher and clears all callbacks)
-    pub fn unsubscribe_watch_p2p_notifications(&self) {
+    pub fn unsubscribe_watch_p2p_notifications(&self) -> Result<(), JsError> {
         *self.p2p_watcher_active.borrow_mut() = false;
         self.p2p_callbacks.borrow_mut().clear();
         info!("Unsubscribed from all p2p notifications");
+        Ok(())
     }
 
     pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
@@ -636,7 +638,7 @@ impl PublicInterfaceWorker {
     }
 
     // Cache maintenance
-    pub fn clear_reverted_from_cache(&self) {
+    pub fn clear_reverted_from_cache(&self) -> Result<(), JsError> {
         let keys: Vec<u32> = self
             .lru_cache
             .borrow()
@@ -652,9 +654,10 @@ impl PublicInterfaceWorker {
             let _ = cache.pop(&key);
         }
         info!("Cleared reverted transactions from cache");
+        Ok(())
     }
 
-    pub fn clear_finalized_from_cache(&self) {
+    pub fn clear_finalized_from_cache(&self) -> Result<(), JsError> {
         let keys: Vec<u32> = self
             .lru_cache
             .borrow()
@@ -670,6 +673,7 @@ impl PublicInterfaceWorker {
             let _ = cache.pop(&key);
         }
         info!("Cleared finalized (reverted/submitted) transactions from cache");
+        Ok(())
     }
 
 }
@@ -733,8 +737,9 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "unsubscribeWatchTxUpdates")]
-    pub fn unsubscribe_watch_tx_updates(&self) {
-        self.inner.borrow().unsubscribe_watch_tx_updates();
+    pub fn unsubscribe_watch_tx_updates(&self) -> Result<(), JsError> {
+        self.inner.borrow().unsubscribe_watch_tx_updates()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "watchP2pNotifications")]
@@ -750,8 +755,9 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "unsubscribeWatchP2pNotifications")]
-    pub fn unsubscribe_watch_p2p_notifications(&self) {
-        self.inner.borrow().unsubscribe_watch_p2p_notifications();
+    pub fn unsubscribe_watch_p2p_notifications(&self) -> Result<(), JsError> {
+        self.inner.borrow().unsubscribe_watch_p2p_notifications()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]
@@ -790,17 +796,19 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "deleteTxInCache")]
-    pub fn delete_tx_in_cache(&self, tx: JsValue) {
-        self.inner.borrow().delete_tx_in_cache(tx);
+    pub fn delete_tx_in_cache(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().delete_tx_in_cache(tx)
     }
 
     #[wasm_bindgen(js_name = "clearRevertedFromCache")]
-    pub fn clear_reverted_from_cache(&self) {
-        self.inner.borrow().clear_reverted_from_cache();
+    pub fn clear_reverted_from_cache(&self) -> Result<(), JsError> {
+        self.inner.borrow().clear_reverted_from_cache()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "clearFinalizedFromCache")]
-    pub fn clear_finalized_from_cache(&self) {
-        self.inner.borrow().clear_finalized_from_cache();
+    pub fn clear_finalized_from_cache(&self) -> Result<(), JsError> {
+        self.inner.borrow().clear_finalized_from_cache()?;
+        Ok(())
     }
 }
