@@ -135,6 +135,7 @@ impl WasmP2pWorker {
                                     }
                                     BackendEvent::PendingTransactionsFetched { address, transactions } => {
                                         let pending_txs_msg = SwarmMessage::PendingTransactionsFetched { address,transactions };
+                                        
                                         if let Err(e) = sender.borrow_mut().send(Ok(pending_txs_msg)).await {
                                             error!(target: "p2p", "Failed to send pending transactions message: {}", e);
                                         }

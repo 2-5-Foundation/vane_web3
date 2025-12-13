@@ -419,6 +419,7 @@ impl WasmMainServiceWorker {
         };
 
         if receiver_in_profile && sender_in_profile {
+            info!(target: "MainServiceWorker", "receiver and sender are in profile");
             let mut ttl_wrapper = lru_cache
                 .borrow_mut()
                 .get(&txn.borrow().tx_nonce.into())
@@ -561,6 +562,7 @@ impl WasmMainServiceWorker {
             return Ok(());
         }
         // if the receiver is not the same user, send to p2p network
+        info!(target: "MainServiceWorker", "Sending response to relay network");
         self.p2p_network_service
             .borrow_mut()
             .wasm_send_response(txn)
