@@ -2,7 +2,6 @@ import type {
   TxStateMachine,
   Token,
   ChainSupported,
-  NodeConnectionStatus,
   StorageExport,
   UserMetrics,
   AccountProfile,
@@ -16,6 +15,7 @@ import initWasm, { start_vane_web3, PublicInterfaceWorkerJs } from "./pkg/vane_w
 import { hostLogging, LogLevel } from "./pkg/host_functions/logging";
 
 type InitOptions = {
+  sig: Uint8Array;
   relayMultiAddr: string;
   account: string;
   network: string;
@@ -41,7 +41,7 @@ async function ensureWasmInitialized(): Promise<void> {
  * @returns Promise that resolves to the initialized worker interface
  */
 export async function initializeNode(options: InitOptions): Promise<PublicInterfaceWorkerJs> {
-  const { relayMultiAddr, account, network, live = false, self_node, logLevel, storage } = options;
+  const { sig, relayMultiAddr, account, network, live = false, self_node, logLevel, storage } = options;
 
   await ensureWasmInitialized();
 
@@ -49,7 +49,7 @@ export async function initializeNode(options: InitOptions): Promise<PublicInterf
     hostLogging.setLogLevel(Number(logLevel));
   }
 
-  nodeWorker = await start_vane_web3(relayMultiAddr, account, network, self_node, live, storage);
+  nodeWorker = await start_vane_web3(sig, relayMultiAddr, account, network, self_node, live, storage);
   return nodeWorker;
 }
 
@@ -81,6 +81,7 @@ function requireWorker(): PublicInterfaceWorkerJs {
   return nodeWorker;
 }
 
+
 export function isInitialized(): boolean {
   return nodeWorker !== null;
 }
@@ -97,6 +98,7 @@ export function isInitialized(): boolean {
  * @returns Promise that resolves to the transaction state machine
  */
 export async function initiateTransaction(
+  sig: Uint8Array,
   sender: string,
   receiver: string,
   amount: Amount,
@@ -107,6 +109,7 @@ export async function initiateTransaction(
 ): Promise<TxStateMachine> {
   const amt = typeof amount === "bigint" ? amount : BigInt(amount);
   const res = await requireWorker().initiateTransaction(
+    sig,
     sender,
     receiver,
     amt,
@@ -118,16 +121,25 @@ export async function initiateTransaction(
   return res as TxStateMachine;
 }
 
-export async function senderConfirm(tx: TxStateMachine): Promise<void> {
-  await requireWorker().senderConfirm(tx);
+export async function senderConfirm(sig: Uint8Array, tx: TxStateMachine): Promise<void> {
+  await requireWorker().senderConfirm(sig,tx);
 }
 
-export async function receiverConfirm(tx: TxStateMachine): Promise<void> {
-  await requireWorker().receiverConfirm(tx);
+export async function receiverConfirm(sig: Uint8Array, tx: TxStateMachine): Promise<void> {
+  await requireWorker().receiverConfirm(sig,tx);
 }
 
-export async function revertTransaction(tx: TxStateMachine, reason?: RevertReason): Promise<void> {
-  await requireWorker().revertTransaction(tx, reason ?? null);
+/**
+ * Verify transaction call payload integrity
+ * @param tx - Transaction state machine to verify
+ * @returns Promise that resolves when verification succeeds, rejects on failure
+ */
+export async function verifyTxCallPayload(tx: TxStateMachine): Promise<void> {
+  await requireWorker().verifyTxCallPayload(tx);
+}
+
+export async function revertTransaction(sig: Uint8Array, tx: TxStateMachine, reason?: RevertReason): Promise<void> {
+  await requireWorker().revertTransaction(sig, tx, reason ?? null);
 }
 
 export async function watchTxUpdates(callback: TxUpdateCallback): Promise<void> {
@@ -138,31 +150,22 @@ export async function watchP2pNotifications(callback: BackendEventCallback): Pro
   await requireWorker().watchP2pNotifications(callback);
 }
 
-export function unsubscribeWatchTxUpdates(): void {
-  requireWorker().unsubscribeWatchTxUpdates();
+export async function unsubscribeWatchTxUpdates(): Promise<void> {
+  await requireWorker().unsubscribeWatchTxUpdates();
 }
 
-export function unsubscribeWatchP2pNotifications(): void {
-  requireWorker().unsubscribeWatchP2pNotifications();
+export async function unsubscribeWatchP2pNotifications(): Promise<void> {
+  await requireWorker().unsubscribeWatchP2pNotifications();
 }
 
-export async function fetchPendingTxUpdates(): Promise<TxStateMachine[]> {
-  const res = await requireWorker().fetchPendingTxUpdates();
+export async function fetchPendingTxUpdates(sig: Uint8Array): Promise<TxStateMachine[]> {
+  const res = await requireWorker().fetchPendingTxUpdates(sig);
   return res as TxStateMachine[];
 }
 
 export async function exportStorage(): Promise<StorageExport> {
   const res = await requireWorker().exportStorage();
   return res as StorageExport;
-}
-
-/**
- * Get the current node connection status
- * @returns Promise that resolves to the node connection status
- */
-export async function getNodeConnection(): Promise<NodeConnectionStatus> {
-  const res = await requireWorker().getNodeConnectionStatus();
-  return res as NodeConnectionStatus;
 }
 
 /**
@@ -175,18 +178,33 @@ export async function addAccount(accountId: string, network: ChainSupported): Pr
   await requireWorker().addAccount(accountId, network);
 }
 
-export function clearRevertedFromCache(): void {
-  requireWorker().clearRevertedFromCache();
+export async function clearRevertedFromCache(): Promise<void> {
+  await requireWorker().clearRevertedFromCache();
 }
 
-export function clearFinalizedFromCache(): void {
-  requireWorker().clearFinalizedFromCache();
+export async function clearFinalizedFromCache(): Promise<void> {
+  await requireWorker().clearFinalizedFromCache();
 }
 
-export function deleteTxInCache(tx: TxStateMachine): void {
-  requireWorker().deleteTxInCache(tx);
+export async function clearCache(): Promise<void> {
+  await requireWorker().clearCache();
 }
 
+export async function deleteTxInCache(tx: TxStateMachine): Promise<void> {
+  await requireWorker().deleteTxInCache(tx);
+}
+
+export async function resetNode(): Promise<void> {
+  const w = nodeWorker;
+  nodeWorker = null; // 🔑 detach immediately, no matter what
+
+  if (!w) return;
+
+  // Best-effort cleanup — MUST NOT throw
+  try { await w.unsubscribeWatchTxUpdates(); } catch {}
+  try { await w.unsubscribeWatchP2pNotifications(); } catch {}
+  try { await w.clearCache(); } catch {}
+}
 export function getWorker(): PublicInterfaceWorkerJs | null {
   return nodeWorker;
 }
@@ -201,6 +219,7 @@ const VaneWeb3 = {
   initiateTransaction,
   senderConfirm,
   receiverConfirm,
+  verifyTxCallPayload,
   revertTransaction,
   watchTxUpdates,
   watchP2pNotifications,
@@ -208,7 +227,6 @@ const VaneWeb3 = {
   unsubscribeWatchP2pNotifications,
   fetchPendingTxUpdates,
   exportStorage,
-  getNodeConnection,
   addAccount,
   clearRevertedFromCache,
   clearFinalizedFromCache,

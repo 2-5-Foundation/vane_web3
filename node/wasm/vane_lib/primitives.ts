@@ -616,6 +616,21 @@ export interface TxStateMachine {
     receiverAddressNetwork: ChainSupported;
 }
 
+const textDecoder = new TextDecoder();
+
+function normalizeAmount(amount: number | string | bigint): bigint {
+    if (typeof amount === "bigint") return amount;
+    if (typeof amount === "string") return BigInt(amount);
+    return BigInt(amount);
+}
+
+export function decodeTxStateMachine(data: Uint8Array | number[]): TxStateMachine {
+    const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data);
+    const json = textDecoder.decode(bytes);
+    const parsed = JSON.parse(json) as TxStateMachine & { amount: number | string | bigint };
+    return { ...parsed, amount: normalizeAmount(parsed.amount) };
+}
+
 export class TxStateMachineManager {
     private tx: TxStateMachine;
    

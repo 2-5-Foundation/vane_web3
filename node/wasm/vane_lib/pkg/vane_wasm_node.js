@@ -203,7 +203,15 @@ function debugString(val) {
     // TODO we could test for more things here, like `Set`s and `Map`s.
     return className;
 }
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
 /**
+ * @param {Uint8Array} sig
  * @param {string} relay_node_multi_addr
  * @param {string} account
  * @param {string} network
@@ -212,14 +220,16 @@ function debugString(val) {
  * @param {any} storage
  * @returns {Promise<PublicInterfaceWorkerJs>}
  */
-export function start_vane_web3(relay_node_multi_addr, account, network, self_node, live, storage) {
-    const ptr0 = passStringToWasm0(relay_node_multi_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function start_vane_web3(sig, relay_node_multi_addr, account, network, self_node, live, storage) {
+    const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(account, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr1 = passStringToWasm0(relay_node_multi_addr, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(network, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr2 = passStringToWasm0(account, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.start_vane_web3(ptr0, len0, ptr1, len1, ptr2, len2, self_node, live, storage);
+    const ptr3 = passStringToWasm0(network, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.start_vane_web3(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, self_node, live, storage);
     return ret;
 }
 
@@ -228,28 +238,28 @@ function takeFromExternrefTable0(idx) {
     wasm.__externref_table_dealloc(idx);
     return value;
 }
-function __wbg_adapter_58(arg0, arg1, arg2) {
-    wasm.closure565_externref_shim(arg0, arg1, arg2);
+function __wbg_adapter_54(arg0, arg1, arg2) {
+    wasm.closure530_externref_shim(arg0, arg1, arg2);
 }
 
-function __wbg_adapter_63(arg0, arg1) {
+function __wbg_adapter_59(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1a79a3c1169870fb(arg0, arg1);
 }
 
-function __wbg_adapter_68(arg0, arg1) {
+function __wbg_adapter_64(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hff5c85c2ca770dbc(arg0, arg1);
 }
 
-function __wbg_adapter_71(arg0, arg1, arg2) {
-    wasm.closure767_externref_shim(arg0, arg1, arg2);
+function __wbg_adapter_67(arg0, arg1, arg2) {
+    wasm.closure731_externref_shim(arg0, arg1, arg2);
 }
 
-function __wbg_adapter_74(arg0, arg1) {
+function __wbg_adapter_70(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h7876d40aeac1bca2(arg0, arg1);
 }
 
-function __wbg_adapter_205(arg0, arg1, arg2, arg3) {
-    wasm.closure848_externref_shim(arg0, arg1, arg2, arg3);
+function __wbg_adapter_200(arg0, arg1, arg2, arg3) {
+    wasm.closure812_externref_shim(arg0, arg1, arg2, arg3);
 }
 
 const __wbindgen_enum_BinaryType = ["blob", "arraybuffer"];
@@ -280,6 +290,7 @@ export class PublicInterfaceWorkerJs {
         wasm.__wbg_publicinterfaceworkerjs_free(ptr, 0);
     }
     /**
+     * @param {Uint8Array} sig
      * @param {string} sender
      * @param {string} receiver
      * @param {bigint} amount
@@ -289,22 +300,27 @@ export class PublicInterfaceWorkerJs {
      * @param {any} receiver_network
      * @returns {Promise<any>}
      */
-    initiateTransaction(sender, receiver, amount, token, code_word, sender_network, receiver_network) {
-        const ptr0 = passStringToWasm0(sender, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    initiateTransaction(sig, sender, receiver, amount, token, code_word, sender_network, receiver_network) {
+        const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(receiver, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(sender, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(code_word, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr2 = passStringToWasm0(receiver, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.publicinterfaceworkerjs_initiateTransaction(this.__wbg_ptr, ptr0, len0, ptr1, len1, amount, amount >> BigInt(64), token, ptr2, len2, sender_network, receiver_network);
+        const ptr3 = passStringToWasm0(code_word, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.publicinterfaceworkerjs_initiateTransaction(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, amount, amount >> BigInt(64), token, ptr3, len3, sender_network, receiver_network);
         return ret;
     }
     /**
+     * @param {Uint8Array} sig
      * @param {any} tx
      * @returns {Promise<void>}
      */
-    senderConfirm(tx) {
-        const ret = wasm.publicinterfaceworkerjs_senderConfirm(this.__wbg_ptr, tx);
+    senderConfirm(sig, tx) {
+        const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.publicinterfaceworkerjs_senderConfirm(this.__wbg_ptr, ptr0, len0, tx);
         return ret;
     }
     /**
@@ -316,7 +332,10 @@ export class PublicInterfaceWorkerJs {
         return ret;
     }
     unsubscribeWatchTxUpdates() {
-        wasm.publicinterfaceworkerjs_unsubscribeWatchTxUpdates(this.__wbg_ptr);
+        const ret = wasm.publicinterfaceworkerjs_unsubscribeWatchTxUpdates(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * @param {Function} callback
@@ -327,13 +346,19 @@ export class PublicInterfaceWorkerJs {
         return ret;
     }
     unsubscribeWatchP2pNotifications() {
-        wasm.publicinterfaceworkerjs_unsubscribeWatchP2pNotifications(this.__wbg_ptr);
+        const ret = wasm.publicinterfaceworkerjs_unsubscribeWatchP2pNotifications(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
+     * @param {Uint8Array} sig
      * @returns {Promise<any>}
      */
-    fetchPendingTxUpdates() {
-        const ret = wasm.publicinterfaceworkerjs_fetchPendingTxUpdates(this.__wbg_ptr);
+    fetchPendingTxUpdates(sig) {
+        const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.publicinterfaceworkerjs_fetchPendingTxUpdates(this.__wbg_ptr, ptr0, len0);
         return ret;
     }
     /**
@@ -348,22 +373,36 @@ export class PublicInterfaceWorkerJs {
         return ret;
     }
     /**
+     * @param {Uint8Array} sig
      * @param {any} tx
      * @returns {Promise<void>}
      */
-    receiverConfirm(tx) {
-        const ret = wasm.publicinterfaceworkerjs_receiverConfirm(this.__wbg_ptr, tx);
+    receiverConfirm(sig, tx) {
+        const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.publicinterfaceworkerjs_receiverConfirm(this.__wbg_ptr, ptr0, len0, tx);
         return ret;
     }
     /**
      * @param {any} tx
+     * @returns {Promise<void>}
+     */
+    verifyTxCallPayload(tx) {
+        const ret = wasm.publicinterfaceworkerjs_verifyTxCallPayload(this.__wbg_ptr, tx);
+        return ret;
+    }
+    /**
+     * @param {Uint8Array} sig
+     * @param {any} tx
      * @param {string | null} [reason]
      * @returns {Promise<void>}
      */
-    revertTransaction(tx, reason) {
-        var ptr0 = isLikeNone(reason) ? 0 : passStringToWasm0(reason, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len0 = WASM_VECTOR_LEN;
-        const ret = wasm.publicinterfaceworkerjs_revertTransaction(this.__wbg_ptr, tx, ptr0, len0);
+    revertTransaction(sig, tx, reason) {
+        const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(reason) ? 0 : passStringToWasm0(reason, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.publicinterfaceworkerjs_revertTransaction(this.__wbg_ptr, ptr0, len0, tx, ptr1, len1);
         return ret;
     }
     /**
@@ -374,26 +413,31 @@ export class PublicInterfaceWorkerJs {
         return ret;
     }
     /**
-     * @returns {any}
-     */
-    getNodeConnectionStatus() {
-        const ret = wasm.publicinterfaceworkerjs_getNodeConnectionStatus(this.__wbg_ptr);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
      * @param {any} tx
      */
     deleteTxInCache(tx) {
-        wasm.publicinterfaceworkerjs_deleteTxInCache(this.__wbg_ptr, tx);
+        const ret = wasm.publicinterfaceworkerjs_deleteTxInCache(this.__wbg_ptr, tx);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     clearRevertedFromCache() {
-        wasm.publicinterfaceworkerjs_clearRevertedFromCache(this.__wbg_ptr);
+        const ret = wasm.publicinterfaceworkerjs_clearRevertedFromCache(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     clearFinalizedFromCache() {
-        wasm.publicinterfaceworkerjs_clearFinalizedFromCache(this.__wbg_ptr);
+        const ret = wasm.publicinterfaceworkerjs_clearFinalizedFromCache(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    clearCache() {
+        const ret = wasm.publicinterfaceworkerjs_clearCache(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
 }
 
@@ -512,10 +556,6 @@ function __wbg_get_imports() {
         const ret = arg0.code;
         return ret;
     };
-    imports.wbg.__wbg_createTx_a7eace7b111acf96 = function() { return handleError(function (arg0) {
-        const ret = hostFunctions.hostNetworking.createTx(arg0);
-        return ret;
-    }, arguments) };
     imports.wbg.__wbg_data_432d9c3df2630942 = function(arg0) {
         const ret = arg0.data;
         return ret;
@@ -633,7 +673,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_205(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_200(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -803,10 +843,6 @@ function __wbg_get_imports() {
         const ret = arg0;
         return ret;
     };
-    imports.wbg.__wbindgen_bigint_from_u128 = function(arg0, arg1) {
-        const ret = BigInt.asUintN(64, arg0) << BigInt(64) | BigInt.asUintN(64, arg1);
-        return ret;
-    };
     imports.wbg.__wbindgen_bigint_from_u64 = function(arg0) {
         const ret = BigInt.asUintN(64, arg0);
         return ret;
@@ -831,32 +867,32 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper1586 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 566, __wbg_adapter_58);
+    imports.wbg.__wbindgen_closure_wrapper1487 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 531, __wbg_adapter_54);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper1588 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 566, __wbg_adapter_58);
+    imports.wbg.__wbindgen_closure_wrapper1489 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 531, __wbg_adapter_54);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper1590 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 566, __wbg_adapter_63);
+    imports.wbg.__wbindgen_closure_wrapper1491 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 531, __wbg_adapter_59);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper1592 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 566, __wbg_adapter_58);
+    imports.wbg.__wbindgen_closure_wrapper1493 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 531, __wbg_adapter_54);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper2026 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 661, __wbg_adapter_68);
+    imports.wbg.__wbindgen_closure_wrapper1927 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 626, __wbg_adapter_64);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3167 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 768, __wbg_adapter_71);
+    imports.wbg.__wbindgen_closure_wrapper3053 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 732, __wbg_adapter_67);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper3186 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 779, __wbg_adapter_74);
+    imports.wbg.__wbindgen_closure_wrapper3072 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 743, __wbg_adapter_70);
         return ret;
     };
     imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
@@ -929,10 +965,6 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbindgen_number_new = function(arg0) {
         const ret = arg0;
-        return ret;
-    };
-    imports.wbg.__wbindgen_shr = function(arg0, arg1) {
-        const ret = arg0 >> arg1;
         return ret;
     };
     imports.wbg.__wbindgen_string_get = function(arg0, arg1) {

@@ -437,8 +437,6 @@ describe('WASM NODE & RELAY NODE INTERACTIONS (Sender)', () => {
     const newLatestTx = newTx;
     console.log('🔑 NEW LATEST TX MAL', newLatestTx);
   
-
-  
   });
 
   // test("should be able to successfully revert even when wrong address is selected by sender", async () => {

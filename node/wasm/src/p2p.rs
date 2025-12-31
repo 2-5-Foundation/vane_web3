@@ -1,5 +1,3 @@
-
-
 use alloc::{format, rc::Rc, string::String};
 use core::cell::RefCell;
 
@@ -8,14 +6,15 @@ use futures::FutureExt;
 use futures::StreamExt;
 use gloo_timers::future::TimeoutFuture;
 
-
-use jsonrpsee::wasm_client::{Client, WasmClientBuilder};
 use jsonrpsee::core::client::{ClientT, SubscriptionClientT};
 use jsonrpsee::core::rpc_params;
+use jsonrpsee::wasm_client::{Client, WasmClientBuilder};
 use log::{debug, error, info, trace, warn};
 use serde_json;
 
-use primitives::data_structure::{BackendEvent, NetworkCommand, SwarmMessage, TxStateMachine};
+use primitives::data_structure::{
+    BackendEvent, NetworkCommand, SignatureType, SwarmMessage, TxStateMachine, VanePayload,
+};
 
 #[derive(Clone)]
 pub struct P2pEventNotifSubSystem {
@@ -68,266 +67,277 @@ impl WasmP2pWorker {
 
     pub async fn start(
         &self,
+        sig: SignatureType,
         sender_channel: Rc<
             RefCell<tokio_with_wasm::alias::sync::mpsc::Sender<Result<SwarmMessage, Error>>>,
         >,
     ) -> Result<(), Error> {
-        let jsonrpc_client = WasmClientBuilder::default()
-            .build(&self.backend_url)
-            .await
-            .map_err(|e| anyhow!("Failed to create JSON-RPC client: {}", e))?;
-
-        info!(target: "p2p", "Connected to backend at: {}", self.backend_url);
-
         let user_account_id = self.user_account_id.clone();
         let p2p_event_notif = self.p2p_event_notif_sub_system.clone();
-        let self_clone = self.clone();
         let sender = sender_channel.clone();
         let p2p_command_recv = self.wasm_p2p_command_recv.clone();
-
-        let mut subscription: jsonrpsee::core::client::Subscription<BackendEvent> = jsonrpc_client
-            .subscribe(
-                "subscribeToEvents",
-                rpc_params![user_account_id.clone()],
-                "unsubscribe_subscribeToEvents",
-            )
-            .await
-            .map_err(|e| anyhow!("Failed to subscribe to events: {}", e))?;
-
-        info!(target: "p2p", "Subscribed to backend events for address: {}", user_account_id);
-
-        let client = Rc::new(jsonrpc_client);
-        let client_clone = client.clone();
+        let backend_url = self.backend_url.clone();
 
         wasm_bindgen_futures::spawn_local(async move {
             loop {
-                let mut p2p_command_recv = p2p_command_recv.borrow_mut();
+                // Try to connect
+                let jsonrpc_client = match WasmClientBuilder::default().build(&backend_url).await {
+                    Ok(client) => {
+                        info!(target: "p2p", "Connected to backend at: {}", backend_url);
+                        client
+                    }
+                    Err(e) => {
+                        error!(target: "p2p", "Failed to create JSON-RPC client: {}. Retrying in 1s", e);
+                        TimeoutFuture::new(1000).await;
+                        continue;
+                    }
+                };
 
-                futures::select! {
-                    event_result = subscription.next().fuse() => {
-                        match event_result {
-                            Some(Ok(event)) => {
-
-                                if let Err(e) = p2p_event_notif.sender.borrow_mut().send(event.clone()).await {
-                                    error!(target: "p2p", "Failed to send backend event: {}", e);
-                                }
-
-                                match event {
-                                    BackendEvent::SenderRequestHandled { address: _, data } => {
-                                        if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
-                                            if tx_state.receiver_address == user_account_id {
-                                                let req_msg = SwarmMessage::WasmRequest { data: tx_state };
-                                                if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
-                                                    error!(target: "p2p", "Failed to send request message: {}", e);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    BackendEvent::ReceiverResponseHandled { address: _, data } => {
-                                        if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
-                                            if tx_state.sender_address == user_account_id {
-                                                let resp_msg = SwarmMessage::WasmResponse { data: tx_state };
-                                                if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
-                                                    error!(target: "p2p", "Failed to send response message: {}", e);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    BackendEvent::PendingTransactionsFetched { address, transactions } => {
-                                        let pending_txs_msg = SwarmMessage::PendingTransactionsFetched { address,transactions };
-                                        if let Err(e) = sender.borrow_mut().send(Ok(pending_txs_msg)).await {
-                                            error!(target: "p2p", "Failed to send pending transactions message: {}", e);
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Some(Err(e)) => {
-                                error!(target: "p2p", "Error receiving event from subscription: {}", e);
-                                TimeoutFuture::new(1000).await;
-                            }
-                            None => {
-                                warn!(target: "p2p", "Event subscription ended");
-                                break;
-                            }
+                // Try to subscribe
+                let mut subscription: jsonrpsee::core::client::Subscription<BackendEvent> =
+                    match jsonrpc_client
+                        .subscribe(
+                            "subscribeToEvents",
+                            rpc_params![user_account_id.clone(), sig.clone()],
+                            "unsubscribe_subscribeToEvents",
+                        )
+                        .await
+                    {
+                        Ok(sub) => {
+                            info!(target: "p2p", "Subscribed to backend events for address: {}", user_account_id);
+                            sub
                         }
-                    },
-                    cmd = p2p_command_recv.recv().fuse() => {
-                        match cmd {
-                            Some(NetworkCommand::WasmSendRequest { request }) => {
-                                let client = client_clone.clone();
-                                let address = request.sender_address.clone();
-                                let data = match serde_json::to_vec(&request) {
-                                    Ok(data) => data,
-                                    Err(e) => {
-                                        error!(target: "p2p", "Failed to serialize request: {}", e);
-                                        continue;
-                                    }
-                                };
+                        Err(e) => {
+                            error!(target: "p2p", "Failed to subscribe to events: {}. Retrying in 1s", e);
+                            TimeoutFuture::new(1000).await;
+                            continue;
+                        }
+                    };
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>(
-                                            "handleSenderRequest",
-                                            rpc_params![address.clone(), data],
-                                        )
-                                                    .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully sent sender request for address: {}", address);
-                                        }
-                                        Err(e) => {
-                                            error!(target: "p2p", "Failed to send sender request: {}", e);
-                                        }
-                                    }
-                                });
-                            }
-                            Some(NetworkCommand::WasmSendResponse { response }) => {
-                                let client = client_clone.clone();
-                                match response {
-                                    Ok(tx_state) => {
-                                        let address = tx_state.receiver_address.clone();
-                                        let data = match serde_json::to_vec(&tx_state) {
-                                            Ok(data) => data,
-                                            Err(e) => {
-                                                error!(target: "p2p", "Failed to serialize response: {}", e);
-                                                continue;
-                                            }
-                                        };
+                let client = Rc::new(jsonrpc_client);
+                let client_clone = client.clone();
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                            match client
-                                                .request::<(), _>(
-                                                    "handleReceiverResponse",
-                                                rpc_params![address.clone(), data],
-                                                )
-                                                    .await
-                                            {
-                                                Ok(_) => {
-                                                    info!(target: "p2p", "Successfully sent receiver response for address: {}", address);
-                                                }
-                                                Err(e) => {
-                                                    error!(target: "p2p", "Failed to send receiver response: {}", e);
+                // Per-connection loop
+                loop {
+                    let mut p2p_command_recv = p2p_command_recv.borrow_mut();
+
+                    futures::select! {
+                        event_result = subscription.next().fuse() => {
+                            match event_result {
+                                Some(Ok(event)) => {
+
+                                    if let Err(e) = p2p_event_notif.sender.borrow_mut().send(event.clone()).await {
+                                        error!(target: "p2p", "Failed to send backend event: {}", e);
+                                    }
+
+                                    match event {
+                                        BackendEvent::SenderRequestHandled { address: _, data } => {
+                                            if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
+                                                if tx_state.receiver_address == user_account_id {
+                                                    let req_msg = SwarmMessage::WasmRequest { data: tx_state };
+                                                    if let Err(e) = sender.borrow_mut().send(Ok(req_msg)).await {
+                                                        error!(target: "p2p", "Failed to send request message: {}", e);
+                                                    }
                                                 }
                                             }
-                                        });
-                                    }
-                                    Err(e) => {
-                                        error!(target: "p2p", "Response error: {}", e);
+                                        }
+
+                                        BackendEvent::ReceiverResponseHandled { address: _, data } => {
+                                            if let Ok(tx_state) = serde_json::from_slice::<TxStateMachine>(&data) {
+                                                if tx_state.sender_address == user_account_id {
+                                                    let resp_msg = SwarmMessage::WasmResponse { data: tx_state };
+                                                    if let Err(e) = sender.borrow_mut().send(Ok(resp_msg)).await {
+                                                        error!(target: "p2p", "Failed to send response message: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        BackendEvent::PendingTransactionsFetched { address, transactions } => {
+                                            let pending_txs_msg = SwarmMessage::PendingTransactionsFetched { address,transactions };
+
+                                            if let Err(e) = sender.borrow_mut().send(Ok(pending_txs_msg)).await {
+                                                error!(target: "p2p", "Failed to send pending transactions message: {}", e);
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
+                                Some(Err(e)) => {
+                                    error!(target: "p2p", "Error receiving event from subscription: {}", e);
+                                    break;
+                                }
+                                None => {
+                                    warn!(target: "p2p", "Event subscription ended");
+                                    break;
+                                }
                             }
-                            Some(NetworkCommand::FetchPendingTransactions { account_id }) => {
-                                let client = client_clone.clone();
-                                let account_id_clone = account_id.clone();
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>("fetchPendingTransactions", rpc_params![account_id_clone])
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully fetched pending transactions");
-                                        }
+                        },
+                        cmd = p2p_command_recv.recv().fuse() => {
+                            match cmd {
+                                Some(NetworkCommand::WasmSendRequest { request }) => {
+                                    let client = client_clone.clone();
+                                    let sig = request.extra_data.clone();
+                                    let data = request.data.clone();
+                                    let address = data.sender_address.clone();
+                                    let data = match serde_json::to_vec(&data) {
+                                        Ok(data) => data,
                                         Err(e) => {
-                                            error!(target: "p2p", "Failed to fetch pending transactions: {}", e);
-                                        }   
-                                    }
-                                });
-                            }   
-                            Some(NetworkCommand::ConfirmTransaction { account_id, data }) => {
-                                let client = client_clone.clone();
-                                let account_id_clone = account_id.clone();
-                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+                                            error!(target: "p2p", "Failed to serialize request: {}", e);
+                                            continue;
+                                        }
+                                    };
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>(
-                                            "handleSenderConfirmation",
-                                            rpc_params![account_id_clone, data_bytes],
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully sent sender confirmation");
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        match client
+                                            .request::<(), _>(
+                                                "handleSenderRequest",
+                                                rpc_params![sig, address.clone(), data],
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "p2p", "Successfully sent sender request for address: {}", address);
+                                            }
+                                            Err(e) => {
+                                                error!(target: "p2p", "Failed to send sender request: {}", e);
+                                            }
                                         }
-                                        Err(e) => {
-                                            error!(target: "p2p", "Failed to send sender confirmation: {}", e);
-                                        }
-                                    }
-                                });
-                            }
-                            Some(NetworkCommand::TxSubmissionUpdate { account_id, data }) => {
-                                let client = client_clone.clone();
-                                let account_id_clone = account_id.clone();
-                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+                                    });
+                                }
+                                Some(NetworkCommand::WasmSendResponse { response }) => {
+                                    let client = client_clone.clone();
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>(
-                                            "handleTxSubmissionUpdates",
-                                            rpc_params![account_id_clone, data_bytes],
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully tx submission update");
-                                        }
-                                        Err(e) => {
-                                            error!(target: "p2p", "Failed tx submission update: {}", e);
-                                        }
-                                    }
-                                });
-                            }
-                            Some(NetworkCommand::Close { account_id, data }) => {
-                                let client = client_clone.clone();
-                                let account_id_clone = account_id.clone();
-                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+                                    match response {
+                                        Ok(vane_payload) => {
+                                            let tx_state = vane_payload.data.clone();
+                                            let sig = vane_payload.extra_data.clone();
+                                            let address = tx_state.receiver_address.clone();
+                                            let data = match serde_json::to_vec(&tx_state) {
+                                                Ok(data) => data,
+                                                Err(e) => {
+                                                    error!(target: "p2p", "Failed to serialize response: {}", e);
+                                                    continue;
+                                                }
+                                            };
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>(
-                                            "disconnectPeer",
-                                            rpc_params![account_id_clone, data_bytes],
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully disconnected from peer");
+                                            wasm_bindgen_futures::spawn_local(async move {
+                                                match client
+                                                    .request::<(), _>(
+                                                        "handleReceiverResponse",
+                                                        rpc_params![sig, address.clone(), data],
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(_) => {
+                                                        info!(target: "p2p", "Successfully sent receiver response for address: {}", address);
+                                                    }
+                                                    Err(e) => {
+                                                        error!(target: "p2p", "Failed to send receiver response: {}", e);
+                                                    }
+                                                }
+                                            });
                                         }
                                         Err(e) => {
-                                            error!(target: "p2p", "Failed to disconnect from peer: {}", e);
+                                            error!(target: "p2p", "Response error: {}", e);
                                         }
                                     }
-                                });
-                            }
-                            Some(NetworkCommand::RevertTransaction { account_id, data }) => {
-                                let client = client_clone.clone();
-                                let account_id_clone = account_id.clone();
-                                let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+                                }
+                                Some(NetworkCommand::FetchPendingTransactions { sig, account_id }) => {
+                                    let client = client_clone.clone();
+                                    let account_id_clone = account_id.clone();
 
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    match client
-                                        .request::<(), _>(
-                                            "handleSenderRevertation",
-                                            rpc_params![account_id_clone, data_bytes],
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "p2p", "Successfully updating sender revertation");
+                                    wasm_bindgen_futures::spawn_local(async move {
+
+                                        match client
+                                            .request::<(), _>("fetchPendingTransactions", rpc_params![sig, account_id_clone])
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "p2p", "Successfully fetched pending transactions");
+                                            }
+                                            Err(e) => {
+                                                error!(target: "p2p", "Failed to fetch pending transactions: {}", e);
+                                            }
                                         }
-                                        Err(e) => {
-                                            error!(target: "p2p", "Failed to sender revertation: {}", e);
+                                    });
+                                }
+                                Some(NetworkCommand::ConfirmTransaction { sig, account_id, data }) => {
+                                    let client = client_clone.clone();
+                                    let account_id_clone = account_id.clone();
+                                    let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        match client
+                                            .request::<(), _>(
+                                                "handleSenderConfirmation",
+                                                rpc_params![sig, account_id_clone, data_bytes],
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "p2p", "Successfully sent sender confirmation");
+                                            }
+                                            Err(e) => {
+                                                error!(target: "p2p", "Failed to send sender confirmation: {}", e);
+                                            }
                                         }
-                                    }
-                                });
-                            }
-                            _ => {
-                                debug!(target: "p2p", "Unhandled network command");
+                                    });
+                                }
+                                Some(NetworkCommand::TxSubmissionUpdate { sig, account_id, data }) => {
+                                    let client = client_clone.clone();
+                                    let account_id_clone = account_id.clone();
+                                    let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        match client
+                                            .request::<(), _>(
+                                                "handleTxSubmissionUpdates",
+                                                rpc_params![sig, account_id_clone, data_bytes],
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "p2p", "Successfully tx submission update");
+                                            }
+                                            Err(e) => {
+                                                error!(target: "p2p", "Failed tx submission update: {}", e);
+                                            }
+                                        }
+                                    });
+                                }
+                                Some(NetworkCommand::RevertTransaction { sig, account_id, data }) => {
+                                    let client = client_clone.clone();
+                                    let account_id_clone = account_id.clone();
+                                    let data_bytes = serde_json::to_vec(&data).unwrap_or_default();
+
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        match client
+                                            .request::<(), _>(
+                                                "handleSenderRevertation",
+                                                rpc_params![sig, account_id_clone, data_bytes],
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "p2p", "Successfully updating sender revertation");
+                                            }
+                                            Err(e) => {
+                                                error!(target: "p2p", "Failed to sender revertation: {}", e);
+                                            }
+                                        }
+                                    });
+                                }
+                                _ => {
+                                    debug!(target: "p2p", "Unhandled network command");
+                                }
                             }
                         }
                     }
                 }
+
+                // If we reach here, connection/subscription died; retry
+                warn!(target: "p2p", "Disconnected from backend, retrying in 1s");
+                TimeoutFuture::new(1000).await;
             }
         });
 
@@ -349,7 +359,7 @@ impl P2pNetworkService {
 
     pub async fn wasm_send_request(
         &mut self,
-        request: Rc<RefCell<TxStateMachine>>,
+        request: Rc<RefCell<VanePayload<TxStateMachine, SignatureType>>>,
     ) -> Result<(), Error> {
         let req = request.borrow().clone();
 
@@ -366,7 +376,7 @@ impl P2pNetworkService {
 
     pub async fn wasm_send_response(
         &mut self,
-        response: Rc<RefCell<TxStateMachine>>,
+        response: Rc<RefCell<VanePayload<TxStateMachine, SignatureType>>>,
     ) -> Result<(), anyhow::Error> {
         let txn_state = response.borrow().clone();
 

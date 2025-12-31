@@ -32,9 +32,9 @@ use crate::{
 };
 
 use primitives::data_structure::{
-    AccountInfo, BackendEvent, ChainSupported, DbTxStateMachine, DbWorkerInterface,
-    NodeConnectionStatus, StorageExport, Token, TtlWrapper, TxStateMachine, TxStatus, UserAccount,
-    UserMetrics, NetworkCommand,
+    AccountInfo, BackendEvent, ChainSupported, ChainTransactionType, DbTxStateMachine,
+    DbWorkerInterface, NetworkCommand, SignatureType, StorageExport, Token, TtlWrapper,
+    TxStateMachine, TxStateMachineLike, TxStatus, UserAccount, UserMetrics, VanePayload,
 };
 
 #[derive(Clone)]
@@ -48,7 +48,8 @@ pub struct PublicInterfaceWorker {
     /// receiving end of transaction which will be polled in websocket , updating state of tx to end user
     pub rpc_receiver_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
     /// sender channel when user updates the transaction state, propagating to main service worker
-    pub user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
+    pub user_rpc_update_sender_channel:
+        Rc<RefCell<Sender<VanePayload<TxStateMachine, SignatureType>>>>,
     // txn_counter
     // HashMap<txn_counter,Integrity hash>
     pub tx_integrity: Rc<RefCell<HashMap<u32, [u8; 32]>>>,
@@ -73,7 +74,9 @@ impl PublicInterfaceWorker {
         p2p_worker: Rc<WasmP2pWorker>,
         p2p_network_service: Rc<P2pNetworkService>,
         rpc_recv_channel: Rc<RefCell<Receiver<TxStateMachine>>>,
-        user_rpc_update_sender_channel: Rc<RefCell<Sender<TxStateMachine>>>,
+        user_rpc_update_sender_channel: Rc<
+            RefCell<Sender<VanePayload<TxStateMachine, SignatureType>>>,
+        >,
         lru_cache: Rc<RefCell<LruCache<u32, TtlWrapper<TxStateMachine>>>>,
     ) -> Result<Self, JsValue> {
         Ok(Self {
@@ -91,6 +94,7 @@ impl PublicInterfaceWorker {
             p2p_callbacks: Rc::new(RefCell::new(Vec::new())),
         })
     }
+
     pub fn compute_tx_integrity_hash(tx: &TxStateMachine) -> [u8; 32] {
         let data_to_hash = (
             tx.sender_address.clone(),
@@ -107,8 +111,74 @@ impl PublicInterfaceWorker {
         integrity_hash
     }
 
+    // TODO: see how we can deserialize bytes data in solana and in EVM so that we can hash the params
+    pub fn compute_tx_call_payload_integrity_hash(
+        tx: &TxStateMachine,
+    ) -> Result<[u8; 32], JsError> {
+        // check for each and extract the data from call_payload
+        let integrity_hash = match &tx.call_payload {
+            Some(ChainTransactionType::Solana {
+                call_payload: _,
+                latest_block_height: _,
+            }) => {
+                let data_to_hash = (
+                    tx.sender_address.clone(),
+                    tx.receiver_address.clone(),
+                    tx.sender_address_network.clone(),
+                    tx.receiver_address_network.clone(),
+                    tx.multi_id.clone(),
+                    tx.token.clone(),
+                    tx.amount.clone(),
+                )
+                    .encode();
+                let integrity_hash = blake2_256(&data_to_hash);
+                integrity_hash
+            }
+            Some(ChainTransactionType::Ethereum {
+                eth_unsigned_tx_fields,
+                call_payload: _,
+            }) => {
+                let data_to_hash = (
+                    tx.sender_address.clone(),
+                    tx.receiver_address.clone(),
+                    tx.sender_address_network.clone(),
+                    tx.receiver_address_network.clone(),
+                    tx.multi_id.clone(),
+                    tx.token.clone(),
+                    tx.amount.clone(),
+                )
+                    .encode();
+                let integrity_hash = blake2_256(&data_to_hash);
+                integrity_hash
+            }
+            Some(ChainTransactionType::Bnb {
+                call_payload: _,
+                bnb_legacy_tx_fields,
+            }) => {
+                let data_to_hash = (
+                    tx.sender_address.clone(),
+                    tx.receiver_address.clone(),
+                    tx.sender_address_network.clone(),
+                    tx.receiver_address_network.clone(),
+                    tx.multi_id.clone(),
+                    tx.token.clone(),
+                    tx.amount.clone(),
+                )
+                    .encode();
+                let integrity_hash = blake2_256(&data_to_hash);
+                integrity_hash
+            }
+            None => {
+                return Err(JsError::new("Call payload is not available"));
+            }
+        };
+
+        Ok(integrity_hash)
+    }
+
     pub async fn initiate_transaction(
         &self,
+        sig: Vec<u8>,
         sender: String,
         receiver: String,
         amount: u128,
@@ -182,8 +252,10 @@ impl PublicInterfaceWorker {
             .borrow_mut()
             .insert(tx_state_machine.tx_nonce.into(), tx_integrity_hash);
 
+        let vane_payload = VanePayload::new(tx_state_machine.clone(), sig);
+
         sender_channel
-            .send(tx_state_machine.clone())
+            .send(vane_payload)
             .await
             .map_err(|_| anyhow!("failed to send initial tx state to sender channel"))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
@@ -200,7 +272,7 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)));
     }
 
-    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
+    pub async fn sender_confirm(&self, sig: Vec<u8>, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         info!("sender_confirming transaction: {:?}", tx);
         let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
@@ -269,8 +341,10 @@ impl PublicInterfaceWorker {
                 .push(tx.tx_nonce.into(), ttl_wrapper);
 
             let sender = sender_channel.clone();
+            let vane_payload = VanePayload::new(tx.clone(), sig);
+
             sender
-                .send(tx.clone())
+                .send(vane_payload)
                 .await
                 .map_err(|_| {
                     anyhow!("failed to send sender confirmation tx state to sender-channel")
@@ -416,28 +490,31 @@ impl PublicInterfaceWorker {
     }
 
     /// Unsubscribe from all transaction updates (stops watcher and clears all callbacks)
-    pub fn unsubscribe_watch_tx_updates(&self) {
+    pub fn unsubscribe_watch_tx_updates(&self) -> Result<(), JsError> {
         *self.watcher_active.borrow_mut() = false;
         self.tx_callbacks.borrow_mut().clear();
         info!("Unsubscribed from all transaction updates");
+        Ok(())
     }
 
     /// Unsubscribe from all p2p notifications (stops watcher and clears all callbacks)
-    pub fn unsubscribe_watch_p2p_notifications(&self) {
+    pub fn unsubscribe_watch_p2p_notifications(&self) -> Result<(), JsError> {
         *self.p2p_watcher_active.borrow_mut() = false;
         self.p2p_callbacks.borrow_mut().clear();
         info!("Unsubscribed from all p2p notifications");
+        Ok(())
     }
 
-    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
-
+    pub async fn fetch_pending_tx_updates(&self, sig: Vec<u8>) -> Result<JsValue, JsError> {
         // call fetch_pending_tx_updates from backend
         let account_id = self.p2p_worker.user_account_id.clone();
         let command_tx = self.p2p_network_service.p2p_command_tx.clone();
-        command_tx.send(NetworkCommand::FetchPendingTransactions { account_id }).await?;
-        
+        command_tx
+            .send(NetworkCommand::FetchPendingTransactions { sig, account_id })
+            .await?;
+
         TimeoutFuture::new(2000).await;
-        
+
         // flush out valyues that have been expired
         let now = (js_sys::Date::now() / 1000.0) as u32;
         info!("🔑 NOW: {:?}", now);
@@ -484,7 +561,11 @@ impl PublicInterfaceWorker {
             .map_err(|e| JsError::new(&format!("Serialization error: {:?}", e)))
     }
 
-    pub async fn add_account(&self, account_id: String, network: ChainSupported) -> Result<(), JsError> {
+    pub async fn add_account(
+        &self,
+        account_id: String,
+        network: ChainSupported,
+    ) -> Result<(), JsError> {
         self.db_worker
             .update_user_account(account_id, network)
             .await
@@ -492,7 +573,35 @@ impl PublicInterfaceWorker {
         Ok(())
     }
 
-    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
+    pub async fn verify_tx_call_payload(&self, tx: JsValue) -> Result<(), JsError> {
+        let tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
+
+        let tx_call_payload_integrity_hash = Self::compute_tx_call_payload_integrity_hash(&tx)?;
+        let tx_integrity_hash = Self::compute_tx_integrity_hash(&tx);
+
+        // check if the tx_integrity_hash is the same as the tx_integrity_hash in the cache
+        let cached_tx_integrity_hash = self
+            .tx_integrity
+            .borrow_mut()
+            .get(&tx.tx_nonce)
+            .ok_or(JsError::new(&format!(
+                " Failed get transaction integrity from cache"
+            )))?
+            .clone();
+
+        if tx_integrity_hash != cached_tx_integrity_hash {
+            return Err(JsError::new("Transaction integrity failed"));
+        }
+
+        // check if if its the same with the integrity in call_payload
+        if tx_call_payload_integrity_hash != tx_integrity_hash {
+            return Err(JsError::new("Transaction call payload integrity failed"));
+        }
+
+        Ok(())
+    }
+
+    pub async fn receiver_confirm(&self, sig: Vec<u8>, tx: JsValue) -> Result<(), JsError> {
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
         let sender_channel = self.user_rpc_update_sender_channel.borrow_mut();
 
@@ -528,13 +637,14 @@ impl PublicInterfaceWorker {
             Err(anyhow!("Receiver did not confirm".to_string()))
                 .map_err(|e| JsError::new(&format!("{:?}", e)))?
         }
-        // remove from cache
-        self.lru_cache.borrow_mut().demote(&tx.tx_nonce.into());
 
         tx.recv_confirmed();
+
         tx.increment_version();
+        let vane_payload = VanePayload::new(tx.clone(), sig);
+
         sender_channel
-            .send(tx)
+            .send(vane_payload)
             .await
             .map_err(|_| anyhow!("failed to send recv confirmation tx state to sender channel"))
             .map_err(|e| JsError::new(&format!("{:?}", e)))?;
@@ -544,14 +654,10 @@ impl PublicInterfaceWorker {
 
     pub async fn revert_transaction(
         &self,
+        sig: Vec<u8>,
         tx: JsValue,
         reason: Option<String>,
     ) -> Result<(), JsError> {
-        // if tx.is_null() || tx.is_undefined() {
-        //     return Err(JsError::new(
-        //         "revertTransaction: missing TxStateMachine (got null/undefined)",
-        //     ));
-        // }
         let mut tx: TxStateMachine = TxStateMachine::from_js_value_unconditional(tx)?;
 
         match tx.status {
@@ -562,8 +668,11 @@ impl PublicInterfaceWorker {
                 self.lru_cache
                     .borrow_mut()
                     .push(tx.tx_nonce.into(), TtlWrapper::new(tx.clone(), 600));
+
+                let vane_payload = VanePayload::new(tx.clone(), sig);
+
                 sender
-                    .send(tx)
+                    .send(vane_payload)
                     .await
                     .map_err(|_| {
                         anyhow!("failed to send revert transaction tx state to sender channel")
@@ -572,7 +681,6 @@ impl PublicInterfaceWorker {
                 Ok(())
             }
             _ => {
-
                 tx.status =
                     TxStatus::Reverted(reason.unwrap_or("Intended receiver not met".to_string()));
                 // Immediately reflect in local cache for UI/state reads
@@ -595,8 +703,10 @@ impl PublicInterfaceWorker {
                 }
 
                 let sender = self.user_rpc_update_sender_channel.borrow_mut();
+                let vane_payload = VanePayload::new(tx.clone(), sig);
+
                 sender
-                    .send(tx)
+                    .send(vane_payload)
                     .await
                     .map_err(|_| {
                         anyhow!("failed to send revert transaction tx state to sender channel")
@@ -636,7 +746,7 @@ impl PublicInterfaceWorker {
     }
 
     // Cache maintenance
-    pub fn clear_reverted_from_cache(&self) {
+    pub fn clear_reverted_from_cache(&self) -> Result<(), JsError> {
         let keys: Vec<u32> = self
             .lru_cache
             .borrow()
@@ -652,9 +762,10 @@ impl PublicInterfaceWorker {
             let _ = cache.pop(&key);
         }
         info!("Cleared reverted transactions from cache");
+        Ok(())
     }
 
-    pub fn clear_finalized_from_cache(&self) {
+    pub fn clear_finalized_from_cache(&self) -> Result<(), JsError> {
         let keys: Vec<u32> = self
             .lru_cache
             .borrow()
@@ -670,20 +781,14 @@ impl PublicInterfaceWorker {
             let _ = cache.pop(&key);
         }
         info!("Cleared finalized (reverted/submitted) transactions from cache");
+        Ok(())
     }
 
-    // this reports crucial p2p events
-    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
-        let status = NodeConnectionStatus {
-            relay_connected: true,
-            peer_id: self.p2p_worker.user_account_id.clone(),
-            relay_address: self.p2p_worker.backend_url.clone(),
-            connection_uptime_seconds: None,
-            last_connection_change: None,
-        };
-
-        serde_wasm_bindgen::to_value(&status)
-            .map_err(|e| JsError::new(&format!("Failed to serialize node status: {}", e)))
+    pub fn clear_cache(&self) -> Result<(), JsError> {
+        self.lru_cache.borrow_mut().clear();
+        self.tx_integrity.borrow_mut().clear();
+        info!("Cleared all from cache");
+        Ok(())
     }
 }
 
@@ -705,6 +810,7 @@ impl PublicInterfaceWorkerJs {
     #[wasm_bindgen(js_name = "initiateTransaction")]
     pub async fn initiate_transaction(
         &self,
+        sig: Vec<u8>,
         sender: String,
         receiver: String,
         amount: u128,
@@ -722,6 +828,7 @@ impl PublicInterfaceWorkerJs {
         self.inner
             .borrow()
             .initiate_transaction(
+                sig,
                 sender,
                 receiver,
                 amount,
@@ -734,8 +841,8 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "senderConfirm")]
-    pub async fn sender_confirm(&self, tx: JsValue) -> Result<(), JsError> {
-        self.inner.borrow().sender_confirm(tx).await?;
+    pub async fn sender_confirm(&self, sig: Vec<u8>, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().sender_confirm(sig, tx).await?;
         Ok(())
     }
 
@@ -746,8 +853,9 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "unsubscribeWatchTxUpdates")]
-    pub fn unsubscribe_watch_tx_updates(&self) {
-        self.inner.borrow().unsubscribe_watch_tx_updates();
+    pub fn unsubscribe_watch_tx_updates(&self) -> Result<(), JsError> {
+        self.inner.borrow().unsubscribe_watch_tx_updates()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "watchP2pNotifications")]
@@ -763,36 +871,50 @@ impl PublicInterfaceWorkerJs {
     }
 
     #[wasm_bindgen(js_name = "unsubscribeWatchP2pNotifications")]
-    pub fn unsubscribe_watch_p2p_notifications(&self) {
-        self.inner.borrow().unsubscribe_watch_p2p_notifications();
+    pub fn unsubscribe_watch_p2p_notifications(&self) -> Result<(), JsError> {
+        self.inner.borrow().unsubscribe_watch_p2p_notifications()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "fetchPendingTxUpdates")]
-    pub async fn fetch_pending_tx_updates(&self) -> Result<JsValue, JsError> {
-        let tx_updates = self.inner.borrow().fetch_pending_tx_updates().await?;
+    pub async fn fetch_pending_tx_updates(&self, sig: Vec<u8>) -> Result<JsValue, JsError> {
+        let tx_updates = self.inner.borrow().fetch_pending_tx_updates(sig).await?;
         Ok(tx_updates)
     }
 
     #[wasm_bindgen(js_name = "addAccount")]
     pub async fn add_account(&self, account_id: String, network: JsValue) -> Result<(), JsError> {
         let network_chain: ChainSupported = ChainSupported::from_js_value_unconditional(network)?;
-        self.inner.borrow().add_account(account_id, network_chain).await?;
+        self.inner
+            .borrow()
+            .add_account(account_id, network_chain)
+            .await?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "receiverConfirm")]
-    pub async fn receiver_confirm(&self, tx: JsValue) -> Result<(), JsError> {
-        self.inner.borrow().receiver_confirm(tx).await?;
+    pub async fn receiver_confirm(&self, sig: Vec<u8>, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().receiver_confirm(sig, tx).await?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "verifyTxCallPayload")]
+    pub async fn verify_tx_call_payload(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().verify_tx_call_payload(tx).await?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "revertTransaction")]
     pub async fn revert_transaction(
         &self,
+        sig: Vec<u8>,
         tx: JsValue,
         reason: Option<String>,
     ) -> Result<(), JsError> {
-        self.inner.borrow().revert_transaction(tx, reason).await?;
+        self.inner
+            .borrow()
+            .revert_transaction(sig, tx, reason)
+            .await?;
         Ok(())
     }
 
@@ -802,23 +924,26 @@ impl PublicInterfaceWorkerJs {
         Ok(storage_export)
     }
 
-    #[wasm_bindgen(js_name = "getNodeConnectionStatus")]
-    pub fn get_node_connection_status(&self) -> Result<JsValue, JsError> {
-        let status = self.inner.borrow().get_node_connection_status()?;
-        Ok(status)
-    }
     #[wasm_bindgen(js_name = "deleteTxInCache")]
-    pub fn delete_tx_in_cache(&self, tx: JsValue) {
-        self.inner.borrow().delete_tx_in_cache(tx);
+    pub fn delete_tx_in_cache(&self, tx: JsValue) -> Result<(), JsError> {
+        self.inner.borrow().delete_tx_in_cache(tx)
     }
 
     #[wasm_bindgen(js_name = "clearRevertedFromCache")]
-    pub fn clear_reverted_from_cache(&self) {
-        self.inner.borrow().clear_reverted_from_cache();
+    pub fn clear_reverted_from_cache(&self) -> Result<(), JsError> {
+        self.inner.borrow().clear_reverted_from_cache()?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "clearFinalizedFromCache")]
-    pub fn clear_finalized_from_cache(&self) {
-        self.inner.borrow().clear_finalized_from_cache();
+    pub fn clear_finalized_from_cache(&self) -> Result<(), JsError> {
+        self.inner.borrow().clear_finalized_from_cache()?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "clearCache")]
+    pub fn clear_cache(&self) -> Result<(), JsError> {
+        self.inner.borrow().clear_cache()?;
+        Ok(())
     }
 }

@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use hex;
+use sp_runtime::traits::Verify;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -21,16 +22,17 @@ use jsonrpsee::{
     server::ServerBuilder,
     PendingSubscriptionSink, SubscriptionMessage,
 };
-use log::{error, info, warn,trace};
+use log::{error, info, trace, warn};
 use primitives::data_structure::{
     BackendEvent, ChainSupported, DbTxStateMachine, StorageExport, SystemNotification,
-    TxStateMachine,
+    TxStateMachine, TxStatus,
 };
 use prometheus_client::{
     metrics::{counter::Counter, gauge::Gauge},
     registry::Registry,
 };
 use serde::{Deserialize, Serialize};
+use std::env;
 use tokio::{
     net::TcpListener,
     sync::{broadcast, mpsc, Mutex},
@@ -106,6 +108,28 @@ pub struct TargetPeer {
 }
 pub type TargetPeers = HashMap<String, TargetPeer>;
 
+const VANE_SR25519_PUBLIC_KEY: &str =
+    "0xa894d4b00fc740fac387f0d4f7efe35b090de396b2fc5446a49ae6df96e6e844";
+
+pub fn verify_client_key_middleware(sig: Vec<u8>, msg: String) -> Result<bool, anyhow::Error> {
+    use anyhow::anyhow;
+    use sp_core::sr25519;
+
+    let address = VANE_SR25519_PUBLIC_KEY.trim_start_matches("0x");
+
+    let pub_bytes: [u8; 32] = hex::decode(address)?
+        .try_into()
+        .map_err(|_| anyhow!("Invalid public key length"))?;
+    let public = sr25519::Public::from_raw(pub_bytes);
+
+    let sig_bytes: [u8; 64] = sig
+        .try_into()
+        .map_err(|_| anyhow!("Invalid signature length"))?;
+    let signature = sr25519::Signature::from_raw(sig_bytes);
+
+    Ok(signature.verify(msg.as_bytes(), &public))
+}
+
 pub struct VaneSwarmServer {
     peers: HashMap<String, TargetPeers>,
     requests: Arc<DashMap<String, RequestEntry>>,
@@ -131,6 +155,71 @@ impl VaneSwarmServer {
             event_sender,
             system_notification_sender,
         }
+    }
+
+    pub async fn run() -> Result<()> {
+        env_logger::Builder::new()
+            .format(|buf, record| {
+                use std::io::Write;
+
+                writeln!(
+                    buf,
+                    "{} {:<5} [{}:{}] [{}] {}",
+                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    record.level(),
+                    record.file().unwrap_or("unknown"),
+                    record.line().unwrap_or(0),
+                    record.target(),
+                    record.args()
+                )
+            })
+            .filter_level(log::LevelFilter::Info)
+            .init();
+
+        info!("🚀 Starting Vane Backend Server...");
+
+        let metric_service = Arc::new(MetricService::new());
+        let (event_sender, _) = broadcast::channel::<BackendEvent>(100);
+        let (system_notification_sender, _) = mpsc::channel::<SystemNotification>(100);
+        let swarm_server = Arc::new(Mutex::new(VaneSwarmServer::new(
+            metric_service.clone(),
+            event_sender.clone(),
+            system_notification_sender,
+        )));
+
+        let metrics_server = MetricsServer::new((*metric_service).clone(), 9946);
+        let jsonrpc_server = JsonRpcServer::new(swarm_server, event_sender, 9947)?;
+
+        let metrics_handle = tokio::spawn(async move {
+            if let Err(err) = metrics_server.start().await {
+                error!("Metrics server error: {}", err);
+            }
+        });
+
+        let jsonrpc_handle = tokio::spawn(async move {
+            if let Err(err) = jsonrpc_server.start().await {
+                error!("JSON-RPC server error: {}", err);
+            }
+        });
+
+        info!("Backend server started successfully");
+        info!("Metrics server running on port 9946");
+        info!("JSON-RPC server running on port 9947");
+
+        tokio::select! {
+            result = metrics_handle => {
+                if let Err(err) = result {
+                    error!("Metrics server task failed: {:?}", err);
+                }
+            }
+            result = jsonrpc_handle => {
+                if let Err(err) = result {
+                    error!("JSON-RPC server task failed: {:?}", err);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn cleanup_expired_requests(&self) {
@@ -245,7 +334,10 @@ impl VaneSwarmServer {
     }
 
     pub async fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
-        info!("Received sender request from address: {}", address);
+        info!(
+            "Received sender request from address: {}",
+            format!("{}...{}", &address[..4], &address[address.len() - 4..])
+        );
 
         let received_event = BackendEvent::SenderRequestReceived {
             address: address.clone(),
@@ -253,7 +345,10 @@ impl VaneSwarmServer {
         };
         let send_result = self.event_sender.send(received_event);
         match send_result {
-            Ok(count) => info!("Broadcast SenderRequestReceived event to {} receivers", count),
+            Ok(count) => info!(
+                "Broadcast SenderRequestReceived event to {} receivers",
+                count
+            ),
             Err(e) => error!("Failed to broadcast SenderRequestReceived event: {}", e),
         }
 
@@ -320,7 +415,7 @@ impl VaneSwarmServer {
         let _ = self
             .system_notification_sender
             .try_send(notification.clone());
-        info!(
+        trace!(
             "succesfully queued request for receiver: {:?}",
             notification
         );
@@ -334,7 +429,6 @@ impl VaneSwarmServer {
             .entry(receiver_address.clone())
             .or_insert_with(RequestListEntry::new)
             .push(multi_id_hex);
-        self.cleanup_expired_sender_receiver_requests();
         self.metrics.record_sender_request(&address).await;
         self.update_metrics().await;
 
@@ -344,7 +438,10 @@ impl VaneSwarmServer {
         };
         let send_result = self.event_sender.send(event.clone());
         match send_result {
-            Ok(count) => info!("Broadcast SenderRequestHandled event to {} receivers", count),
+            Ok(count) => info!(
+                "Broadcast SenderRequestHandled event to {} receivers",
+                count
+            ),
             Err(e) => error!("Failed to broadcast SenderRequestHandled event: {}", e),
         }
 
@@ -354,7 +451,11 @@ impl VaneSwarmServer {
             format!("{:?}", event.get_data())
         };
 
-        info!("succesfully handled sender request: address: {}, data: {}", event.get_address(), trimmed_data);
+        info!(
+            "succesfully handled sender request: address: {}, data: {}",
+            event.get_address(),
+            trimmed_data
+        );
         Ok(())
     }
 
@@ -452,28 +553,13 @@ impl VaneSwarmServer {
             anyhow!("Failed to decode TxStateMachine: {}", e)
         })?;
 
-        info!("IN SERVER TX REVERTATION STATUS: {:?}",tx_state.status);
-
         let multi_id_hex = hex::encode(tx_state.multi_id);
         let receiver_address = tx_state.receiver_address.clone();
 
-        // Ensure the peer relationship exists (sender -> receiver)
-        if !self
-            .peers
-            .get(&address)
-            .map(|targets| targets.contains_key(&receiver_address))
-            .unwrap_or(false)
-        {
-            warn!(
-                "Peer not found for sender {} and receiver {} during sender revertation",
-                address, receiver_address
-            );
-            return Err(anyhow!(
-                "Peer not found for sender {} and receiver {}",
-                address,
-                receiver_address
-            ));
-        }
+        info!(
+            "in server, receiver address: {}, sender address: {}, tx revertation status: {:?}",
+            tx_state.receiver_address, receiver_address, tx_state.status
+        );
 
         // Ensure the transaction exists
         if !self.requests.contains_key(&multi_id_hex) {
@@ -507,7 +593,7 @@ impl VaneSwarmServer {
         // Emit backend event for sender revertation
         let event = BackendEvent::SenderReverted {
             address: address.clone(),
-            data,
+            data: data.clone(),
         };
         let _ = self.event_sender.send(event.clone());
 
@@ -523,10 +609,79 @@ impl VaneSwarmServer {
             trimmed_data
         );
 
+        // Peer and receiver_request cleanup (formerly in `disconnect_peer`)
+        let account_id = receiver_address.as_str();
+
+        if let Some(mut entry) = self.receiver_requests.get_mut(account_id) {
+            entry.multi_ids.retain(|multi_id| multi_id != &multi_id_hex);
+            if entry.multi_ids.is_empty() {
+                drop(entry);
+                self.receiver_requests.remove(account_id);
+            }
+            info!(
+                "Removed multi_id {} from receiver_requests for account_id: {}",
+                multi_id_hex, account_id
+            );
+        } else {
+            warn!(
+                "Receiver address {} not found in receiver_requests during revertation cleanup",
+                account_id
+            );
+        }
+
+        let mut sender_key_to_remove: Option<String> = None;
+
+        for (sender_key, target_peers) in self.peers.iter_mut() {
+            if let Some(peer) = target_peers.get(account_id) {
+                if peer.times_requested == 1 {
+                    target_peers.remove(account_id);
+                    if target_peers.is_empty() {
+                        sender_key_to_remove = Some(sender_key.clone());
+                    }
+                    self.metrics.record_peer_removed().await;
+
+                    let notification = SystemNotification::PeerRemoved {
+                        address: sender_key.clone(),
+                    };
+                    let _ = self.system_notification_sender.try_send(notification);
+
+                    let event = BackendEvent::PeerDisconnected {
+                        account_id: account_id.to_string(),
+                    };
+                    let _ = self.event_sender.send(event.clone());
+                    info!(
+                        "succesfully disconnected peer during revertation: {:?}",
+                        event
+                    );
+
+                    if let Some(key) = sender_key_to_remove {
+                        self.peers.remove(&key);
+                    }
+                    self.update_metrics().await;
+                    return Ok(());
+                } else {
+                    info!(
+                        "No-op: times_requested is {} (more than 1) for peer - sender: {}, account_id: {} during revertation cleanup",
+                        peer.times_requested, sender_key, account_id
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
+        warn!(
+            "Peer with account_id {} not found during revertation cleanup",
+            account_id
+        );
+
         Ok(())
     }
 
-    pub async fn handle_tx_submission_updates(&mut self, address: String, data: Data) -> Result<()> {
+    pub async fn handle_tx_submission_updates(
+        &mut self,
+        address: String,
+        data: Data,
+    ) -> Result<()> {
         info!("Received tx submission update from address: {}", address);
 
         let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
@@ -610,7 +765,10 @@ impl VaneSwarmServer {
     }
 
     pub async fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
-        info!("Received receiver response from address: {}", address);
+        info!(
+            "Received receiver response from address: {}",
+            format!("{}...{}", &address[..4], &address[address.len() - 4..])
+        );
 
         let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
             error!(
@@ -649,118 +807,71 @@ impl VaneSwarmServer {
         };
         let _ = self.event_sender.send(event.clone());
 
-        
-         let trimmed_data = if event.get_data().len() > 100 {
+        let trimmed_data = if event.get_data().len() > 100 {
             format!("{:?}...", &event.get_data()[..97])
         } else {
             format!("{:?}", event.get_data())
         };
 
-        info!("succesfully handled sender request: address: {}, data: {}", event.get_address(), trimmed_data);
+        info!(
+            "succesfully handled sender request: address: {}, data: {}",
+            event.get_address(),
+            trimmed_data
+        );
         Ok(())
     }
 
     pub async fn fetch_pending_transactions(&self, address: String) -> Result<Vec<TxStateMachine>> {
+        info!("Fetching pending transactions for address: {}", address);
         // try fetching from both sender and receiver requests and get the multi_ids and fetch the data from the requests
         let mut pending_transactions = Vec::new();
         if let Some(sender_requests) = self.sender_requests.get(&address) {
-            info!("Found {} sender requests for address: {}", sender_requests.multi_ids.len(), address);
+            info!(
+                "Found {} sender requests for address: {}",
+                sender_requests.multi_ids.len(),
+                address
+            );
             for multi_id in &sender_requests.multi_ids {
                 if let Some(request) = self.requests.get(multi_id) {
-                    let tx_state: TxStateMachine = serde_json::from_slice(&request.data).map_err(|e| {
-                        error!(
-                            "Failed to decode TxStateMachine from sender {}: {}",
-                            address, e
-                        );
-                        anyhow!("Failed to decode TxStateMachine: {}", e)
-                    })?;
+                    let tx_state: TxStateMachine =
+                        serde_json::from_slice(&request.data).map_err(|e| {
+                            error!(
+                                "Failed to decode TxStateMachine from sender {}: {}",
+                                address, e
+                            );
+                            anyhow!("Failed to decode TxStateMachine: {}", e)
+                        })?;
 
-                    info!("FETCHING TX UPDATES STATUS: {:?}",tx_state.status);
+                    info!("pending transaction on sender requests: {:?}", tx_state);
                     pending_transactions.push(tx_state);
                 }
             }
         }
         if let Some(receiver_requests) = self.receiver_requests.get(&address) {
-            info!("Found {} receiver requests for address: {}", receiver_requests.multi_ids.len(), address);
+            info!(
+                "Found {} receiver requests for address: {}",
+                receiver_requests.multi_ids.len(),
+                address
+            );
             for multi_id in &receiver_requests.multi_ids {
                 if let Some(request) = self.requests.get(multi_id) {
-                    let tx_state: TxStateMachine = serde_json::from_slice(&request.data).map_err(|e| {
-                        error!(
-                            "Failed to decode TxStateMachine from receiver {}: {}",
-                            address, e
-                        );
-                        anyhow!("Failed to decode TxStateMachine: {}", e)
-                    })?;
-                    pending_transactions.push(tx_state);
+                    let tx_state: TxStateMachine =
+                        serde_json::from_slice(&request.data).map_err(|e| {
+                            error!(
+                                "Failed to decode TxStateMachine from receiver {}: {}",
+                                address, e
+                            );
+                            anyhow!("Failed to decode TxStateMachine: {}", e)
+                        })?;
+                    if !matches!(tx_state.status, TxStatus::Reverted(_)) {
+                        info!("pending transaction on receiver requests: {:?}", tx_state);
+                        pending_transactions.push(tx_state);
+                    }
                 }
             }
         }
 
         Ok(pending_transactions)
-    }
-
-    pub async fn disconnect_peer(&mut self, account_id: &str, data: Vec<u8>) -> Result<()> {
-        info!("Disconnecting peer - account_id: {}", account_id);
-
-       
-        let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
-            error!(
-                "Failed to decode TxStateMachine from disconnect_peer {}: {}",
-                account_id, e
-            );
-            anyhow!("Failed to decode TxStateMachine: {}", e)
-        })?;
-
-        let multi_id_hex = hex::encode(tx_state.multi_id);
-
-        if let Some(mut entry) = self.receiver_requests.get_mut(account_id) {
-            entry.multi_ids.retain(|multi_id| multi_id != &multi_id_hex);
-            if entry.multi_ids.is_empty() {
-                drop(entry);
-                self.receiver_requests.remove(account_id);
-            }
-            info!("Removed multi_id {} from receiver_requests for account_id: {}", multi_id_hex, account_id);
-        } else {
-            warn!("Receiver address {} not found in receiver_requests", account_id);
-        }
-        
-
-        let mut sender_key_to_remove: Option<String> = None;
-
-        for (sender_key, target_peers) in self.peers.iter_mut() {
-            if let Some(peer) = target_peers.get(account_id) {
-                if peer.times_requested == 1 {
-                    target_peers.remove(account_id);
-                    if target_peers.is_empty() {
-                        sender_key_to_remove = Some(sender_key.clone());
-                    }
-                    self.metrics.record_peer_removed().await;
-
-                    let notification = SystemNotification::PeerRemoved {
-                        address: sender_key.clone(),
-                    };
-                    let _ = self.system_notification_sender.try_send(notification);
-
-                    let event = BackendEvent::PeerDisconnected {
-                        account_id: account_id.to_string(),
-                    };
-                    let _ = self.event_sender.send(event.clone());
-                    info!("succesfully disconnected peer: {:?}", event);
-
-                    if let Some(key) = sender_key_to_remove {
-                        self.peers.remove(&key);
-                    }
-                    self.update_metrics().await;
-                    return Ok(());
-                } else {
-                    info!("No-op: times_requested is {} (more than 1) for peer - sender: {}, account_id: {}", peer.times_requested, sender_key, account_id);
-                    return Ok(());
-                }
-            }
-        }
-
-        warn!("Peer with account_id {} not found", account_id);
-        Err(anyhow!("Peer with account_id {} not found", account_id))
     }
 
     async fn update_metrics(&self) {
@@ -773,6 +884,7 @@ impl VaneSwarmServer {
     }
 }
 
+
 #[rpc(server)]
 pub trait BackendRpc {
     /// Handle sender request
@@ -781,7 +893,12 @@ pub trait BackendRpc {
     /// - `address`: The sender address
     /// - `data`: Request data (TxStateMachine encoded as JSON bytes)
     #[method(name = "handleSenderRequest")]
-    async fn handle_sender_request(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+    async fn handle_sender_request(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()>;
 
     /// Handle receiver response
     /// params:
@@ -789,23 +906,38 @@ pub trait BackendRpc {
     /// - `address`: The receiver address
     /// - `data`: Response data
     #[method(name = "handleReceiverResponse")]
-    async fn handle_receiver_response(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+    async fn handle_receiver_response(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()>;
 
     /// Handle sender confirmation
     ///  params:
-    /// 
+    ///
     /// - `address`: The sender address
     /// - `data`: updated TxStateMachine
     #[method(name = "handleSenderConfirmation")]
-    async fn handle_sender_confirmation(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+    async fn handle_sender_confirmation(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()>;
 
     /// Handle sender reveration
     ///  params:
-    /// 
+    ///
     /// - `address`: The sender address
     /// - `data`: updated TxStateMachine
     #[method(name = "handleSenderRevertation")]
-    async fn handle_sender_revertation(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
+    async fn handle_sender_revertation(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()>;
 
     /// Handle tx submission updates
     /// params:
@@ -813,28 +945,26 @@ pub trait BackendRpc {
     /// - `address`: The sender address
     /// - `data`: updated TxStateMachinexf
     #[method(name = "handleTxSubmissionUpdates")]
-    async fn handle_tx_submission_updates(&self, address: String, data: Vec<u8>) -> RpcResult<()>;
-
-    /// Disconnect a peer from target peers
-    /// params:
-    ///
-    /// - `account_id`: Account ID of the peer to disconnect
-    #[method(name = "disconnectPeer")]
-    async fn disconnect_peer(&self, account_id: String, data: Vec<u8>) -> RpcResult<()>;
+    async fn handle_tx_submission_updates(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()>;
 
     /// Fetch pending transactions
     /// params:
     ///
     /// - `address`: The address to fetch pending transactions for
     #[method(name = "fetchPendingTransactions")]
-    async fn fetch_pending_transactions(&self, address: String) -> RpcResult<()>;
+    async fn fetch_pending_transactions(&self, sig: Vec<u8>, address: String) -> RpcResult<()>;
 
     /// Subscribe to events filtered by address
     /// params:
     ///
     /// - `address`: The address to filter events for
     #[subscription(name = "subscribeToEvents", item = BackendEvent)]
-    async fn subscribe_to_events(&self, address: String) -> SubscriptionResult;
+    async fn subscribe_to_events(&self, address: String, sig: Vec<u8>) -> SubscriptionResult;
 }
 
 #[derive(Clone)]
@@ -857,7 +987,22 @@ impl BackendRpcHandler {
 
 #[async_trait]
 impl BackendRpcServer for BackendRpcHandler {
-    async fn handle_sender_request(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+    async fn handle_sender_request(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()> {
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
         info!("RPC: handle_sender_request called for address: {}", address);
         let mut server = self.swarm_server.lock().await;
         server
@@ -870,7 +1015,22 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
-    async fn handle_receiver_response(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+    async fn handle_receiver_response(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()> {
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
         info!(
             "RPC: handle_receiver_response called for address: {}",
             address
@@ -886,7 +1046,22 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
-    async fn handle_sender_confirmation(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+    async fn handle_sender_confirmation(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()> {
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
         info!(
             "RPC: handle_sender_confirmation called for address: {}",
             address
@@ -902,7 +1077,22 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
-    async fn handle_sender_revertation(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+    async fn handle_sender_revertation(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()> {
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
         info!(
             "RPC: handle_sender_revertation called for address: {}",
             address
@@ -918,7 +1108,22 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
-    async fn handle_tx_submission_updates(&self, address: String, data: Vec<u8>) -> RpcResult<()> {
+    async fn handle_tx_submission_updates(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+        data: Vec<u8>,
+    ) -> RpcResult<()> {
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
         info!(
             "RPC: handle_tx_submission_updates called for address: {}",
             address
@@ -934,30 +1139,36 @@ impl BackendRpcServer for BackendRpcHandler {
         Ok(())
     }
 
-    async fn fetch_pending_transactions(&self, address: String) -> RpcResult<()> {
-        info!("RPC: fetch_pending_transactions called for address: {}", address);
+    async fn fetch_pending_transactions(&self, sig: Vec<u8>, address: String) -> RpcResult<()> {
+       
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+        .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!(
+            "RPC: fetch_pending_transactions called for address: {}",
+            address
+        );
         let server = self.swarm_server.lock().await;
-        let transactions = server.fetch_pending_transactions(address.clone()).await.map_err(|e| {
-            error!("RPC: Failed to fetch pending transactions: {}", e);
-            jsonrpsee::core::Error::Custom(e.to_string())
-        })?;
-        
+        let transactions = server
+            .fetch_pending_transactions(address.clone())
+            .await
+            .map_err(|e| {
+                error!("RPC: Failed to fetch pending transactions: {}", e);
+                jsonrpsee::core::Error::Custom(e.to_string())
+            })?;
+
         let event = BackendEvent::PendingTransactionsFetched {
             address: address.clone(),
             transactions: transactions.clone(),
         };
         let _ = self.event_sender.send(event);
-        
-        Ok(())
-    }
 
-    async fn disconnect_peer(&self, account_id: String, data: Vec<u8>) -> RpcResult<()> {
-        info!("RPC: disconnect_peer called - account_id: {}", account_id);
-        let mut server = self.swarm_server.lock().await;
-        server.disconnect_peer(&account_id, data).await.map_err(|e| {
-            error!("RPC: Failed to disconnect peer: {}", e);
-            jsonrpsee::core::Error::Custom(e.to_string())
-        })?;
         Ok(())
     }
 
@@ -965,8 +1176,9 @@ impl BackendRpcServer for BackendRpcHandler {
         &self,
         pending: PendingSubscriptionSink,
         address: String,
+        sig: Vec<u8>,
     ) -> SubscriptionResult {
-        info!("RPC: subscribe_to_events called for address: {}", address);
+
         let sink = pending.accept().await.map_err(|e| {
             error!(
                 "RPC: Failed to accept subscription for address {}: {:?}",
@@ -975,203 +1187,280 @@ impl BackendRpcServer for BackendRpcHandler {
             anyhow!("failed to accept subscription")
         })?;
 
+
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: subscribe_to_events called for address: {}", address);
+     
+
+        let server = self.swarm_server.lock().await;
+        server.metrics.record_new_client_joined().await;
+        drop(server);
+
         let mut receiver = self.event_sender.subscribe();
         info!("Subscription active for address: {}", address);
 
         loop {
             match receiver.recv().await {
                 Ok(event) => {
-            let event_type = match &event {
-                BackendEvent::SenderRequestReceived { .. } => "SenderRequestReceived",
-                BackendEvent::SenderRequestHandled { .. } => "SenderRequestHandled",
-                BackendEvent::SenderConfirmed { .. } => "SenderConfirmed",
-                BackendEvent::SenderReverted { .. } => "SenderReverted",
-                // SenderConfirmed reused for tx submission updates too
-                BackendEvent::ReceiverResponseReceived { .. } => "ReceiverResponseReceived",
-                BackendEvent::ReceiverResponseHandled { .. } => "ReceiverResponseHandled",
-                BackendEvent::PeerDisconnected { .. } => "PeerDisconnected",
-                BackendEvent::DataExpired { .. } => "DataExpired",
-                BackendEvent::PendingTransactionsFetched { .. } => "PendingTransactionsFetched",
-                BackendEvent::TxSubmitted { .. } => "TxSubmitted",
-            };
-            let event_addr = event.get_address();
-            trace!("Subscription received event - type: {}, event_address: {}, subscription_address: {}", 
+                    let event_type = match &event {
+                        BackendEvent::SenderRequestReceived { .. } => "SenderRequestReceived",
+                        BackendEvent::SenderRequestHandled { .. } => "SenderRequestHandled",
+                        BackendEvent::SenderConfirmed { .. } => "SenderConfirmed",
+                        BackendEvent::SenderReverted { .. } => "SenderReverted",
+                        // SenderConfirmed reused for tx submission updates too
+                        BackendEvent::ReceiverResponseReceived { .. } => "ReceiverResponseReceived",
+                        BackendEvent::ReceiverResponseHandled { .. } => "ReceiverResponseHandled",
+                        BackendEvent::PeerDisconnected { .. } => "PeerDisconnected",
+                        BackendEvent::DataExpired { .. } => "DataExpired",
+                        BackendEvent::PendingTransactionsFetched { .. } => {
+                            "PendingTransactionsFetched"
+                        }
+                        BackendEvent::TxSubmitted { .. } => "TxSubmitted",
+                    };
+                    let event_addr = event.get_address();
+                    trace!("Subscription received event - type: {}, event_address: {}, subscription_address: {}", 
                    event_type, event_addr, address);
-            
-            let should_send = match &event {
-                BackendEvent::SenderRequestReceived {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event SenderRequestReceived filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event SenderRequestReceived matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
+
+                    let should_send = match &event {
+                        BackendEvent::SenderRequestReceived {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event SenderRequestReceived filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event SenderRequestReceived filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event SenderRequestReceived matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in SenderRequestReceived for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
                         }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in SenderRequestReceived for subscription {}: {}", address, e);
-                            false
+                        BackendEvent::SenderRequestHandled {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event SenderRequestHandled filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event SenderRequestHandled filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event SenderRequestHandled matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in SenderRequestHandled for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
+                        }
+                        BackendEvent::SenderConfirmed {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event SenderConfirmed filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event SenderConfirmed filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event SenderConfirmed matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in SenderConfirmed for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
+                        }
+                        BackendEvent::SenderReverted {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event SenderReverted filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event SenderReverted filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event SenderReverted matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in SenderReverted for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
+                        }
+                        BackendEvent::ReceiverResponseReceived {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event ReceiverResponseReceived filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event ReceiverResponseReceived filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event ReceiverResponseReceived matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in ReceiverResponseReceived for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
+                        }
+                        BackendEvent::ReceiverResponseHandled {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!("Event ReceiverResponseHandled filtered - transaction is reverted");
+                                        false
+                                    } else {
+                                        let matches = tx.sender_address == address
+                                            || tx.receiver_address == address;
+                                        if !matches {
+                                            trace!("Event ReceiverResponseHandled filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        } else {
+                                            trace!("Event ReceiverResponseHandled matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
+                                          address, event_address, tx.sender_address, tx.receiver_address);
+                                        }
+                                        matches
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in ReceiverResponseHandled for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
+                        }
+                        BackendEvent::PeerDisconnected { account_id } => account_id == &address,
+                        BackendEvent::DataExpired { multi_id: _, data } => {
+                            serde_json::from_slice::<TxStateMachine>(data)
+                                .ok()
+                                .map(|tx| {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        false
+                                    } else {
+                                        tx.sender_address == address
+                                            || tx.receiver_address == address
+                                    }
+                                })
+                                .unwrap_or(false)
+                        }
+                        BackendEvent::PendingTransactionsFetched {
+                            address: event_address,
+                            ..
+                        } => event_address == &address,
+                        BackendEvent::TxSubmitted {
+                            address: event_address,
+                            data,
+                        } => {
+                            let matches_direct = event_address == &address;
+                            let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
+                                Ok(tx) => {
+                                    if matches!(tx.status, TxStatus::Reverted(_)) {
+                                        trace!(
+                                            "Event TxSubmitted filtered - transaction is reverted"
+                                        );
+                                        false
+                                    } else {
+                                        tx.sender_address == address
+                                            || tx.receiver_address == address
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to parse TxStateMachine in TxSubmitted for subscription {}: {}", address, e);
+                                    false
+                                }
+                            };
+                            matches_direct || matches_tx
                         }
                     };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::SenderRequestHandled {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event SenderRequestHandled filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event SenderRequestHandled matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in SenderRequestHandled for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::SenderConfirmed {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event SenderConfirmed filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event SenderConfirmed matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in SenderConfirmed for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::SenderReverted {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event SenderReverted filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event SenderReverted matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in SenderReverted for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::ReceiverResponseReceived {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event ReceiverResponseReceived filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event ReceiverResponseReceived matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in ReceiverResponseReceived for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::ReceiverResponseHandled {
-                    address: event_address,
-                    data,
-                } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => {
-                            let matches = tx.sender_address == address || tx.receiver_address == address;
-                            if !matches {
-                                trace!("Event ReceiverResponseHandled filtered - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            } else {
-                                trace!("Event ReceiverResponseHandled matches - subscription: {}, event_addr: {}, tx_sender: {}, tx_receiver: {}", 
-                                      address, event_address, tx.sender_address, tx.receiver_address);
-                            }
-                            matches
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in ReceiverResponseHandled for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-                BackendEvent::PeerDisconnected { account_id } => account_id == &address,
-                BackendEvent::DataExpired { multi_id: _, data } => {
-                    serde_json::from_slice::<TxStateMachine>(data)
-                        .ok()
-                        .map(|tx| tx.sender_address == address || tx.receiver_address == address)
-                        .unwrap_or(false)
-                }
-                BackendEvent::PendingTransactionsFetched { address: event_address, .. } => {
-                    event_address == &address
-                }
-                BackendEvent::TxSubmitted { address: event_address, data } => {
-                    let matches_direct = event_address == &address;
-                    let matches_tx = match serde_json::from_slice::<TxStateMachine>(data) {
-                        Ok(tx) => tx.sender_address == address || tx.receiver_address == address,
-                        Err(e) => {
-                            warn!("Failed to parse TxStateMachine in TxSubmitted for subscription {}: {}", address, e);
-                            false
-                        }
-                    };
-                    matches_direct || matches_tx
-                }
-            };
 
                     if should_send {
                         info!("Sending event to subscription for address: {}", address);
-                        let subscription_msg = SubscriptionMessage::from_json(&event).map_err(|e| {
-                            error!("Failed to serialize event for subscription: {}", e);
-                            anyhow!("failed to serialize event: {}", e)
-                        })?;
+                        let subscription_msg =
+                            SubscriptionMessage::from_json(&event).map_err(|e| {
+                                error!("Failed to serialize event for subscription: {}", e);
+                                anyhow!("failed to serialize event: {}", e)
+                            })?;
 
                         if let Err(e) = sink.send(subscription_msg).await {
                             warn!(
@@ -1180,7 +1469,10 @@ impl BackendRpcServer for BackendRpcHandler {
                             );
                             break;
                         }
-                        info!("Event successfully sent to subscription for address: {}", address);
+                        info!(
+                            "Event successfully sent to subscription for address: {}",
+                            address
+                        );
                     } else {
                         trace!("Event filtered out - subscription: {}, event_type: {}, event_address: {}", 
                               address, event_type, event_addr);
@@ -1188,7 +1480,10 @@ impl BackendRpcServer for BackendRpcHandler {
                 }
                 Err(e) => {
                     error!("Subscription receiver error for address {}: {}", address, e);
-                    info!("Subscription ended for address: {} (receiver error)", address);
+                    info!(
+                        "Subscription ended for address: {} (receiver error)",
+                        address
+                    );
                     break;
                 }
             }
@@ -1242,6 +1537,7 @@ pub struct BackendEventsSummary {
     receiver_not_found_total: u64,
     active_peers: usize,
     pending_requests: usize,
+    new_clients_joined: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1277,6 +1573,7 @@ pub struct BackendMetrics {
     pub peers_removed_total: Counter,
     pub active_peers: Gauge,
     pub pending_requests: Gauge,
+    pub new_clients_joined: Counter,
 }
 
 impl BackendMetrics {
@@ -1289,6 +1586,7 @@ impl BackendMetrics {
             peers_removed_total: Counter::default(),
             active_peers: Gauge::default(),
             pending_requests: Gauge::default(),
+            new_clients_joined: Counter::default(),
         }
     }
 
@@ -1327,6 +1625,11 @@ impl BackendMetrics {
             "backend_pending_requests",
             "Current number of pending requests",
             self.pending_requests.clone(),
+        );
+        registry.register(
+            "backend_new_clients_joined",
+            "Total number of new clients that have joined",
+            self.new_clients_joined.clone(),
         );
     }
 }
@@ -1500,6 +1803,11 @@ impl MetricService {
         let metrics = self.backend_metrics.lock().await;
         metrics.pending_requests.set(count);
     }
+
+    pub async fn record_new_client_joined(&self) {
+        let metrics = self.backend_metrics.lock().await;
+        metrics.new_clients_joined.inc();
+    }
 }
 
 pub struct MetricsServer {
@@ -1546,16 +1854,18 @@ impl MetricsServer {
 async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
     let metrics_arc = service.get_backend_metrics();
     let metrics = metrics_arc.lock().await;
-    let summary = BackendEventsSummary {
-        sender_requests_total: metrics.sender_requests_total.get(),
-        receiver_responses_total: metrics.receiver_responses_total.get(),
-        receiver_not_found_total: metrics.receiver_not_found_total.get(),
-        active_peers: metrics.active_peers.get() as usize,
-        pending_requests: metrics.pending_requests.get() as usize,
-    };
     (
         StatusCode::OK,
-        Json(serde_json::json!({ "backend": summary })),
+        Json(serde_json::json!({
+            "backend": {
+                "sender_requests_total": metrics.sender_requests_total.get(),
+                "receiver_responses_total": metrics.receiver_responses_total.get(),
+                "receiver_not_found_total": metrics.receiver_not_found_total.get(),
+                "active_peers": metrics.active_peers.get() as usize,
+                "pending_requests": metrics.pending_requests.get() as usize,
+                "new_clients_joined": metrics.new_clients_joined.get(),
+            }
+        })),
     )
 }
 
