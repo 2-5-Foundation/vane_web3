@@ -4,7 +4,7 @@ export function start_vane_web3(sig: Uint8Array, relay_node_multi_addr: string, 
 export class PublicInterfaceWorkerJs {
   private constructor();
   free(): void;
-  initiateTransaction(sig: Uint8Array, sender: string, receiver: string, amount: bigint, token: any, code_word: string, sender_network: any, receiver_network: any): Promise<any>;
+  initiateTransaction(sig: Uint8Array, sender: string, receiver: string, amount: bigint, token: any, code_word: string, sender_network: any, receiver_network: any, vane_fees_amount: bigint): Promise<any>;
   senderConfirm(sig: Uint8Array, tx: any): Promise<void>;
   watchTxUpdates(callback: Function): Promise<void>;
   unsubscribeWatchTxUpdates(): void;
@@ -34,7 +34,7 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: any) => any;
   readonly __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
-  readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: bigint, j: any, k: number, l: number, m: any, n: any) => any;
+  readonly publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: bigint, j: any, k: number, l: number, m: any, n: any, o: bigint, p: bigint) => any;
   readonly publicinterfaceworkerjs_senderConfirm: (a: number, b: number, c: number, d: any) => any;
   readonly publicinterfaceworkerjs_watchTxUpdates: (a: number, b: any) => any;
   readonly publicinterfaceworkerjs_unsubscribeWatchTxUpdates: (a: number) => [number, number];

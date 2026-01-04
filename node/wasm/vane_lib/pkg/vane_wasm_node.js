@@ -298,9 +298,10 @@ export class PublicInterfaceWorkerJs {
      * @param {string} code_word
      * @param {any} sender_network
      * @param {any} receiver_network
+     * @param {bigint} vane_fees_amount
      * @returns {Promise<any>}
      */
-    initiateTransaction(sig, sender, receiver, amount, token, code_word, sender_network, receiver_network) {
+    initiateTransaction(sig, sender, receiver, amount, token, code_word, sender_network, receiver_network, vane_fees_amount) {
         const ptr0 = passArray8ToWasm0(sig, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(sender, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -309,7 +310,7 @@ export class PublicInterfaceWorkerJs {
         const len2 = WASM_VECTOR_LEN;
         const ptr3 = passStringToWasm0(code_word, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len3 = WASM_VECTOR_LEN;
-        const ret = wasm.publicinterfaceworkerjs_initiateTransaction(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, amount, amount >> BigInt(64), token, ptr3, len3, sender_network, receiver_network);
+        const ret = wasm.publicinterfaceworkerjs_initiateTransaction(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, amount, amount >> BigInt(64), token, ptr3, len3, sender_network, receiver_network, vane_fees_amount, vane_fees_amount >> BigInt(64));
         return ret;
     }
     /**

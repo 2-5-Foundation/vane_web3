@@ -598,6 +598,8 @@ export interface TxStateMachine {
     amount: bigint; // u128 in Rust -> bigint in TS
     /** Fees amount */
     feesAmount: number; // u8 in Rust -> number in TS
+    /** Vane fees amount */
+    vaneFeesAmount: bigint; // u128 in Rust -> bigint in TS
     /** Signed call payload (signed hash of the transaction) */
     signedCallPayload?: number[];
     /** Call payload (hash of transaction and raw transaction bytes) */
@@ -661,6 +663,10 @@ export class TxStateMachineManager {
       this.tx.feesAmount = amount;
     }
 
+    setVaneFeesAmount(amount: bigint): void {
+      this.tx.vaneFeesAmount = amount;
+    }
+
     setTxSubmissionFailed(reason: string): void {
       this.tx.status = {type: "FailedToSubmitTxn", data: reason};
     }
@@ -699,7 +705,8 @@ export class TxStateMachineManager {
       codeWord: string,
       senderPublicKey: string | null,
       receiverPublicKey: string | null,
-      feesAmount: number = 0
+      feesAmount: number = 0,
+      vaneFeesAmount: bigint
     ): TxStateMachineManager {
       return new TxStateMachineManager({
         senderAddress,
@@ -711,6 +718,7 @@ export class TxStateMachineManager {
         status: {type: "Genesis"},
         amount,
         feesAmount,
+        vaneFeesAmount,
         txNonce: 0,
         txVersion: 0,
         codeWord,

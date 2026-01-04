@@ -109,7 +109,7 @@ pub struct TargetPeer {
 pub type TargetPeers = HashMap<String, TargetPeer>;
 
 const VANE_SR25519_PUBLIC_KEY: &str =
-    "0xa894d4b00fc740fac387f0d4f7efe35b090de396b2fc5446a49ae6df96e6e844";
+    "0x9e00014e27effe047f489daf60849d63d4f870728d660e849a0ca7674f453b46";
 
 pub fn verify_client_key_middleware(sig: Vec<u8>, msg: String) -> Result<bool, anyhow::Error> {
     use anyhow::anyhow;
@@ -765,11 +765,6 @@ impl VaneSwarmServer {
     }
 
     pub async fn handle_receiver_response(&mut self, address: String, data: Data) -> Result<()> {
-        info!(
-            "Received receiver response from address: {}",
-            format!("{}...{}", &address[..4], &address[address.len() - 4..])
-        );
-
         let tx_state: TxStateMachine = serde_json::from_slice(&data).map_err(|e| {
             error!(
                 "Failed to decode TxStateMachine from receiver {}: {}",
@@ -777,6 +772,12 @@ impl VaneSwarmServer {
             );
             anyhow!("Failed to decode TxStateMachine: {}", e)
         })?;
+
+        info!(
+            "Received receiver response from address: {}  with tx state: {:?}",
+            format!("{}...{}", &address[..4], &address[address.len() - 4..]),
+            tx_state
+        );
 
         let multi_id_hex = hex::encode(tx_state.multi_id);
 

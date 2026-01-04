@@ -3,7 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const start_vane_web3: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: any) => any;
 export const __wbg_publicinterfaceworkerjs_free: (a: number, b: number) => void;
-export const publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: bigint, j: any, k: number, l: number, m: any, n: any) => any;
+export const publicinterfaceworkerjs_initiateTransaction: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: bigint, j: any, k: number, l: number, m: any, n: any, o: bigint, p: bigint) => any;
 export const publicinterfaceworkerjs_senderConfirm: (a: number, b: number, c: number, d: any) => any;
 export const publicinterfaceworkerjs_watchTxUpdates: (a: number, b: any) => any;
 export const publicinterfaceworkerjs_unsubscribeWatchTxUpdates: (a: number) => [number, number];

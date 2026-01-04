@@ -361,6 +361,11 @@ pub struct TxStateMachine {
     /// fees amount
     #[serde(rename = "feesAmount")]
     pub fees_amount: f32,
+    /// vane Fees Amount
+    #[serde(serialize_with = "serialize_u128_as_string")]
+    #[serde(deserialize_with = "deserialize_u128_from_string")]
+    #[serde(rename = "vaneFeesAmount")]
+    pub vane_fees_amount: u128,
     /// signed call payload (signed hash of the transaction)
     #[serde(rename = "signedCallPayload")]
     pub signed_call_payload: Option<Vec<u8>>,

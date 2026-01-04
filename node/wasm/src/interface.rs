@@ -186,6 +186,7 @@ impl PublicInterfaceWorker {
         code_word: String,
         sender_network: ChainSupported,
         receiver_network: ChainSupported,
+        vane_fees_amount: u128,
     ) -> Result<JsValue, JsError> {
         info!("initiated sending transaction: receiver: {}, amount: {}, token: {:?}, sender_network: {:?}, receiver_network: {:?}, code_word: {}", receiver, amount, token, sender_network, receiver_network, code_word);
 
@@ -232,6 +233,7 @@ impl PublicInterfaceWorker {
             status: TxStatus::default(),
             amount,
             fees_amount: 0.0,
+            vane_fees_amount,
             signed_call_payload: None,
             call_payload: None,
             inbound_req_id: None,
@@ -818,6 +820,7 @@ impl PublicInterfaceWorkerJs {
         code_word: String,
         sender_network: JsValue,
         receiver_network: JsValue,
+        vane_fees_amount: u128,
     ) -> Result<JsValue, JsError> {
         let token: Token = Token::from_js_value_unconditional(token)?;
         let sender_network_chain: ChainSupported =
@@ -836,6 +839,7 @@ impl PublicInterfaceWorkerJs {
                 code_word,
                 sender_network_chain,
                 receiver_network_chain,
+                vane_fees_amount,
             )
             .await
     }
