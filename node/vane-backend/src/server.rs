@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use hex;
+use sp_core::blake2_256;
 use sp_runtime::traits::Verify;
 use std::{
     collections::HashMap,
@@ -9,13 +10,6 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
 use jsonrpsee::{
     core::{async_trait, RpcResult, SubscriptionResult},
     proc_macros::rpc,
@@ -32,7 +26,6 @@ use prometheus_client::{
     registry::Registry,
 };
 use serde::{Deserialize, Serialize};
-use std::env;
 use tokio::{
     net::TcpListener,
     sync::{broadcast, mpsc, Mutex},
@@ -40,21 +33,21 @@ use tokio::{
 
 pub type Data = Vec<u8>;
 
-const REQUEST_TTL_SECONDS: u64 = 60 * 30;
-
 struct RequestEntry {
     data: Data,
     created_at: u64,
+    original_multi_id: String, // Store original multi_id for lookups
 }
 
 impl RequestEntry {
-    fn new(data: Data) -> Self {
+    fn new(data: Data, original_multi_id: String) -> Self {
         Self {
             data,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            original_multi_id,
         }
     }
 
@@ -69,6 +62,19 @@ impl RequestEntry {
     fn update_data(&mut self, data: Data) {
         self.data = data;
     }
+}
+
+/// Generate an extended multi_id from multi_id and current timestamp using blake2_256
+fn generate_extended_multi_id(multi_id: &str, timestamp: u64) -> String {
+    // Combine multi_id and timestamp into a single byte vector
+    let mut data_to_hash = multi_id.as_bytes().to_vec();
+    data_to_hash.extend_from_slice(&timestamp.to_le_bytes());
+    
+    // Hash using blake2_256 (returns [u8; 32])
+    let hash = blake2_256(&data_to_hash);
+    
+    // Return hex-encoded string
+    hex::encode(hash)
 }
 
 struct RequestListEntry {
@@ -135,6 +141,7 @@ pub struct VaneSwarmServer {
     requests: Arc<DashMap<String, RequestEntry>>,
     sender_requests: Arc<DashMap<String, RequestListEntry>>,
     receiver_requests: Arc<DashMap<String, RequestListEntry>>,
+    request_ttl_seconds: u64,
     metrics: Arc<MetricService>,
     event_sender: broadcast::Sender<BackendEvent>,
     system_notification_sender: mpsc::Sender<SystemNotification>,
@@ -145,102 +152,41 @@ impl VaneSwarmServer {
         metrics: Arc<MetricService>,
         event_sender: broadcast::Sender<BackendEvent>,
         system_notification_sender: mpsc::Sender<SystemNotification>,
+        request_ttl_seconds: u64,
     ) -> Self {
         Self {
             peers: HashMap::new(),
             requests: Arc::new(DashMap::new()),
             sender_requests: Arc::new(DashMap::new()),
             receiver_requests: Arc::new(DashMap::new()),
+            request_ttl_seconds,
             metrics,
             event_sender,
             system_notification_sender,
         }
     }
 
-    pub async fn run() -> Result<()> {
-        env_logger::Builder::new()
-            .format(|buf, record| {
-                use std::io::Write;
-
-                writeln!(
-                    buf,
-                    "{} {:<5} [{}:{}] [{}] {}",
-                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-                    record.level(),
-                    record.file().unwrap_or("unknown"),
-                    record.line().unwrap_or(0),
-                    record.target(),
-                    record.args()
-                )
-            })
-            .filter_level(log::LevelFilter::Info)
-            .init();
-
-        info!("🚀 Starting Vane Backend Server...");
-
-        let metric_service = Arc::new(MetricService::new());
-        let (event_sender, _) = broadcast::channel::<BackendEvent>(100);
-        let (system_notification_sender, _) = mpsc::channel::<SystemNotification>(100);
-        let swarm_server = Arc::new(Mutex::new(VaneSwarmServer::new(
-            metric_service.clone(),
-            event_sender.clone(),
-            system_notification_sender,
-        )));
-
-        let metrics_server = MetricsServer::new((*metric_service).clone(), 9946);
-        let jsonrpc_server = JsonRpcServer::new(swarm_server, event_sender, 9947)?;
-
-        let metrics_handle = tokio::spawn(async move {
-            if let Err(err) = metrics_server.start().await {
-                error!("Metrics server error: {}", err);
-            }
-        });
-
-        let jsonrpc_handle = tokio::spawn(async move {
-            if let Err(err) = jsonrpc_server.start().await {
-                error!("JSON-RPC server error: {}", err);
-            }
-        });
-
-        info!("Backend server started successfully");
-        info!("Metrics server running on port 9946");
-        info!("JSON-RPC server running on port 9947");
-
-        tokio::select! {
-            result = metrics_handle => {
-                if let Err(err) = result {
-                    error!("Metrics server task failed: {:?}", err);
-                }
-            }
-            result = jsonrpc_handle => {
-                if let Err(err) = result {
-                    error!("JSON-RPC server task failed: {:?}", err);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn cleanup_expired_requests(&self) {
         let mut expired_keys = Vec::new();
+        
         for entry in self.requests.iter() {
-            if entry.value().is_expired(REQUEST_TTL_SECONDS) {
+            if entry.value().is_expired(self.request_ttl_seconds) {
                 expired_keys.push(entry.key().clone());
             }
         }
+        
         for key in expired_keys {
             self.requests.remove(&key);
         }
     }
 
     fn cleanup_expired_sender_receiver_requests(&self) {
-        let mut expired_multi_ids: std::collections::HashSet<String> =
+        let mut expired_extended_multi_ids: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
         for entry in self.requests.iter() {
-            if entry.value().is_expired(REQUEST_TTL_SECONDS) {
-                expired_multi_ids.insert(entry.key().clone());
+            if entry.value().is_expired(self.request_ttl_seconds) {
+                expired_extended_multi_ids.insert(entry.key().clone());
             }
         }
 
@@ -251,16 +197,16 @@ impl VaneSwarmServer {
             .collect();
         for key in sender_keys {
             if let Some(mut entry) = self.sender_requests.get_mut(&key) {
-                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                if entry.is_expired(self.request_ttl_seconds) {
                     drop(entry);
                     self.sender_requests.remove(&key);
                     continue;
                 }
 
-                if !expired_multi_ids.is_empty() {
+                if !expired_extended_multi_ids.is_empty() {
                     entry
                         .multi_ids
-                        .retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                        .retain(|extended_multi_id| !expired_extended_multi_ids.contains(extended_multi_id));
                     if entry.multi_ids.is_empty() {
                         drop(entry);
                         self.sender_requests.remove(&key);
@@ -276,16 +222,16 @@ impl VaneSwarmServer {
             .collect();
         for key in receiver_keys {
             if let Some(mut entry) = self.receiver_requests.get_mut(&key) {
-                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                if entry.is_expired(self.request_ttl_seconds) {
                     drop(entry);
                     self.receiver_requests.remove(&key);
                     continue;
                 }
 
-                if !expired_multi_ids.is_empty() {
+                if !expired_extended_multi_ids.is_empty() {
                     entry
                         .multi_ids
-                        .retain(|multi_id| !expired_multi_ids.contains(multi_id));
+                        .retain(|extended_multi_id| !expired_extended_multi_ids.contains(extended_multi_id));
                     if entry.multi_ids.is_empty() {
                         drop(entry);
                         self.receiver_requests.remove(&key);
@@ -295,24 +241,35 @@ impl VaneSwarmServer {
         }
     }
 
-    fn insert_request(&self, multi_id: String, data: Data) {
+    fn insert_request(&self, original_multi_id: String, data: Data) -> String {
         self.cleanup_expired_requests();
         self.cleanup_expired_sender_receiver_requests();
-        self.requests.insert(multi_id, RequestEntry::new(data));
+        
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let extended_multi_id = generate_extended_multi_id(&original_multi_id, timestamp);
+        
+        // Insert with extended_multi_id (multi_id + timestamp)
+        self.requests.insert(extended_multi_id.clone(), RequestEntry::new(data, original_multi_id));
+        
+        extended_multi_id
     }
 
-    fn update_request(&self, multi_id: &str, data: Data) -> bool {
+    fn update_request_by_extended_multi_id(&self, extended_multi_id: &str, data: Data) -> bool {
         self.cleanup_expired_requests();
         self.cleanup_expired_sender_receiver_requests();
 
-        match self.requests.get_mut(multi_id) {
+        match self.requests.get_mut(extended_multi_id) {
             Some(mut entry) => {
-                if entry.is_expired(REQUEST_TTL_SECONDS) {
+                if entry.is_expired(self.request_ttl_seconds) {
                     let expired_data = entry.data.clone();
+                    let original_multi_id = entry.original_multi_id.clone();
                     drop(entry);
-                    self.requests.remove(multi_id);
+                    self.requests.remove(extended_multi_id);
                     let event = BackendEvent::DataExpired {
-                        multi_id: multi_id.to_string(),
+                        multi_id: original_multi_id,
                         data: expired_data,
                     };
                     let _ = self.event_sender.send(event);
@@ -323,14 +280,26 @@ impl VaneSwarmServer {
                 }
             }
             None => {
+                // Extended multi_id not found - request may have expired or never existed
+                warn!("Request with extended_multi_id {} not found for update", extended_multi_id);
                 let event = BackendEvent::DataExpired {
-                    multi_id: multi_id.to_string(),
+                    multi_id: extended_multi_id.to_string(),
                     data: Vec::new(),
                 };
                 let _ = self.event_sender.send(event);
                 false
             }
         }
+    }
+    
+    // Helper to find extended_multi_id from original multi_id by searching
+    fn find_extended_multi_id_by_original_multi_id(&self, original_multi_id: &str) -> Option<String> {
+        for entry in self.requests.iter() {
+            if entry.value().original_multi_id == original_multi_id {
+                return Some(entry.key().clone());
+            }
+        }
+        None
     }
 
     pub async fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
@@ -420,15 +389,18 @@ impl VaneSwarmServer {
             notification
         );
 
-        self.insert_request(multi_id_hex.clone(), data.clone());
+        // Insert request and get the extended_multi_id (multi_id + timestamp)
+        let extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
+        
+        // Store extended_multi_id in sender/receiver request lists
         self.sender_requests
             .entry(address.clone())
             .or_insert_with(RequestListEntry::new)
-            .push(multi_id_hex.clone());
+            .push(extended_multi_id.clone());
         self.receiver_requests
             .entry(receiver_address.clone())
             .or_insert_with(RequestListEntry::new)
-            .push(multi_id_hex);
+            .push(extended_multi_id);
         self.metrics.record_sender_request(&address).await;
         self.update_metrics().await;
 
@@ -491,20 +463,23 @@ impl VaneSwarmServer {
             ));
         }
 
-        // Ensure the transaction exists
-        if !self.requests.contains_key(&multi_id_hex) {
-            warn!(
-                "Transaction with multi_id {} not found for sender confirmation from {}",
-                multi_id_hex, address
-            );
-            return Err(anyhow!(
-                "Transaction with multi_id {} not found",
-                multi_id_hex
-            ));
-        }
+        // Find the extended_multi_id for this transaction
+        let extended_multi_id = match self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            Some(key) => key,
+            None => {
+                warn!(
+                    "Transaction with multi_id {} not found for sender confirmation from {}",
+                    multi_id_hex, address
+                );
+                return Err(anyhow!(
+                    "Transaction with multi_id {} not found",
+                    multi_id_hex
+                ));
+            }
+        };
 
-        // Update the stored transaction data
-        if self.update_request(&multi_id_hex, data.clone()) {
+        // Update the stored transaction data using extended_multi_id
+        if self.update_request_by_extended_multi_id(&extended_multi_id, data.clone()) {
             info!(
                 "Updated transaction (sender confirmation) with multi_id {}",
                 multi_id_hex
@@ -561,20 +536,23 @@ impl VaneSwarmServer {
             tx_state.receiver_address, receiver_address, tx_state.status
         );
 
-        // Ensure the transaction exists
-        if !self.requests.contains_key(&multi_id_hex) {
-            warn!(
-                "Transaction with multi_id {} not found for sender revertation from {}",
-                multi_id_hex, address
-            );
-            return Err(anyhow!(
-                "Transaction with multi_id {} not found",
-                multi_id_hex
-            ));
-        }
+        // Find the extended_multi_id for this transaction
+        let extended_multi_id = match self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            Some(key) => key,
+            None => {
+                warn!(
+                    "Transaction with multi_id {} not found for sender revertation from {}",
+                    multi_id_hex, address
+                );
+                return Err(anyhow!(
+                    "Transaction with multi_id {} not found",
+                    multi_id_hex
+                ));
+            }
+        };
 
-        // Update the stored transaction data
-        if self.update_request(&multi_id_hex, data.clone()) {
+        // Update the stored transaction data using extended_multi_id
+        if self.update_request_by_extended_multi_id(&extended_multi_id, data.clone()) {
             info!(
                 "Updated transaction (sender revertation) with multi_id {}",
                 multi_id_hex
@@ -612,23 +590,46 @@ impl VaneSwarmServer {
         // Peer and receiver_request cleanup (formerly in `disconnect_peer`)
         let account_id = receiver_address.as_str();
 
-        if let Some(mut entry) = self.receiver_requests.get_mut(account_id) {
-            entry.multi_ids.retain(|multi_id| multi_id != &multi_id_hex);
-            if entry.multi_ids.is_empty() {
-                drop(entry);
-                self.receiver_requests.remove(account_id);
+        // Find the extended_multi_id and remove from receiver_requests
+        if let Some(extended_multi_id) = self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            if let Some(mut entry) = self.receiver_requests.get_mut(account_id) {
+                entry.multi_ids.retain(|emid| emid != &extended_multi_id);
+                if entry.multi_ids.is_empty() {
+                    drop(entry);
+                    self.receiver_requests.remove(account_id);
+                }
+                info!(
+                    "Removed extended_multi_id {} (multi_id: {}) from receiver_requests for account_id: {}",
+                    extended_multi_id, multi_id_hex, account_id
+                );
+            } else {
+                warn!(
+                    "Receiver address {} not found in receiver_requests during revertation cleanup",
+                    account_id
+                );
             }
-            info!(
-                "Removed multi_id {} from receiver_requests for account_id: {}",
-                multi_id_hex, account_id
-            );
+            
+            // Remove the actual request
+            self.requests.remove(&extended_multi_id);
         } else {
             warn!(
-                "Receiver address {} not found in receiver_requests during revertation cleanup",
-                account_id
+                "Could not find extended_multi_id for multi_id {} during revertation cleanup",
+                multi_id_hex
             );
         }
 
+        // Find the extended_multi_id and also clean up from sender_requests
+        if let Some(extended_multi_id) = self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            // Remove from sender_requests for the sender address
+            if let Some(mut entry) = self.sender_requests.get_mut(&address) {
+                entry.multi_ids.retain(|emid| emid != &extended_multi_id);
+                if entry.multi_ids.is_empty() {
+                    drop(entry);
+                    self.sender_requests.remove(&address);
+                }
+            }
+        }
+        
         let mut sender_key_to_remove: Option<String> = None;
 
         for (sender_key, target_peers) in self.peers.iter_mut() {
@@ -713,20 +714,23 @@ impl VaneSwarmServer {
             ));
         }
 
-        // Ensure the transaction exists
-        if !self.requests.contains_key(&multi_id_hex) {
-            warn!(
-                "Transaction with multi_id {} not found for tx submission update from {}",
-                multi_id_hex, address
-            );
-            return Err(anyhow!(
-                "Transaction with multi_id {} not found",
-                multi_id_hex
-            ));
-        }
+        // Find the extended_multi_id for this transaction
+        let extended_multi_id = match self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            Some(key) => key,
+            None => {
+                warn!(
+                    "Transaction with multi_id {} not found for tx submission update from {}",
+                    multi_id_hex, address
+                );
+                return Err(anyhow!(
+                    "Transaction with multi_id {} not found",
+                    multi_id_hex
+                ));
+            }
+        };
 
-        // Update the stored transaction data
-        if self.update_request(&multi_id_hex, data.clone()) {
+        // Update the stored transaction data using extended_multi_id
+        if self.update_request_by_extended_multi_id(&extended_multi_id, data.clone()) {
             info!(
                 "Updated transaction (tx submission update) with multi_id {}",
                 multi_id_hex
@@ -787,11 +791,19 @@ impl VaneSwarmServer {
         };
         let _ = self.event_sender.send(received_event);
 
-        if self.update_request(&multi_id_hex, data.clone()) {
-            info!("Updated existing request with multi_id: {}", multi_id_hex);
+        // Try to find existing request by original multi_id
+        if let Some(extended_multi_id) = self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            if self.update_request_by_extended_multi_id(&extended_multi_id, data.clone()) {
+                info!("Updated existing request with multi_id: {} (extended_multi_id: {})", multi_id_hex, extended_multi_id);
+            } else {
+                // Request expired, insert as new
+                let new_extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
+                info!("Inserted new request with multi_id: {} (extended_multi_id: {})", multi_id_hex, new_extended_multi_id);
+            }
         } else {
-            self.insert_request(multi_id_hex.clone(), data.clone());
-            info!("Inserted new request with multi_id: {}", multi_id_hex);
+            // No existing request found, insert as new
+            let extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
+            info!("Inserted new request with multi_id: {} (extended_multi_id: {})", multi_id_hex, extended_multi_id);
         }
 
         self.metrics.record_receiver_response(&address).await;
@@ -815,7 +827,7 @@ impl VaneSwarmServer {
         };
 
         info!(
-            "succesfully handled sender request: address: {}, data: {}",
+            "succesfully handled receiver response: address: {}, data: {}",
             event.get_address(),
             trimmed_data
         );
@@ -832,8 +844,8 @@ impl VaneSwarmServer {
                 sender_requests.multi_ids.len(),
                 address
             );
-            for multi_id in &sender_requests.multi_ids {
-                if let Some(request) = self.requests.get(multi_id) {
+            for extended_multi_id in &sender_requests.multi_ids {
+                if let Some(request) = self.requests.get(extended_multi_id) {
                     let tx_state: TxStateMachine =
                         serde_json::from_slice(&request.data).map_err(|e| {
                             error!(
@@ -854,8 +866,8 @@ impl VaneSwarmServer {
                 receiver_requests.multi_ids.len(),
                 address
             );
-            for multi_id in &receiver_requests.multi_ids {
-                if let Some(request) = self.requests.get(multi_id) {
+            for extended_multi_id in &receiver_requests.multi_ids {
+                if let Some(request) = self.requests.get(extended_multi_id) {
                     let tx_state: TxStateMachine =
                         serde_json::from_slice(&request.data).map_err(|e| {
                             error!(
@@ -1811,99 +1823,3 @@ impl MetricService {
     }
 }
 
-pub struct MetricsServer {
-    service: MetricService,
-    port: u16,
-}
-
-impl MetricsServer {
-    pub fn new(service: MetricService, port: u16) -> Self {
-        Self { service, port }
-    }
-
-    pub async fn start(&self) -> Result<()> {
-        let addr: SocketAddr = ([127, 0, 0, 1], self.port).into();
-
-        let app = Router::new()
-            .route("/metrics-summary", get(get_metrics_summary))
-            .route("/client-metrics", post(handle_client_metrics))
-            .route("/client-metrics-summary", get(get_client_metrics_summary))
-            .with_state(self.service.clone());
-
-        let tcp_listener = TcpListener::bind(addr).await?;
-        let local_addr = tcp_listener.local_addr()?;
-
-        info!("Backend metrics server listening on http://{}", local_addr);
-        info!(
-            "Metrics summary endpoint (GET): http://{}/metrics-summary",
-            local_addr
-        );
-        info!(
-            "Client metrics endpoint (POST): http://{}/client-metrics",
-            local_addr
-        );
-        info!(
-            "Client metrics summary endpoint (GET): http://{}/client-metrics-summary",
-            local_addr
-        );
-
-        axum::serve(tcp_listener, app.into_make_service()).await?;
-        Ok(())
-    }
-}
-
-async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
-    let metrics_arc = service.get_backend_metrics();
-    let metrics = metrics_arc.lock().await;
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "backend": {
-                "sender_requests_total": metrics.sender_requests_total.get(),
-                "receiver_responses_total": metrics.receiver_responses_total.get(),
-                "receiver_not_found_total": metrics.receiver_not_found_total.get(),
-                "active_peers": metrics.active_peers.get() as usize,
-                "pending_requests": metrics.pending_requests.get() as usize,
-                "new_clients_joined": metrics.new_clients_joined.get(),
-            }
-        })),
-    )
-}
-
-async fn handle_client_metrics(
-    State(service): State<MetricService>,
-    Json(payload): Json<ClientMetricsPayload>,
-) -> impl IntoResponse {
-    let account_id = payload
-        .storage_export
-        .user_account
-        .as_ref()
-        .and_then(|ua| ua.accounts.first())
-        .map(|(acc, _)| acc.clone())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    info!(
-        "Received storage export from client: {} account: {} ({})",
-        payload.peer_id, account_id, payload.client_type
-    );
-
-    let client_metrics_arc = service.get_client_metrics();
-    let mut client_metrics = client_metrics_arc.lock().await;
-    client_metrics.update_from_exported_storage(payload);
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({"status": "success"})),
-    )
-}
-
-async fn get_client_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
-    let client_metrics_arc = service.get_client_metrics();
-    let client_metrics = client_metrics_arc.lock().await;
-    let list: Vec<ClientSnapshot> = client_metrics.per_client.values().cloned().collect();
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "clients": list
-        })),
-    )
-}

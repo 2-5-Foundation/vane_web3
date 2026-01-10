@@ -1,17 +1,128 @@
 pub mod server;
 
+#[cfg(test)]
+pub mod checks;
+
 // Re-export commonly used types
 pub use server::VaneSwarmServer;
 
 use anyhow::Result;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use log::{error, info};
-use primitives::data_structure::{BackendEvent, SystemNotification};
+use primitives::data_structure::{BackendEvent, DbTxStateMachine, StorageExport, SystemNotification};
+use server::{ClientMetricsPayload, ClientSnapshot, JsonRpcServer, MetricService};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
-use server::{JsonRpcServer, MetricService, MetricsServer};
+use tokio::{
+    net::TcpListener,
+    sync::{broadcast, mpsc, Mutex},
+};
+
+pub struct MetricsServer {
+    service: MetricService,
+    port: u16,
+}
+
+impl MetricsServer {
+    pub fn new(service: MetricService, port: u16) -> Self {
+        Self { service, port }
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        let addr: SocketAddr = ([127, 0, 0, 1], self.port).into();
+
+        let app = Router::new()
+            .route("/metrics-summary", get(get_metrics_summary))
+            .route("/client-metrics", post(handle_client_metrics))
+            .route("/client-metrics-summary", get(get_client_metrics_summary))
+            .with_state(self.service.clone());
+
+        let tcp_listener = TcpListener::bind(addr).await?;
+        let local_addr = tcp_listener.local_addr()?;
+
+        info!("Backend metrics server listening on http://{}", local_addr);
+        info!(
+            "Metrics summary endpoint (GET): http://{}/metrics-summary",
+            local_addr
+        );
+        info!(
+            "Client metrics endpoint (POST): http://{}/client-metrics",
+            local_addr
+        );
+        info!(
+            "Client metrics summary endpoint (GET): http://{}/client-metrics-summary",
+            local_addr
+        );
+
+        axum::serve(tcp_listener, app.into_make_service()).await?;
+        Ok(())
+    }
+}
+
+async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
+    let metrics_arc = service.get_backend_metrics();
+    let metrics = metrics_arc.lock().await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "backend": {
+                "sender_requests_total": metrics.sender_requests_total.get(),
+                "receiver_responses_total": metrics.receiver_responses_total.get(),
+                "receiver_not_found_total": metrics.receiver_not_found_total.get(),
+                "active_peers": metrics.active_peers.get() as usize,
+                "pending_requests": metrics.pending_requests.get() as usize,
+                "new_clients_joined": metrics.new_clients_joined.get(),
+            }
+        })),
+    )
+}
+
+async fn handle_client_metrics(
+    State(service): State<MetricService>,
+    Json(payload): Json<ClientMetricsPayload>,
+) -> impl IntoResponse {
+    let account_id = payload
+        .storage_export
+        .user_account
+        .as_ref()
+        .and_then(|ua| ua.accounts.first())
+        .map(|(acc, _)| acc.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    info!(
+        "Received storage export from client: {} account: {} ({})",
+        payload.peer_id, account_id, payload.client_type
+    );
+
+    let client_metrics_arc = service.get_client_metrics();
+    let mut client_metrics = client_metrics_arc.lock().await;
+    client_metrics.update_from_exported_storage(payload);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status": "success"})),
+    )
+}
+
+async fn get_client_metrics_summary(State(service): State<MetricService>) -> impl IntoResponse {
+    let client_metrics_arc = service.get_client_metrics();
+    let client_metrics = client_metrics_arc.lock().await;
+    let list: Vec<ClientSnapshot> = client_metrics.per_client.values().cloned().collect();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "clients": list
+        })),
+    )
+}
 
 /// Starts the Vane backend server with both JSON-RPC and metrics servers
-pub async fn start_backend_servers() -> Result<()> {
+pub async fn start_backend_servers(request_ttl_seconds: u64) -> Result<()> {
     env_logger::Builder::new()
         .format(|buf, record| {
             use std::io::Write;
@@ -39,6 +150,7 @@ pub async fn start_backend_servers() -> Result<()> {
         metric_service.clone(),
         event_sender.clone(),
         system_notification_sender,
+        request_ttl_seconds,
     )));
 
     let metrics_server = MetricsServer::new((*metric_service).clone(), 9946);

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 use simplelog::*;
 use std::fs::File;
-use vane_backend::VaneSwarmServer;
+use vane_backend::start_backend_servers;
 
 fn log_setup(live: bool) -> Result<(), anyhow::Error> {
     if live {
@@ -114,7 +114,7 @@ async fn main() -> Result<(), anyhow::Error> {
             vane_relay_node::MainRelayServerService::run(dns, port, live, private_key_opt).await?;
         }
         Commands::VaneBackend => {
-            VaneSwarmServer::run().await?;
+            start_backend_servers(60 * 30).await?; // 30 minutes TTL
         }
     }
     Ok(())
