@@ -9185,6 +9185,7 @@ dependencies = [
  "axum",
  "chrono",
  "dashmap",
+ "dotenv",
  "env_logger",
  "hex",
  "jsonrpsee 0.17.1",

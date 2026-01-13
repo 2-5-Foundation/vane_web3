@@ -1,22 +1,24 @@
 pub mod server;
-
+pub mod db;
 #[cfg(test)]
 pub mod checks;
 
 // Re-export commonly used types
 pub use server::VaneSwarmServer;
+pub use db::{D1Client, D1Config, TxLifecycle, MetricsCounter};
 
 use anyhow::Result;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
-use log::{error, info};
-use primitives::data_structure::{BackendEvent, DbTxStateMachine, StorageExport, SystemNotification};
-use server::{ClientMetricsPayload, ClientSnapshot, JsonRpcServer, MetricService};
+use log::{error, info, warn};
+use primitives::data_structure::{BackendEvent, SystemNotification, TxStateMachine};
+use server::{ClientSnapshot, JsonRpcServer, MetricService};
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::{
@@ -39,8 +41,12 @@ impl MetricsServer {
 
         let app = Router::new()
             .route("/metrics-summary", get(get_metrics_summary))
-            .route("/client-metrics", post(handle_client_metrics))
             .route("/client-metrics-summary", get(get_client_metrics_summary))
+            .route("/tx-metrics", get(get_tx_metrics))
+            .route("/tx-ids-by-sender/:sender", get(get_tx_ids_by_sender))
+            .route("/tx-ids-by-receiver/:receiver", get(get_tx_ids_by_receiver))
+            .route("/tx-ids-by-pair/:sender/:receiver", get(get_tx_ids_by_pair))
+            .route("/tx-lifecycle-by-pair/:sender/:receiver", get(get_tx_lifecycle_by_pair))
             .with_state(self.service.clone());
 
         let tcp_listener = TcpListener::bind(addr).await?;
@@ -52,11 +58,11 @@ impl MetricsServer {
             local_addr
         );
         info!(
-            "Client metrics endpoint (POST): http://{}/client-metrics",
+            "Client metrics summary endpoint (GET): http://{}/client-metrics-summary",
             local_addr
         );
         info!(
-            "Client metrics summary endpoint (GET): http://{}/client-metrics-summary",
+            "Transaction metrics endpoint (GET): http://{}/tx-metrics",
             local_addr
         );
 
@@ -74,38 +80,11 @@ async fn get_metrics_summary(State(service): State<MetricService>) -> impl IntoR
             "backend": {
                 "sender_requests_total": metrics.sender_requests_total.get(),
                 "receiver_responses_total": metrics.receiver_responses_total.get(),
-                "receiver_not_found_total": metrics.receiver_not_found_total.get(),
                 "active_peers": metrics.active_peers.get() as usize,
                 "pending_requests": metrics.pending_requests.get() as usize,
                 "new_clients_joined": metrics.new_clients_joined.get(),
             }
         })),
-    )
-}
-
-async fn handle_client_metrics(
-    State(service): State<MetricService>,
-    Json(payload): Json<ClientMetricsPayload>,
-) -> impl IntoResponse {
-    let account_id = payload
-        .storage_export
-        .user_account
-        .as_ref()
-        .and_then(|ua| ua.accounts.first())
-        .map(|(acc, _)| acc.clone())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    info!(
-        "Received storage export from client: {} account: {} ({})",
-        payload.peer_id, account_id, payload.client_type
-    );
-
-    let client_metrics_arc = service.get_client_metrics();
-    let mut client_metrics = client_metrics_arc.lock().await;
-    client_metrics.update_from_exported_storage(payload);
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({"status": "success"})),
     )
 }
 
@@ -119,6 +98,201 @@ async fn get_client_metrics_summary(State(service): State<MetricService>) -> imp
             "clients": list
         })),
     )
+}
+
+// Helper function to parse amount from tx_json
+fn parse_amount_from_tx_json(tx_json: &str) -> u128 {
+    match serde_json::from_str::<TxStateMachine>(tx_json) {
+        Ok(tx) => tx.amount,
+        Err(e) => {
+            error!("Failed to parse tx_json for amount: {}", e);
+            0
+        }
+    }
+}
+
+// Helper function to parse sender_address from tx_json (fallback to db field)
+fn get_sender_from_tx(tx_json: &str, fallback_sender: &str) -> String {
+    match serde_json::from_str::<TxStateMachine>(tx_json) {
+        Ok(tx) => tx.sender_address,
+        Err(_) => fallback_sender.to_string(),
+    }
+}
+
+// Compute the 7 metrics from database
+async fn compute_tx_metrics(db: &D1Client) -> Result<serde_json::Value> {
+    // 1. Senders completed successfully (distinct senders where completed=1)
+    let completed_txs = db.get_tx_lifecycle_filtered(Some(true), None, None).await?;
+    let senders_completed: HashSet<String> = completed_txs
+        .iter()
+        .map(|tx| get_sender_from_tx(&tx.tx_json, &tx.sender_address))
+        .collect();
+    
+    // 2. Senders reverted before receiver confirmation (reverted=1 AND receiver_confirmed=0)
+    let reverted_before_confirm = db
+        .get_tx_lifecycle_filtered(None, Some(true), Some(false))
+        .await?;
+    let senders_reverted_before: HashSet<String> = reverted_before_confirm
+        .iter()
+        .map(|tx| get_sender_from_tx(&tx.tx_json, &tx.sender_address))
+        .collect();
+
+    // 3. Senders reverted after receiver confirmation (reverted=1 AND receiver_confirmed=1)
+    let reverted_after_confirm = db
+        .get_tx_lifecycle_filtered(None, Some(true), Some(true))
+        .await?;
+    let senders_reverted_after: HashSet<String> = reverted_after_confirm
+        .iter()
+        .map(|tx| get_sender_from_tx(&tx.tx_json, &tx.sender_address))
+        .collect();
+
+    // 4. Value from reverted tx (sum amount from tx_json where reverted=1)
+    let all_reverted = db.get_tx_lifecycle_filtered(None, Some(true), None).await?;
+    let value_reverted: u128 = all_reverted
+        .iter()
+        .map(|tx| parse_amount_from_tx_json(&tx.tx_json))
+        .sum();
+
+    // 5. Value from successful tx (sum amount from tx_json where completed=1)
+    let value_successful: u128 = completed_txs
+        .iter()
+        .map(|tx| parse_amount_from_tx_json(&tx.tx_json))
+        .sum();
+
+    // 6. Receivers who confirmed (distinct receivers where receiver_confirmed=1)
+    let confirmed_txs = db.get_tx_lifecycle_filtered(None, None, Some(true)).await?;
+    let receivers_confirmed: HashSet<String> = confirmed_txs
+        .iter()
+        .map(|tx| tx.receiver_address.clone())
+        .collect();
+
+    // 7. Receivers who confirmed then sender reverted (receiver_confirmed=1 AND reverted=1)
+    let receivers_confirmed_reverted: HashSet<String> = reverted_after_confirm
+        .iter()
+        .map(|tx| tx.receiver_address.clone())
+        .collect();
+
+    Ok(serde_json::json!({
+        "senders_completed_successfully": senders_completed.len(),
+        "senders_reverted_before_confirmation": senders_reverted_before.len(),
+        "senders_reverted_after_confirmation": senders_reverted_after.len(),
+        "value_reverted_tx": value_reverted.to_string(), // Use string for large u128
+        "value_successful_tx": value_successful.to_string(),
+        "receivers_who_confirmed": receivers_confirmed.len(),
+        "receivers_confirmed_then_sender_reverted": receivers_confirmed_reverted.len(),
+    }))
+}
+
+async fn get_tx_metrics(State(service): State<MetricService>) -> impl IntoResponse {
+    if let Some(db) = service.get_db() {
+        match compute_tx_metrics(&db).await {
+            Ok(metrics) => (StatusCode::OK, Json(metrics)),
+            Err(e) => {
+                error!("Failed to compute tx metrics: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("Failed to compute metrics: {}", e)})),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Database not available"})),
+        )
+    }
+}
+
+async fn get_tx_ids_by_sender(
+    Path(sender): Path<String>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    if let Some(db) = service.get_db() {
+        match db.get_tx_ids_by_sender(&sender).await {
+            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+            Err(e) => {
+                error!("Failed to get tx ids by sender: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Database not available"})),
+        )
+    }
+}
+
+async fn get_tx_ids_by_receiver(
+    Path(receiver): Path<String>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    if let Some(db) = service.get_db() {
+        match db.get_tx_ids_by_receiver(&receiver).await {
+            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+            Err(e) => {
+                error!("Failed to get tx ids by receiver: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Database not available"})),
+        )
+    }
+}
+
+async fn get_tx_ids_by_pair(
+    Path((sender, receiver)): Path<(String, String)>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    if let Some(db) = service.get_db() {
+        match db.get_tx_ids_by_pair(&sender, &receiver).await {
+            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+            Err(e) => {
+                error!("Failed to get tx ids by pair: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Database not available"})),
+        )
+    }
+}
+
+async fn get_tx_lifecycle_by_pair(
+    Path((sender, receiver)): Path<(String, String)>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    if let Some(db) = service.get_db() {
+        match db.get_tx_lifecycle_by_pair(&sender, &receiver).await {
+            Ok(txs) => (StatusCode::OK, Json(serde_json::json!({"transactions": txs}))),
+            Err(e) => {
+                error!("Failed to get tx lifecycle by pair: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Database not available"})),
+        )
+    }
 }
 
 /// Starts the Vane backend server with both JSON-RPC and metrics servers
@@ -143,7 +317,19 @@ pub async fn start_backend_servers(request_ttl_seconds: u64) -> Result<()> {
 
     info!("🚀 Starting Vane Backend Server...");
 
-    let metric_service = Arc::new(MetricService::new());
+    // Initialize D1Client if environment variables are set
+    let db = match crate::db::D1Config::from_env() {
+        Ok(config) => {
+            info!("D1 database configuration found, initializing client...");
+            Some(Arc::new(crate::db::D1Client::new(config)))
+        }
+        Err(e) => {
+            warn!("D1 database not configured: {}. Running without database.", e);
+            None
+        }
+    };
+
+    let metric_service = Arc::new(MetricService::new(db.clone()));
     let (event_sender, _) = broadcast::channel::<BackendEvent>(100);
     let (system_notification_sender, _) = mpsc::channel::<SystemNotification>(100);
     let swarm_server = Arc::new(Mutex::new(VaneSwarmServer::new(
@@ -151,6 +337,7 @@ pub async fn start_backend_servers(request_ttl_seconds: u64) -> Result<()> {
         event_sender.clone(),
         system_notification_sender,
         request_ttl_seconds,
+        db.clone(), // Pass db to VaneSwarmServer
     )));
 
     let metrics_server = MetricsServer::new((*metric_service).clone(), 9946);

@@ -145,6 +145,7 @@ pub struct VaneSwarmServer {
     metrics: Arc<MetricService>,
     event_sender: broadcast::Sender<BackendEvent>,
     system_notification_sender: mpsc::Sender<SystemNotification>,
+    db: Option<Arc<crate::db::D1Client>>,
 }
 
 impl VaneSwarmServer {
@@ -153,6 +154,7 @@ impl VaneSwarmServer {
         event_sender: broadcast::Sender<BackendEvent>,
         system_notification_sender: mpsc::Sender<SystemNotification>,
         request_ttl_seconds: u64,
+        db: Option<Arc<crate::db::D1Client>>,
     ) -> Self {
         Self {
             peers: HashMap::new(),
@@ -163,6 +165,7 @@ impl VaneSwarmServer {
             metrics,
             event_sender,
             system_notification_sender,
+            db,
         }
     }
 
@@ -304,8 +307,7 @@ impl VaneSwarmServer {
 
     pub async fn handle_sender_request(&mut self, address: String, data: Data) -> Result<()> {
         info!(
-            "Received sender request from address: {}",
-            format!("{}...{}", &address[..4], &address[address.len() - 4..])
+            "Received sender request from address: {}", address
         );
 
         let received_event = BackendEvent::SenderRequestReceived {
@@ -391,6 +393,26 @@ impl VaneSwarmServer {
 
         // Insert request and get the extended_multi_id (multi_id + timestamp)
         let extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
+        
+        // Write to database (async, non-blocking)
+        if let Some(db) = &self.db {
+            let tx_json = String::from_utf8_lossy(&data).to_string();
+            let tx_lifecycle = crate::db::TxLifecycle {
+                extended_multi_id: extended_multi_id.clone(),
+                sender_address: address.clone(),
+                receiver_address: receiver_address.clone(),
+                tx_json,
+                receiver_confirmed: false,
+                reverted: false,
+                completed: false,
+            };
+            let db_clone = db.clone();
+            tokio::spawn(async move {
+                if let Err(e) = db_clone.upsert_tx_lifecycle(&tx_lifecycle).await {
+                    error!("Failed to write tx_lifecycle to DB: {}", e);
+                }
+            });
+        }
         
         // Store extended_multi_id in sender/receiver request lists
         self.sender_requests
@@ -495,6 +517,26 @@ impl VaneSwarmServer {
             ));
         }
 
+        // Update tx_lifecycle in database (async, non-blocking)
+        if let Some(db) = &self.db {
+            let tx_json = String::from_utf8_lossy(&data).to_string();
+            let tx_lifecycle = crate::db::TxLifecycle {
+                extended_multi_id: extended_multi_id.clone(),
+                sender_address: address.clone(),
+                receiver_address: receiver_address.clone(),
+                tx_json,
+                receiver_confirmed: true, // Confirmation implies receiver confirmed
+                reverted: false,
+                completed: false,
+            };
+            let db_clone = db.clone();
+            tokio::spawn(async move {
+                if let Err(e) = db_clone.upsert_tx_lifecycle(&tx_lifecycle).await {
+                    error!("Failed to update tx_lifecycle in DB: {}", e);
+                }
+            });
+        }
+
         // Emit backend event for sender confirmation
         let event = BackendEvent::SenderConfirmed {
             address: address.clone(),
@@ -566,6 +608,42 @@ impl VaneSwarmServer {
                 "Failed to update transaction with multi_id {}",
                 multi_id_hex
             ));
+        }
+
+        // Update reverted status in database (async, non-blocking)
+        // Phase tracking (before/after receiver confirmation) is handled by receiver_confirmed flag
+        if let Some(db) = &self.db {
+            let db_clone = db.clone();
+            let extended_multi_id_clone = extended_multi_id.clone();
+            let tx_json = String::from_utf8_lossy(&data).to_string();
+            let address_clone = address.clone();
+            let receiver_address_clone = receiver_address.clone();
+            let data_clone = data.clone();
+            tokio::spawn(async move {
+                // First try to get current state to preserve receiver_confirmed status
+                match db_clone.get_tx_lifecycle(&extended_multi_id_clone).await {
+                    Ok(Some(existing)) => {
+                        let tx_lifecycle = crate::db::TxLifecycle {
+                            extended_multi_id: extended_multi_id_clone,
+                            sender_address: address_clone,
+                            receiver_address: receiver_address_clone,
+                            tx_json: String::from_utf8_lossy(&data_clone).to_string(),
+                            receiver_confirmed: existing.receiver_confirmed, // Preserve existing status
+                            reverted: true,
+                            completed: false,
+                        };
+                        if let Err(e) = db_clone.upsert_tx_lifecycle(&tx_lifecycle).await {
+                            error!("Failed to update tx_reverted in DB: {}", e);
+                        }
+                    }
+                    _ => {
+                        // If not found, just update reverted flag
+                        if let Err(e) = db_clone.update_tx_reverted(&extended_multi_id_clone, true).await {
+                            error!("Failed to update tx_reverted in DB: {}", e);
+                        }
+                    }
+                }
+            });
         }
 
         // Emit backend event for sender revertation
@@ -746,6 +824,17 @@ impl VaneSwarmServer {
             ));
         }
 
+        // Update completed status in database (async, non-blocking)
+        if let Some(db) = &self.db {
+            let db_clone = db.clone();
+            let extended_multi_id_clone = extended_multi_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = db_clone.update_tx_completed(&extended_multi_id_clone, true).await {
+                    error!("Failed to update tx_completed in DB: {}", e);
+                }
+            });
+        }
+
         // Emit backend event for tx submission update
         let event = BackendEvent::TxSubmitted {
             address: address.clone(),
@@ -792,18 +881,32 @@ impl VaneSwarmServer {
         let _ = self.event_sender.send(received_event);
 
         // Try to find existing request by original multi_id
-        if let Some(extended_multi_id) = self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
-            if self.update_request_by_extended_multi_id(&extended_multi_id, data.clone()) {
-                info!("Updated existing request with multi_id: {} (extended_multi_id: {})", multi_id_hex, extended_multi_id);
+        let extended_multi_id = if let Some(emid) = self.find_extended_multi_id_by_original_multi_id(&multi_id_hex) {
+            if self.update_request_by_extended_multi_id(&emid, data.clone()) {
+                info!("Updated existing request with multi_id: {} (extended_multi_id: {})", multi_id_hex, emid);
+                emid
             } else {
                 // Request expired, insert as new
                 let new_extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
                 info!("Inserted new request with multi_id: {} (extended_multi_id: {})", multi_id_hex, new_extended_multi_id);
+                new_extended_multi_id
             }
         } else {
             // No existing request found, insert as new
-            let extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
-            info!("Inserted new request with multi_id: {} (extended_multi_id: {})", multi_id_hex, extended_multi_id);
+            let new_extended_multi_id = self.insert_request(multi_id_hex.clone(), data.clone());
+            info!("Inserted new request with multi_id: {} (extended_multi_id: {})", multi_id_hex, new_extended_multi_id);
+            new_extended_multi_id
+        };
+
+        // Update receiver_confirmed in database (async, non-blocking)
+        if let Some(db) = &self.db {
+            let db_clone = db.clone();
+            let extended_multi_id_clone = extended_multi_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = db_clone.update_receiver_confirmed(&extended_multi_id_clone, true).await {
+                    error!("Failed to update receiver_confirmed in DB: {}", e);
+                }
+            });
         }
 
         self.metrics.record_receiver_response(&address).await;
@@ -978,6 +1081,31 @@ pub trait BackendRpc {
     /// - `address`: The address to filter events for
     #[subscription(name = "subscribeToEvents", item = BackendEvent)]
     async fn subscribe_to_events(&self, address: String, sig: Vec<u8>) -> SubscriptionResult;
+
+    /// Get transaction counts
+    /// Returns transaction counts: (total, receiver_confirmed, reverted, completed, reverted_before_confirm)
+    #[method(name = "getTxCounts")]
+    async fn get_tx_counts(&self, sig: Vec<u8>, address: String) -> RpcResult<(usize, usize, usize, usize, usize)>;
+
+    /// Get total transaction count
+    #[method(name = "getTotalTxCount")]
+    async fn get_total_tx_count(&self, sig: Vec<u8>, address: String) -> RpcResult<usize>;
+
+    /// Get receiver confirmed transaction count
+    #[method(name = "getReceiverConfirmedCount")]
+    async fn get_receiver_confirmed_count(&self, sig: Vec<u8>, address: String) -> RpcResult<usize>;
+
+    /// Get reverted transaction count
+    #[method(name = "getRevertedCount")]
+    async fn get_reverted_count(&self, sig: Vec<u8>, address: String) -> RpcResult<usize>;
+
+    /// Get completed transaction count
+    #[method(name = "getCompletedCount")]
+    async fn get_completed_count(&self, sig: Vec<u8>, address: String) -> RpcResult<usize>;
+
+    /// Get reverted before confirmation transaction count
+    #[method(name = "getRevertedBeforeConfirmCount")]
+    async fn get_reverted_before_confirm_count(&self, sig: Vec<u8>, address: String) -> RpcResult<usize>;
 }
 
 #[derive(Clone)]
@@ -1505,6 +1633,144 @@ impl BackendRpcServer for BackendRpcHandler {
         info!("Subscription ended for address: {}", address);
         Ok(())
     }
+
+    async fn get_tx_counts(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<(usize, usize, usize, usize, usize)> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_tx_counts called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let counts = server.metrics.get_tx_counts().await.map_err(|e| {
+            error!("RPC: Failed to get tx counts: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(counts)
+    }
+
+    async fn get_total_tx_count(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<usize> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_total_tx_count called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let count = server.metrics.get_total_tx_count().await.map_err(|e| {
+            error!("RPC: Failed to get total tx count: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(count)
+    }
+
+    async fn get_receiver_confirmed_count(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<usize> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_receiver_confirmed_count called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let count = server.metrics.get_receiver_confirmed_count().await.map_err(|e| {
+            error!("RPC: Failed to get receiver confirmed count: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(count)
+    }
+
+    async fn get_reverted_count(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<usize> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_reverted_count called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let count = server.metrics.get_reverted_count().await.map_err(|e| {
+            error!("RPC: Failed to get reverted count: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(count)
+    }
+
+    async fn get_completed_count(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<usize> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_completed_count called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let count = server.metrics.get_completed_count().await.map_err(|e| {
+            error!("RPC: Failed to get completed count: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(count)
+    }
+
+    async fn get_reverted_before_confirm_count(
+        &self,
+        sig: Vec<u8>,
+        address: String,
+    ) -> RpcResult<usize> {
+        let is_valid = verify_client_key_middleware(sig, address.clone())
+            .map_err(|e| jsonrpsee::core::Error::Custom(e.to_string()))?;
+
+        if !is_valid {
+            return Err(jsonrpsee::core::Error::Custom(
+                "Invalid client verification".to_string(),
+            ).into());
+        }
+
+        info!("RPC: get_reverted_before_confirm_count called for address: {}", address);
+        let server = self.swarm_server.lock().await;
+        let count = server.metrics.get_reverted_before_confirm_count().await.map_err(|e| {
+            error!("RPC: Failed to get reverted before confirm count: {}", e);
+            jsonrpsee::core::Error::Custom(e.to_string())
+        })?;
+        Ok(count)
+    }
 }
 
 pub struct JsonRpcServer {
@@ -1547,7 +1813,6 @@ impl JsonRpcServer {
 pub struct BackendEventsSummary {
     sender_requests_total: u64,
     receiver_responses_total: u64,
-    receiver_not_found_total: u64,
     active_peers: usize,
     pending_requests: usize,
     new_clients_joined: u64,
@@ -1581,12 +1846,17 @@ pub struct ClientMetricsStore {
 pub struct BackendMetrics {
     pub sender_requests_total: Counter,
     pub receiver_responses_total: Counter,
-    pub receiver_not_found_total: Counter,
     pub peers_added_total: Counter,
     pub peers_removed_total: Counter,
     pub active_peers: Gauge,
     pub pending_requests: Gauge,
     pub new_clients_joined: Counter,
+    // Track last written values for delta calculation
+    pub last_written_sender_requests: u64,
+    pub last_written_receiver_responses: u64,
+    pub last_written_peers_added: u64,
+    pub last_written_peers_removed: u64,
+    pub last_written_new_clients_joined: u64,
 }
 
 impl BackendMetrics {
@@ -1594,12 +1864,16 @@ impl BackendMetrics {
         Self {
             sender_requests_total: Counter::default(),
             receiver_responses_total: Counter::default(),
-            receiver_not_found_total: Counter::default(),
             peers_added_total: Counter::default(),
             peers_removed_total: Counter::default(),
             active_peers: Gauge::default(),
             pending_requests: Gauge::default(),
             new_clients_joined: Counter::default(),
+            last_written_sender_requests: 0,
+            last_written_receiver_responses: 0,
+            last_written_peers_added: 0,
+            last_written_peers_removed: 0,
+            last_written_new_clients_joined: 0,
         }
     }
 
@@ -1613,11 +1887,6 @@ impl BackendMetrics {
             "backend_receiver_responses_total",
             "Total receiver responses received",
             self.receiver_responses_total.clone(),
-        );
-        registry.register(
-            "backend_receiver_not_found_total",
-            "Total receiver not found events",
-            self.receiver_not_found_total.clone(),
         );
         registry.register(
             "backend_peers_added_total",
@@ -1760,10 +2029,11 @@ impl ClientMetricsStore {
 pub struct MetricService {
     backend_metrics: Arc<Mutex<BackendMetrics>>,
     client_metrics: Arc<Mutex<ClientMetricsStore>>,
+    db: Option<Arc<crate::db::D1Client>>,
 }
 
 impl MetricService {
-    pub fn new() -> Self {
+    pub fn new(db: Option<Arc<crate::db::D1Client>>) -> Self {
         let mut registry = Registry::default();
         let backend_metrics = BackendMetrics::new();
         let client_metrics = ClientMetricsStore::new();
@@ -1771,10 +2041,93 @@ impl MetricService {
         backend_metrics.register(&mut registry);
         client_metrics.register(&mut registry);
 
-        Self {
+        let service = Self {
             backend_metrics: Arc::new(Mutex::new(backend_metrics)),
             client_metrics: Arc::new(Mutex::new(client_metrics)),
+            db: db.clone(),
+        };
+
+        // Start periodic DB write task (every 10 minutes)
+        if let Some(db) = db {
+            let service_clone = service.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(600)); // 10 minutes
+                loop {
+                    interval.tick().await;
+                    if let Err(e) = service_clone.write_metrics_to_db().await {
+                        error!("Failed to write metrics to DB: {}", e);
+                    }
+                }
+            });
         }
+
+        service
+    }
+
+    // Write metrics to DB periodically (increment counters)
+    async fn write_metrics_to_db(&self) -> Result<()> {
+        if let Some(db) = &self.db {
+            let mut metrics = self.backend_metrics.lock().await;
+            
+            // Get current in-memory values
+            let sender_requests = metrics.sender_requests_total.get();
+            let receiver_responses = metrics.receiver_responses_total.get();
+            let peers_added = metrics.peers_added_total.get();
+            let peers_removed = metrics.peers_removed_total.get();
+            let new_clients_joined = metrics.new_clients_joined.get();
+
+            // Get last written values (if tracking exists)
+            let last_sender = metrics.last_written_sender_requests;
+            let last_receiver = metrics.last_written_receiver_responses;
+            let last_peers_added = metrics.last_written_peers_added;
+            let last_peers_removed = metrics.last_written_peers_removed;
+            let last_clients = metrics.last_written_new_clients_joined;
+
+            // Calculate deltas
+            let delta_sender = sender_requests.saturating_sub(last_sender);
+            let delta_receiver = receiver_responses.saturating_sub(last_receiver);
+            let delta_peers_added = peers_added.saturating_sub(last_peers_added);
+            let delta_peers_removed = peers_removed.saturating_sub(last_peers_removed);
+            let delta_clients = new_clients_joined.saturating_sub(last_clients);
+
+            // Write deltas to DB (increment counters)
+            for _ in 0..delta_sender {
+                if let Err(e) = db.increment_sender_requests().await {
+                    error!("Failed to increment sender_requests in DB: {}", e);
+                }
+            }
+            for _ in 0..delta_receiver {
+                if let Err(e) = db.increment_receiver_responses().await {
+                    error!("Failed to increment receiver_responses in DB: {}", e);
+                }
+            }
+            for _ in 0..delta_peers_added {
+                if let Err(e) = db.increment_peers_added().await {
+                    error!("Failed to increment peers_added in DB: {}", e);
+                }
+            }
+            for _ in 0..delta_peers_removed {
+                if let Err(e) = db.increment_peers_removed().await {
+                    error!("Failed to increment peers_removed in DB: {}", e);
+                }
+            }
+            for _ in 0..delta_clients {
+                if let Err(e) = db.increment_new_clients_joined().await {
+                    error!("Failed to increment new_clients_joined in DB: {}", e);
+                }
+            }
+
+            // Update last written values
+            metrics.last_written_sender_requests = sender_requests;
+            metrics.last_written_receiver_responses = receiver_responses;
+            metrics.last_written_peers_added = peers_added;
+            metrics.last_written_peers_removed = peers_removed;
+            metrics.last_written_new_clients_joined = new_clients_joined;
+
+            info!("Wrote metrics to DB - sender: {}, receiver: {}, peers_added: {}, peers_removed: {}, clients: {}",
+                  delta_sender, delta_receiver, delta_peers_added, delta_peers_removed, delta_clients);
+        }
+        Ok(())
     }
 
     pub fn get_client_metrics(&self) -> Arc<Mutex<ClientMetricsStore>> {
@@ -1820,6 +2173,76 @@ impl MetricService {
     pub async fn record_new_client_joined(&self) {
         let metrics = self.backend_metrics.lock().await;
         metrics.new_clients_joined.inc();
+    }
+
+    pub fn get_db(&self) -> Option<Arc<crate::db::D1Client>> {
+        self.db.clone()
+    }
+
+    /// Get transaction counts from database
+    /// Returns: (total, receiver_confirmed, reverted, completed, reverted_before_confirm)
+    pub async fn get_tx_counts(&self) -> Result<(usize, usize, usize, usize, usize), anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let all_txs = db.get_tx_lifecycle_filtered(None, None, None).await.unwrap_or_default();
+        let receiver_confirmed = db.get_tx_lifecycle_filtered(None, None, Some(true)).await.unwrap_or_default();
+        let reverted = db.get_tx_lifecycle_filtered(None, Some(true), None).await.unwrap_or_default();
+        let completed = db.get_tx_lifecycle_filtered(Some(true), None, None).await.unwrap_or_default();
+        let reverted_before_confirm = db.get_tx_lifecycle_filtered(None, Some(true), Some(false)).await.unwrap_or_default();
+        
+        Ok((
+            all_txs.len(),
+            receiver_confirmed.len(),
+            reverted.len(),
+            completed.len(),
+            reverted_before_confirm.len(),
+        ))
+    }
+
+    /// Get total transaction count
+    pub async fn get_total_tx_count(&self) -> Result<usize, anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let txs = db.get_tx_lifecycle_filtered(None, None, None).await.unwrap_or_default();
+        Ok(txs.len())
+    }
+
+    /// Get receiver confirmed transaction count
+    pub async fn get_receiver_confirmed_count(&self) -> Result<usize, anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let txs = db.get_tx_lifecycle_filtered(None, None, Some(true)).await.unwrap_or_default();
+        Ok(txs.len())
+    }
+
+    /// Get reverted transaction count
+    pub async fn get_reverted_count(&self) -> Result<usize, anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let txs = db.get_tx_lifecycle_filtered(None, Some(true), None).await.unwrap_or_default();
+        Ok(txs.len())
+    }
+
+    /// Get completed transaction count
+    pub async fn get_completed_count(&self) -> Result<usize, anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let txs = db.get_tx_lifecycle_filtered(Some(true), None, None).await.unwrap_or_default();
+        Ok(txs.len())
+    }
+
+    /// Get reverted before confirmation transaction count
+    pub async fn get_reverted_before_confirm_count(&self) -> Result<usize, anyhow::Error> {
+        let db = self.db.as_ref()
+            .ok_or_else(|| anyhow!("Database not available"))?;
+        
+        let txs = db.get_tx_lifecycle_filtered(None, Some(true), Some(false)).await.unwrap_or_default();
+        Ok(txs.len())
     }
 }
 

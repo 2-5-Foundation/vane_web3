@@ -1,0 +1,8 @@
+name = "vane-backend"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vane-db"
+database_id = "ab3ea479-fa99-413a-8203-aa338557b494"
+

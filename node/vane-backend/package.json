@@ -1,0 +1,15 @@
+{
+  "name": "vane-backend",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "db:migrate": "bunx wrangler d1 execute vane-db --local --file=./migrations/vane.sql",
+    "db:migrate:remote": "bunx wrangler d1 execute vane-db --file=./migrations/vane.sql",
+    "db:create": "bunx wrangler d1 create vane-db",
+    "db:list": "bunx wrangler d1 list"
+  },
+  "devDependencies": {
+    "wrangler": "^4.58.0"
+  }
+}
+

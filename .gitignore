@@ -6,6 +6,8 @@
 /integration-test/vane-test.log
 +.env
 
+node/vane-backend/.env
+node/vane-backend/migrations
 /integration-test/wasm-e2e-ts/screenshots/*
 
 # Cloudflare Wrangler
