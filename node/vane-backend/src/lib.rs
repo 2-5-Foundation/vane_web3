@@ -9,15 +9,17 @@ pub use db::{D1Client, D1Config, TxLifecycle, MetricsCounter};
 
 use anyhow::Result;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
+use serde::Deserialize;
 use log::{error, info, warn};
 use primitives::data_structure::{BackendEvent, SystemNotification, TxStateMachine};
-use server::{ClientSnapshot, JsonRpcServer, MetricService};
+use server::{ClientSnapshot, JsonRpcServer, MetricService, verify_client_key_middleware};
+use hex;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -43,10 +45,16 @@ impl MetricsServer {
             .route("/metrics-summary", get(get_metrics_summary))
             .route("/client-metrics-summary", get(get_client_metrics_summary))
             .route("/tx-metrics", get(get_tx_metrics))
-            .route("/tx-ids-by-sender/:sender", get(get_tx_ids_by_sender))
-            .route("/tx-ids-by-receiver/:receiver", get(get_tx_ids_by_receiver))
-            .route("/tx-ids-by-pair/:sender/:receiver", get(get_tx_ids_by_pair))
-            .route("/tx-lifecycle-by-pair/:sender/:receiver", get(get_tx_lifecycle_by_pair))
+            .route("/getTxCounts", get(get_tx_counts))
+            .route("/getTotalTxCount", get(get_total_tx_count))
+            .route("/getReceiverConfirmedCount", get(get_receiver_confirmed_count))
+            .route("/getRevertedCount", get(get_reverted_count))
+            .route("/getCompletedCount", get(get_completed_count))
+            .route("/getRevertedBeforeConfirmCount", get(get_reverted_before_confirm_count))
+            .route("/tx-json-by-sender/{sender}", get(get_tx_json_by_sender))
+            .route("/tx-json-by-receiver/{receiver}", get(get_tx_json_by_receiver))
+            .route("/tx-json-by-pair/{sender}/{receiver}", get(get_tx_json_by_pair))
+            .route("/tx-lifecycle-by-pair/{sender}/{receiver}", get(get_tx_lifecycle_by_pair))
             .with_state(self.service.clone());
 
         let tcp_listener = TcpListener::bind(addr).await?;
@@ -63,6 +71,22 @@ impl MetricsServer {
         );
         info!(
             "Transaction metrics endpoint (GET): http://{}/tx-metrics",
+            local_addr
+        );
+        info!(
+            "Transaction counts endpoint (GET): http://{}/tx-counts",
+            local_addr
+        );
+        info!(
+            "Transaction JSON by sender endpoint (GET): http://{}/tx-json-by-sender/{{sender}}",
+            local_addr
+        );
+        info!(
+            "Transaction JSON by receiver endpoint (GET): http://{}/tx-json-by-receiver/{{receiver}}",
+            local_addr
+        );
+        info!(
+            "Transaction JSON by pair endpoint (GET): http://{}/tx-json-by-pair/{{sender}}/{{receiver}}",
             local_addr
         );
 
@@ -203,15 +227,15 @@ async fn get_tx_metrics(State(service): State<MetricService>) -> impl IntoRespon
     }
 }
 
-async fn get_tx_ids_by_sender(
+async fn get_tx_json_by_sender(
     Path(sender): Path<String>,
     State(service): State<MetricService>,
 ) -> impl IntoResponse {
     if let Some(db) = service.get_db() {
-        match db.get_tx_ids_by_sender(&sender).await {
-            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+        match db.get_tx_json_by_sender(&sender).await {
+            Ok(tx_jsons) => (StatusCode::OK, Json(serde_json::json!({"tx_json": tx_jsons}))),
             Err(e) => {
-                error!("Failed to get tx ids by sender: {}", e);
+                error!("Failed to get tx json by sender: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
@@ -226,15 +250,15 @@ async fn get_tx_ids_by_sender(
     }
 }
 
-async fn get_tx_ids_by_receiver(
+async fn get_tx_json_by_receiver(
     Path(receiver): Path<String>,
     State(service): State<MetricService>,
 ) -> impl IntoResponse {
     if let Some(db) = service.get_db() {
-        match db.get_tx_ids_by_receiver(&receiver).await {
-            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+        match db.get_tx_json_by_receiver(&receiver).await {
+            Ok(tx_jsons) => (StatusCode::OK, Json(serde_json::json!({"tx_json": tx_jsons}))),
             Err(e) => {
-                error!("Failed to get tx ids by receiver: {}", e);
+                error!("Failed to get tx json by receiver: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
@@ -249,15 +273,15 @@ async fn get_tx_ids_by_receiver(
     }
 }
 
-async fn get_tx_ids_by_pair(
+async fn get_tx_json_by_pair(
     Path((sender, receiver)): Path<(String, String)>,
     State(service): State<MetricService>,
 ) -> impl IntoResponse {
     if let Some(db) = service.get_db() {
-        match db.get_tx_ids_by_pair(&sender, &receiver).await {
-            Ok(ids) => (StatusCode::OK, Json(serde_json::json!({"tx_ids": ids}))),
+        match db.get_tx_json_by_pair(&sender, &receiver).await {
+            Ok(tx_jsons) => (StatusCode::OK, Json(serde_json::json!({"tx_json": tx_jsons}))),
             Err(e) => {
-                error!("Failed to get tx ids by pair: {}", e);
+                error!("Failed to get tx json by pair: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({"error": format!("Failed to query: {}", e)})),
@@ -292,6 +316,302 @@ async fn get_tx_lifecycle_by_pair(
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Database not available"})),
         )
+    }
+}
+
+#[derive(Deserialize)]
+struct TxCountsParams {
+    address: String,
+    sig: String, // hex-encoded signature
+}
+
+async fn get_tx_counts(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    // Decode signature from hex
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    // Verify signature
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_tx_counts().await {
+        Ok((total, receiver_confirmed, reverted, completed, reverted_before_confirm)) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "total": total,
+                    "receiver_confirmed": receiver_confirmed,
+                    "reverted": reverted,
+                    "completed": completed,
+                    "reverted_before_confirm": reverted_before_confirm
+                })),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get tx counts: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get tx counts: {}", e)})),
+            )
+        }
+    }
+}
+
+async fn get_total_tx_count(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_total_tx_count().await {
+        Ok(count) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"total": count})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get total tx count: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get total tx count: {}", e)})),
+            )
+        }
+    }
+}
+
+async fn get_receiver_confirmed_count(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_receiver_confirmed_count().await {
+        Ok(count) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"receiver_confirmed": count})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get receiver confirmed count: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get receiver confirmed count: {}", e)})),
+            )
+        }
+    }
+}
+
+async fn get_reverted_count(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_reverted_count().await {
+        Ok(count) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"reverted": count})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get reverted count: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get reverted count: {}", e)})),
+            )
+        }
+    }
+}
+
+async fn get_completed_count(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_completed_count().await {
+        Ok(count) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"completed": count})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get completed count: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get completed count: {}", e)})),
+            )
+        }
+    }
+}
+
+async fn get_reverted_before_confirm_count(
+    Query(params): Query<TxCountsParams>,
+    State(service): State<MetricService>,
+) -> impl IntoResponse {
+    let sig = match hex::decode(&params.sig) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Invalid signature format: {}", e)})),
+            );
+        }
+    };
+
+    match verify_client_key_middleware(sig, params.address.clone()) {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Invalid client verification"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Signature verification failed: {}", e)})),
+            );
+        }
+    }
+
+    match service.get_reverted_before_confirm_count().await {
+        Ok(count) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"reverted_before_confirm": count})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get reverted before confirm count: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to get reverted before confirm count: {}", e)})),
+            )
+        }
     }
 }
 

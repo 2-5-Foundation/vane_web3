@@ -238,8 +238,8 @@ impl D1Client {
         }
     }
 
-    /// Get transaction IDs by sender address
-    pub async fn get_tx_ids_by_sender(&self, sender_address: &str) -> Result<Vec<String>> {
+    /// Get transaction IDs by sender address (internal helper)
+    pub(crate) async fn get_tx_ids_by_sender(&self, sender_address: &str) -> Result<Vec<String>> {
         let sql = "SELECT extended_multi_id FROM v_tx_ids_by_sender WHERE sender_address = ?1";
         let params = vec![json!(sender_address)];
 
@@ -262,8 +262,8 @@ impl D1Client {
         }
     }
 
-    /// Get transaction IDs by receiver address
-    pub async fn get_tx_ids_by_receiver(&self, receiver_address: &str) -> Result<Vec<String>> {
+    /// Get transaction IDs by receiver address (private helper)
+    async fn get_tx_ids_by_receiver(&self, receiver_address: &str) -> Result<Vec<String>> {
         let sql = "SELECT extended_multi_id FROM v_tx_ids_by_receiver WHERE receiver_address = ?1";
         let params = vec![json!(receiver_address)];
 
@@ -286,8 +286,8 @@ impl D1Client {
         }
     }
 
-    /// Get transaction IDs by sender and receiver pair
-    pub async fn get_tx_ids_by_pair(
+    /// Get transaction IDs by sender and receiver pair (private helper)
+    async fn get_tx_ids_by_pair(
         &self,
         sender_address: &str,
         receiver_address: &str,
@@ -312,6 +312,55 @@ impl D1Client {
             }
             None => Ok(vec![]),
         }
+    }
+
+    /// Get transaction JSON data by sender address
+    /// Returns a list of tx_json strings for all transactions from the sender
+    pub async fn get_tx_json_by_sender(&self, sender_address: &str) -> Result<Vec<String>> {
+        let ids = self.get_tx_ids_by_sender(sender_address).await?;
+        let mut tx_jsons = Vec::new();
+        
+        for id in ids {
+            if let Some(tx) = self.get_tx_lifecycle(&id).await? {
+                tx_jsons.push(tx.tx_json);
+            }
+        }
+        
+        Ok(tx_jsons)
+    }
+
+    /// Get transaction JSON data by receiver address
+    /// Returns a list of tx_json strings for all transactions to the receiver
+    pub async fn get_tx_json_by_receiver(&self, receiver_address: &str) -> Result<Vec<String>> {
+        let ids = self.get_tx_ids_by_receiver(receiver_address).await?;
+        let mut tx_jsons = Vec::new();
+        
+        for id in ids {
+            if let Some(tx) = self.get_tx_lifecycle(&id).await? {
+                tx_jsons.push(tx.tx_json);
+            }
+        }
+        
+        Ok(tx_jsons)
+    }
+
+    /// Get transaction JSON data by sender and receiver pair
+    /// Returns a list of tx_json strings for transactions between the sender and receiver
+    pub async fn get_tx_json_by_pair(
+        &self,
+        sender_address: &str,
+        receiver_address: &str,
+    ) -> Result<Vec<String>> {
+        let ids = self.get_tx_ids_by_pair(sender_address, receiver_address).await?;
+        let mut tx_jsons = Vec::new();
+        
+        for id in ids {
+            if let Some(tx) = self.get_tx_lifecycle(&id).await? {
+                tx_jsons.push(tx.tx_json);
+            }
+        }
+        
+        Ok(tx_jsons)
     }
 
     /// Update transaction completion status
